@@ -1,80 +1,101 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
+<?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Label?>
-<?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.FlowPane?>
 <?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.layout.Region?>
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 
-<BorderPane fx:id="root" styleClass="board"
-            xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml/1"
-            fx:controller="com.oop.payday.controller.GameBoardController">
-    <top>
-        <VBox alignment="TOP_CENTER" styleClass="top-stack" spacing="10.0">
-            <children>
-                <StackPane fx:id="fieldBStage" styleClass="field-stage">
+<StackPane styleClass="board"
+           xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.oop.payday.controller.GameBoardController">
+    <children>
+        <BorderPane>
+            <left>
+                <VBox styleClass="left-sidebar" spacing="10.0">
                     <children>
-                        <VBox alignment="CENTER" styleClass="field-strip field-strip-opponent" spacing="10.0">
+                        <VBox styleClass="info-card opponent-card" spacing="6.0">
                             <children>
-                                <Label fx:id="fieldBLabel" styleClass="field-title" text="상대 필드" />
-                                <ScrollPane fitToHeight="true" fitToWidth="true" hbarPolicy="AS_NEEDED"
-                                            vbarPolicy="NEVER" styleClass="field-scroll">
-                                    <content>
-                                        <HBox fx:id="fieldBFlow" alignment="CENTER" spacing="8.0" />
-                                    </content>
-                                </ScrollPane>
+                                <Label fx:id="fieldBTitleLabel" styleClass="info-card-title" wrapText="true" />
+                                <Region styleClass="info-divider" />
+                                <VBox styleClass="officer-portrait" spacing="3.0">
+                                    <children>
+                                        <Label fx:id="fieldBOfficerLabel" styleClass="officer-name" wrapText="true" />
+                                        <Label fx:id="fieldBOfficerEffectLabel" styleClass="officer-effect" wrapText="true" />
+                                    </children>
+                                </VBox>
+                                <Label fx:id="fieldBCoinsLabel" styleClass="info-coins" maxWidth="Infinity" />
                             </children>
                         </VBox>
-                    </children>
-                </StackPane>
-                <HBox alignment="CENTER" styleClass="info-bar" spacing="24.0">
-                    <children>
-                        <Label fx:id="roundLabel" styleClass="info" text="라운드 -" />
-                        <Label fx:id="phaseLabel" styleClass="info" text="단계 -" />
-                    </children>
-                </HBox>
-            </children>
-        </VBox>
-    </top>
-    <center>
-        <StackPane fx:id="centerArea" styleClass="center-area">
-            <children>
-                <ScrollPane fx:id="contentScroll" fitToWidth="true" fitToHeight="true"
-                            hbarPolicy="NEVER" vbarPolicy="AS_NEEDED" styleClass="content-scroll">
-                    <content>
-                        <StackPane fx:id="contentArea" />
-                    </content>
-                </ScrollPane>
-                <StackPane fx:id="overlayArea" mouseTransparent="true" />
-            </children>
-        </StackPane>
-    </center>
-    <bottom>
-        <VBox alignment="BOTTOM_CENTER" styleClass="bottom-stack" spacing="10.0">
-            <children>
-                <VBox alignment="CENTER" styleClass="bottom-bar" spacing="4.0">
-                    <children>
-                        <Label fx:id="turnLabel" styleClass="turn" />
-                        <Label fx:id="messageLabel" styleClass="message" />
+
+                        <Region VBox.vgrow="ALWAYS" />
+
+                        <VBox styleClass="info-card mine-card" spacing="6.0">
+                            <children>
+                                <Label fx:id="fieldACoinsLabel" styleClass="info-coins" maxWidth="Infinity" />
+                                <VBox styleClass="officer-portrait" spacing="3.0">
+                                    <children>
+                                        <Label fx:id="fieldAOfficerLabel" styleClass="officer-name" wrapText="true" />
+                                        <Label fx:id="fieldAOfficerEffectLabel" styleClass="officer-effect" wrapText="true" />
+                                    </children>
+                                </VBox>
+                                <Region styleClass="info-divider" />
+                                <Label fx:id="fieldATitleLabel" styleClass="info-card-title" wrapText="true" />
+                            </children>
+                        </VBox>
                     </children>
                 </VBox>
-                <StackPane fx:id="fieldAStage" styleClass="field-stage">
+            </left>
+            <center>
+                <VBox styleClass="board-center" spacing="8.0">
                     <children>
-                        <VBox alignment="CENTER" styleClass="field-strip field-strip-mine" spacing="10.0">
+                        <StackPane fx:id="fieldBStage" styleClass="center-field-stage opponent-field-stage"
+                                   minHeight="168.0" prefHeight="168.0" maxHeight="168.0">
                             <children>
-                                <Label fx:id="fieldALabel" styleClass="field-title" text="내 필드" />
-                                <ScrollPane fitToHeight="true" fitToWidth="true" hbarPolicy="AS_NEEDED"
-                                            vbarPolicy="NEVER" styleClass="field-scroll">
-                                    <content>
-                                        <HBox fx:id="fieldAFlow" alignment="CENTER" spacing="8.0" />
-                                    </content>
-                                </ScrollPane>
+                                <FlowPane fx:id="fieldBFlow" alignment="CENTER" hgap="8.0" vgap="8.0" />
+                                <Label fx:id="fieldBCountLabel" styleClass="field-count-label" StackPane.alignment="TOP_RIGHT">
+                                    <StackPane.margin>
+                                        <Insets top="6.0" right="10.0" />
+                                    </StackPane.margin>
+                                </Label>
                             </children>
-                        </VBox>
+                        </StackPane>
+
+                        <StackPane fx:id="centerArea" VBox.vgrow="ALWAYS" minHeight="0.0" styleClass="center-area">
+                            <children>
+                                <StackPane fx:id="contentArea" minHeight="0.0" alignment="TOP_CENTER" />
+                                <StackPane fx:id="overlayArea" minHeight="0.0" mouseTransparent="true" />
+                            </children>
+                        </StackPane>
+
+                        <StackPane fx:id="fieldAStage" styleClass="center-field-stage mine-field-stage"
+                                   minHeight="168.0" prefHeight="168.0" maxHeight="168.0">
+                            <children>
+                                <FlowPane fx:id="fieldAFlow" alignment="CENTER" hgap="8.0" vgap="8.0" />
+                                <Label fx:id="fieldACountLabel" styleClass="field-count-label" StackPane.alignment="TOP_RIGHT">
+                                    <StackPane.margin>
+                                        <Insets top="6.0" right="10.0" />
+                                    </StackPane.margin>
+                                </Label>
+                            </children>
+                        </StackPane>
+
+                        <HBox styleClass="center-status-bar" spacing="14.0" alignment="CENTER_LEFT">
+                            <children>
+                                <Label fx:id="turnLabel" styleClass="turn" />
+                                <Region HBox.hgrow="ALWAYS" />
+                                <Label fx:id="messageLabel" styleClass="message" />
+                            </children>
+                        </HBox>
                     </children>
-                </StackPane>
-            </children>
-        </VBox>
-    </bottom>
-</BorderPane>
+                </VBox>
+            </center>
+        </BorderPane>
+
+        <Pane fx:id="globalOverlay" mouseTransparent="true" pickOnBounds="false" />
+    </children>
+</StackPane>

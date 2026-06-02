@@ -163,6 +163,7 @@ public final class Game {
 
     private void cashInPhase() {
         listener.onPhaseChanged(Phase.CASH_IN, round, splitTeam);
+        listener.awaitAnimations();
         cashCountsThisRound.clear();
         cashBlockedThisRound.clear();
         for (Team team : List.of(splitTeam, chooseTeam)) {

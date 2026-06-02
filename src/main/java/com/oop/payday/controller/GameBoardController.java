@@ -49,8 +49,12 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ScrollPane.ScrollBarPolicy;
 import javafx.scene.control.ToggleButton;
-import javafx.scene.control.ToggleGroup;
+import javafx.geometry.Bounds;
 import javafx.scene.image.WritableImage;
+import javafx.scene.layout.Pane;
+import javafx.scene.shape.Rectangle;
+
+import java.util.concurrent.CountDownLatch;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.Dragboard;
 import javafx.scene.input.MouseButton;
@@ -58,6 +62,7 @@ import javafx.scene.input.TransferMode;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
@@ -70,16 +75,22 @@ import javafx.util.Duration;
  */
 public final class GameBoardController implements GameListener, HumanUi {
 
-    @FXML private Label roundLabel;
-    @FXML private Label phaseLabel;
-    @FXML private Label fieldALabel;
-    @FXML private Label fieldBLabel;
+    @FXML private Label fieldATitleLabel;
+    @FXML private Label fieldAOfficerLabel;
+    @FXML private Label fieldAOfficerEffectLabel;
+    @FXML private Label fieldACoinsLabel;
+    @FXML private Label fieldACountLabel;
+    @FXML private Label fieldBTitleLabel;
+    @FXML private Label fieldBOfficerLabel;
+    @FXML private Label fieldBOfficerEffectLabel;
+    @FXML private Label fieldBCoinsLabel;
+    @FXML private Label fieldBCountLabel;
     @FXML private StackPane fieldAStage;
     @FXML private StackPane fieldBStage;
-    @FXML private HBox fieldAFlow;
-    @FXML private HBox fieldBFlow;
+    @FXML private Pane globalOverlay;
+    @FXML private FlowPane fieldAFlow;
+    @FXML private FlowPane fieldBFlow;
     @FXML private StackPane centerArea;
-    @FXML private ScrollPane contentScroll;
     @FXML private StackPane contentArea;
     @FXML private StackPane overlayArea;
     @FXML private Label turnLabel;
@@ -94,6 +105,29 @@ public final class GameBoardController implements GameListener, HumanUi {
     private boolean distributionFieldUpdatePending;
     private VBox activeBundle0;
     private VBox activeBundle1;
+
+    @FXML
+    private void initialize() {
+        Rectangle clip = new Rectangle();
+        clip.widthProperty().bind(contentArea.widthProperty());
+        clip.heightProperty().bind(contentArea.heightProperty());
+        contentArea.setClip(clip);
+    }
+
+    /**
+     * 현재 진행 중인 오버레이 애니메이션이 모두 끝날 때까지 게임 스레드를 블록한다.
+     * Platform.runLater로 예약된 이후 람다(환금 페이즈 배너 포함)까지 기다린 뒤 반환한다.
+     */
+    @Override
+    public void awaitAnimations() {
+        CountDownLatch latch = new CountDownLatch(1);
+        Platform.runLater(() -> runAfterOverlay(latch::countDown));
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
 
     /** 메인 메뉴에서 호출. 플레이어/팀/게임을 구성하고 게임 스레드를 시작한다. */
     public void startGame(GameConfig config, boolean vsBot) {
@@ -124,8 +158,6 @@ public final class GameBoardController implements GameListener, HumanUi {
     @Override
     public void onPhaseChanged(Phase phase, int round, Team splitTeam) {
         Platform.runLater(() -> {
-            roundLabel.setText("라운드 " + round);
-            phaseLabel.setText("단계: " + phase.korean());
             showPhaseBanner(phase.korean());
             updateBoardStatus();
         });
@@ -339,8 +371,9 @@ public final class GameBoardController implements GameListener, HumanUi {
     private FlowPane splitDropZone(String label) {
         FlowPane pane = new FlowPane(10, 10);
         pane.setAlignment(Pos.CENTER);
-        pane.setPrefWrapLength(260);
-        pane.setMinHeight(150);
+        pane.setPrefWrapLength(200);
+        pane.setMaxWidth(200);
+        pane.setMinHeight(100);
         pane.getStyleClass().add("split-drop-zone");
         pane.setUserData(label);
         return pane;
@@ -352,13 +385,14 @@ public final class GameBoardController implements GameListener, HumanUi {
         VBox box = new VBox(10, label, cards);
         box.setAlignment(Pos.CENTER);
         box.getStyleClass().add("split-bundle-box");
-        box.setPadding(new Insets(14));
+        box.setPadding(new Insets(12));
+        box.setMaxWidth(240);
         return box;
     }
 
     private Node buildDraggableSplitCard(Card card, Map<Card, Integer> bundleOf, Card[] faceDown,
             FlowPane bundleA, FlowPane bundleB) {
-        StackPane wrapper = new StackPane(new CardView(card, true));
+        StackPane wrapper = new StackPane(new CardView(card, true, true));
         wrapper.getStyleClass().add("split-card");
         wrapper.setUserData(card);
 
@@ -519,18 +553,20 @@ public final class GameBoardController implements GameListener, HumanUi {
     private VBox bundleBox(String title, List<Card> visibleCards, boolean hasFaceDown, Node... controls) {
         FlowPane cards = new FlowPane(8, 8);
         cards.setAlignment(Pos.CENTER);
-        cards.setPrefWrapLength(240);
+        cards.setPrefWrapLength(200);
+        cards.setMaxWidth(200);
         for (Card c : visibleCards) {
-            cards.getChildren().add(new CardView(c, true));
+            cards.getChildren().add(new CardView(c, true, true));
         }
         if (hasFaceDown) {
-            cards.getChildren().add(new CardView(new com.oop.payday.model.card.WildCard(-1), false));
+            cards.getChildren().add(new CardView(new com.oop.payday.model.card.WildCard(-1), false, true));
         }
 
-        VBox box = new VBox(12);
+        VBox box = new VBox(10);
         box.setAlignment(Pos.CENTER);
         box.getStyleClass().add("bundle-box");
-        box.setPadding(new Insets(16));
+        box.setPadding(new Insets(12));
+        box.setMaxWidth(240);
         box.getChildren().addAll(new Label(title), cards);
         box.getChildren().addAll(controls);
         return box;
@@ -600,21 +636,30 @@ public final class GameBoardController implements GameListener, HumanUi {
             List<HelperCard> helpers, List<CashInAction> actions) {
         VBox root = panelRoot("세트를 선택해 환금하거나, 카드를 처분/도움 요청하세요. 끝나면 '턴 종료'.");
         root.getStyleClass().add("cash-panel");
-        root.setSpacing(14);
+        root.setSpacing(10);
         root.setPadding(new Insets(16));
+        root.setMaxHeight(Double.MAX_VALUE);
 
         Set<Card> selected = new LinkedHashSet<>();
         Label preview = new Label("선택된 카드: 없음");
         preview.getStyleClass().add("preview");
+
         Label holdLimit = new Label(holdLimitText(player, remaining, actions));
         holdLimit.getStyleClass().add(remaining.size() > player.holdLimit() && !isTuskerQueued(actions)
                 ? "limit-warning" : "preview");
 
+        Label planned = new Label("예약된 행동: " + actions.size() + "개");
+        planned.getStyleClass().add("preview");
+
+        Region infoSpacer = new Region();
+        HBox.setHgrow(infoSpacer, Priority.ALWAYS);
+        HBox infoRow = new HBox(8, holdLimit, infoSpacer, planned);
+        infoRow.setAlignment(Pos.CENTER_LEFT);
+
         FlowPane cardsPane = new FlowPane(10, 10);
         cardsPane.setAlignment(Pos.CENTER);
-        cardsPane.setPrefWrapLength(760);
         for (Card card : remaining) {
-            CardView cv = new CardView(card, true);
+            CardView cv = new CardView(card, true, true);
             cv.setOnMouseClicked(e -> {
                 cv.toggleSelected();
                 if (cv.isSelected()) {
@@ -626,21 +671,19 @@ public final class GameBoardController implements GameListener, HumanUi {
             });
             cardsPane.getChildren().add(cv);
         }
-        ScrollPane cardScroller = new ScrollPane(cardsPane);
         StackPane cardStage = new StackPane(cardsPane);
         cardStage.getStyleClass().add("cash-card-stage");
         cardStage.setAlignment(Pos.CENTER);
-        cardScroller.setContent(cardStage);
+        ScrollPane cardScroller = new ScrollPane(cardStage);
         cardScroller.getStyleClass().add("cash-card-scroll");
         cardScroller.setFitToWidth(true);
         cardScroller.setHbarPolicy(ScrollBarPolicy.NEVER);
         cardScroller.setVbarPolicy(ScrollBarPolicy.AS_NEEDED);
-        cardScroller.setPrefViewportHeight(128);
-        cardScroller.setMaxHeight(180);
+        cardScroller.setPrefViewportHeight((int) (CardView.PANEL_HEIGHT + 44));
+        cardScroller.setMaxHeight((int) (CardView.PANEL_HEIGHT + 44));
         cardStage.minHeightProperty().bind(cardScroller.heightProperty().subtract(4));
-        VBox.setVgrow(cardScroller, Priority.ALWAYS);
 
-        Button cashBtn = new Button("선택 환금");
+        Button cashBtn = new Button("환금");
         cashBtn.getStyleClass().add("menu-button");
         cashBtn.setOnAction(e -> {
             List<Card> chosen = new ArrayList<>(selected);
@@ -655,7 +698,7 @@ public final class GameBoardController implements GameListener, HumanUi {
             renderCashInPanel(player, team, remaining, helpers, actions);
         });
 
-        Button discardBtn = new Button("선택 처분");
+        Button discardBtn = new Button("처분");
         discardBtn.getStyleClass().add("menu-button");
         discardBtn.setOnAction(e -> {
             if (selected.isEmpty()) {
@@ -684,45 +727,26 @@ public final class GameBoardController implements GameListener, HumanUi {
             player.provideCashIn(actions);
         });
 
-        HBox buttons = new HBox(12, cashBtn, discardBtn);
-        buttons.setAlignment(Pos.CENTER);
-
         HBox helperButtons = new HBox(8);
-        helperButtons.setAlignment(Pos.CENTER);
+        helperButtons.setAlignment(Pos.CENTER_LEFT);
         for (HelperCard helper : helpers) {
             Button helperBtn = new Button(helper.displayName());
             helperBtn.getStyleClass().add("helper-action-button");
             helperBtn.setDisable(helper.isUsed() || isHelperQueued(actions, helper));
-            helperBtn.setOnAction(e -> {
+            helperBtn.setOnAction(e2 -> {
                 actions.add(new CashInAction.UseHelper(helper));
                 renderCashInPanel(player, team, remaining, helpers, actions);
             });
             helperButtons.getChildren().add(helperBtn);
         }
 
-        Label planned = new Label("예약된 행동: " + actions.size() + "개");
-        planned.getStyleClass().add("preview");
+        Region btnSpacer = new Region();
+        HBox.setHgrow(btnSpacer, Priority.ALWAYS);
+        HBox bottomBar = new HBox(8, helperButtons, btnSpacer, cashBtn, discardBtn, doneBtn);
+        bottomBar.setAlignment(Pos.CENTER_LEFT);
+        bottomBar.getStyleClass().add("cash-bottom-bar");
 
-        VBox leftColumn = new VBox(12, holdLimit, cardScroller, preview);
-        leftColumn.getStyleClass().add("panel-column");
-        leftColumn.setFillWidth(true);
-        HBox.setHgrow(leftColumn, Priority.ALWAYS);
-
-        Label helperTitle = new Label("도움 요청");
-        helperTitle.getStyleClass().add("split-title");
-        Label actionTitle = new Label("이번 턴 행동");
-        actionTitle.getStyleClass().add("split-title");
-        VBox rightColumn = new VBox(12, actionTitle, planned, buttons, helperTitle, helperButtons, doneBtn);
-        rightColumn.getStyleClass().add("side-panel");
-        rightColumn.setPrefWidth(280);
-        rightColumn.setMinWidth(240);
-
-        HBox layout = new HBox(18, leftColumn, rightColumn);
-        layout.getStyleClass().add("panel-grid");
-        layout.setAlignment(Pos.TOP_CENTER);
-        HBox.setHgrow(leftColumn, Priority.ALWAYS);
-
-        root.getChildren().add(layout);
+        root.getChildren().addAll(infoRow, cardScroller, preview, bottomBar);
         setCenter(root);
     }
 
@@ -777,11 +801,17 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     private Node buildGameOverPanel(Team winner) {
-        VBox root = panelRoot("게임 종료!");
-        Label result = new Label("승리: " + winner.name() + " (" + winner.coins() + "코인)");
-        result.getStyleClass().add("title");
-        Label score = new Label(teamA.name() + " " + teamA.coins() + " : "
-                + teamB.coins() + " " + teamB.name());
+        VBox root = panelRoot("게임 종료");
+        root.setSpacing(16);
+
+        // 보드 레이아웃 반영: teamB(상대) = 위, teamA(나) = 아래
+        VBox topCard    = buildScoreCard(teamB, teamB == winner, false);
+        VBox bottomCard = buildScoreCard(teamA, teamA == winner, true);
+
+        VBox scoreColumn = new VBox(12, topCard, bottomCard);
+        scoreColumn.setAlignment(Pos.CENTER);
+        scoreColumn.setMaxWidth(440);
+
         Button mainMenu = new Button("메인 화면");
         mainMenu.getStyleClass().add("menu-button");
         mainMenu.setOnAction(e -> {
@@ -791,8 +821,31 @@ public final class GameBoardController implements GameListener, HumanUi {
                 alert("메인 화면으로 이동할 수 없습니다: " + ex.getMessage());
             }
         });
-        root.getChildren().addAll(result, score, mainMenu);
+
+        root.getChildren().addAll(scoreColumn, mainMenu);
         return root;
+    }
+
+    private VBox buildScoreCard(Team team, boolean win, boolean isBottom) {
+        Label badge = new Label(win ? "승리" : "패배");
+        badge.getStyleClass().add(win ? "score-win-badge" : "score-lose-badge");
+
+        Label coins = new Label(String.valueOf(team.coins()));
+        coins.getStyleClass().add(win ? "score-coins-win" : "score-coins-lose");
+
+        Label name = new Label(team.name());
+        name.getStyleClass().add("score-name");
+
+        VBox card;
+        if (isBottom) {
+            card = new VBox(8, coins, badge, name);
+        } else {
+            card = new VBox(8, name, badge, coins);
+        }
+        card.setAlignment(Pos.CENTER);
+        card.getStyleClass().addAll("score-card", win ? "score-card-win" : "score-card-lose");
+        card.setPadding(new Insets(18, 36, 18, 36));
+        return card;
     }
 
     // ===== 공통 헬퍼 =====
@@ -802,6 +855,7 @@ public final class GameBoardController implements GameListener, HumanUi {
         root.setAlignment(Pos.TOP_CENTER);
         root.setPadding(new Insets(24));
         root.setMaxWidth(1120);
+        root.setMaxHeight(Region.USE_PREF_SIZE);
         Label g = new Label(guide);
         g.getStyleClass().add("guide");
         g.setWrapText(true);
@@ -810,17 +864,11 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     private Node waitingPanel(String text) {
-        VBox root = new VBox(new Label(text));
-        root.setAlignment(Pos.CENTER);
-        return root;
+        return new StackPane();
     }
 
     private void setCenter(Node node) {
         contentArea.getChildren().setAll(node);
-        if (contentScroll != null) {
-            contentScroll.setVvalue(0);
-            contentScroll.setHvalue(0);
-        }
     }
 
     private void setCenterAnimated(Node node) {
@@ -957,18 +1005,32 @@ public final class GameBoardController implements GameListener, HumanUi {
         if (distributionFieldUpdatePending) {
             return;
         }
-        renderField(fieldALabel, fieldAFlow, teamA, "내 필드");
-        renderField(fieldBLabel, fieldBFlow, teamB, "상대 필드");
+        renderField(fieldATitleLabel, fieldAOfficerLabel, fieldAOfficerEffectLabel, fieldACoinsLabel, fieldACountLabel, fieldAFlow, teamA, "내 필드");
+        renderField(fieldBTitleLabel, fieldBOfficerLabel, fieldBOfficerEffectLabel, fieldBCoinsLabel, fieldBCountLabel, fieldBFlow, teamB, "상대 필드");
     }
 
-    private void renderField(Label label, HBox field, Team team, String fallback) {
+    private void renderField(Label titleLabel, Label officerLabel, Label officerEffectLabel,
+            Label coinsLabel, Label countLabel, FlowPane field, Team team, String fallback) {
         if (team == null) {
-            label.setText(fallback);
+            titleLabel.setText(fallback);
+            officerLabel.setText("간부 없음");
+            officerEffectLabel.setText("");
+            coinsLabel.setText("0 코인");
+            countLabel.setText("");
             field.getChildren().clear();
             return;
         }
         Player player = team.leader();
-        label.setText(describeField(fallback, team, player));
+        titleLabel.setText(fallback + " · " + player.name());
+        if (player.officer() != null) {
+            officerLabel.setText(player.officer().korean());
+            officerEffectLabel.setText(player.officer().effectText());
+        } else {
+            officerLabel.setText("간부 없음");
+            officerEffectLabel.setText("");
+        }
+        coinsLabel.setText(displayedCoins(team) + " 코인");
+        countLabel.setText("보유 " + player.holdingCount() + " / " + player.holdLimit());
         field.getChildren().clear();
         if (player.holdings().isEmpty()) {
             Label empty = new Label("보물 없음");
@@ -979,26 +1041,6 @@ public final class GameBoardController implements GameListener, HumanUi {
         for (Card card : player.holdings()) {
             field.getChildren().add(new CardView(card, true));
         }
-    }
-
-    private String fieldSummary(String fallback, Team team, Player player) {
-        String officer = player.officer() == null ? "간부 없음" : player.officer().korean();
-        long helperUsed = player.helpers().stream().filter(HelperCard::isUsed).count();
-        String helpers = "도우미 " + helperUsed + "/" + player.helpers().size();
-        return fallback + " · " + team.name()
-                + " · " + team.coins() + "코인"
-                + " · 보유 " + player.holdingCount() + "/" + player.holdLimit()
-                + " · " + officer
-                + " · " + helpers;
-    }
-
-    private String describeField(String fallback, Team team, Player player) {
-        String officer = player.officer() == null ? "간부 없음" : player.officer().korean();
-        long helperUsed = player.helpers().stream().filter(HelperCard::isUsed).count();
-        String helpers = "도우미 " + helperUsed + "/" + player.helpers().size();
-        return fallback + " · " + player.name()
-                + "\n" + displayedCoins(team) + "코인 · 보유 " + player.holdingCount() + "/" + player.holdLimit()
-                + " · " + officer + " · " + helpers;
     }
 
     private Team teamFor(Player player) {
@@ -1067,8 +1109,8 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     private void playCoinChangeAnimation(Team team, int delta) {
-        StackPane target = team == teamA ? fieldAStage : team == teamB ? fieldBStage : null;
-        if (target == null || delta == 0) {
+        Label coinsLabel = team == teamA ? fieldACoinsLabel : team == teamB ? fieldBCoinsLabel : null;
+        if (coinsLabel == null || delta == 0 || globalOverlay == null) {
             return;
         }
         Label floating = new Label((delta > 0 ? "+" : "") + delta);
@@ -1076,17 +1118,20 @@ public final class GameBoardController implements GameListener, HumanUi {
         floating.getStyleClass().add(delta > 0 ? "coin-float-gain" : "coin-float-loss");
         floating.setMouseTransparent(true);
         floating.setOpacity(0);
-        floating.setTranslateY(18);
-        target.getChildren().add(floating);
+
+        Bounds bounds = coinsLabel.localToScene(coinsLabel.getBoundsInLocal());
+        floating.setLayoutX(bounds.getMinX());
+        floating.setLayoutY(bounds.getMinY() - 8);
+        globalOverlay.getChildren().add(floating);
 
         FadeTransition fadeIn = fade(floating, 0, 1, 120);
-        TranslateTransition rise = new TranslateTransition(Duration.millis(760), floating);
-        rise.setFromY(18);
-        rise.setToY(-34);
-        FadeTransition fadeOut = fade(floating, 1, 0, 760);
+        TranslateTransition rise = new TranslateTransition(Duration.millis(900), floating);
+        rise.setFromY(0);
+        rise.setToY(-44);
+        FadeTransition fadeOut = fade(floating, 1, 0, 1100);
         ParallelTransition floatOut = new ParallelTransition(rise, fadeOut);
         fadeIn.setOnFinished(e -> floatOut.play());
-        floatOut.setOnFinished(e -> target.getChildren().remove(floating));
+        floatOut.setOnFinished(e -> globalOverlay.getChildren().remove(floating));
         fadeIn.play();
     }
 

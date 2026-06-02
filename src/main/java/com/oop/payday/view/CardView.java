@@ -20,20 +20,40 @@ import javafx.scene.text.TextAlignment;
  */
 public final class CardView extends StackPane {
 
-    public static final double WIDTH = 78;
-    public static final double HEIGHT = 112;
+    /** 카드 필드(각자 필드 영역)에 사용하는 크기. */
+    public static final double WIDTH = 90;
+    public static final double HEIGHT = 128;
+
+    /** 패널(분할·선택·환금 UI)에 사용하는 크기 — 필드 크기의 약 87%. */
+    public static final double PANEL_WIDTH = 78;
+    public static final double PANEL_HEIGHT = 111;
 
     private final Card card;
     private boolean selected;
+    private final double w;
+    private final double h;
 
+    /** 카드 필드용 — 큰 크기. */
     public CardView(Card card, boolean faceUp) {
+        this(card, faceUp, WIDTH, HEIGHT);
+    }
+
+    /** 패널용 — {@code panelSize=true} 이면 작은 크기 사용. */
+    public CardView(Card card, boolean faceUp, boolean panelSize) {
+        this(card, faceUp, panelSize ? PANEL_WIDTH : WIDTH, panelSize ? PANEL_HEIGHT : HEIGHT);
+    }
+
+    private CardView(Card card, boolean faceUp, double w, double h) {
         this.card = card;
-        setPrefSize(WIDTH, HEIGHT);
-        setMinSize(WIDTH, HEIGHT);
-        setMaxSize(WIDTH, HEIGHT);
-        Rectangle clip = new Rectangle(WIDTH, HEIGHT);
-        clip.setArcWidth(14);
-        clip.setArcHeight(14);
+        this.w = w;
+        this.h = h;
+        setPrefSize(w, h);
+        setMinSize(w, h);
+        setMaxSize(w, h);
+        double arc = 14 * w / WIDTH;
+        Rectangle clip = new Rectangle(w, h);
+        clip.setArcWidth(arc);
+        clip.setArcHeight(arc);
         setClip(clip);
         getStyleClass().add("card");
         if (faceUp) {
@@ -67,6 +87,15 @@ public final class CardView extends StackPane {
     }
 
     private void renderFront() {
+        double scale = w / WIDTH;
+        int iconSize   = (int) Math.round(38 * scale);
+        int subSize    = (int) Math.round(11 * scale);
+        int cornerSize = (int) Math.round(19 * scale);
+        int cornerMinW = (int) Math.round(18 * scale);
+        int cornerMinH = (int) Math.round(22 * scale);
+        double cornerMarginX = 8 * scale;
+        double cornerMarginY = 8 * scale;
+
         String bg;
         String cornerText;
         String iconText;
@@ -88,7 +117,7 @@ public final class CardView extends StackPane {
             bg = "linear-gradient(to bottom right, #8060a9, #3b294d)";
             cornerText = String.valueOf(cursed.number());
             iconText = "▧";
-            subText = "저주받은 그림";
+            subText = "저주 그림";
         } else if (card instanceof StealCard) {
             bg = "linear-gradient(to bottom right, #6a4526, #2c1d15)";
             cornerText = "↪";
@@ -102,51 +131,56 @@ public final class CardView extends StackPane {
         }
 
         String textColor = darkText ? "#211914" : "#fff7de";
-        Label top = cornerLabel(cornerText, textColor);
+        Label top = cornerLabel(cornerText, textColor, cornerSize, cornerMinW, cornerMinH);
         StackPane.setAlignment(top, Pos.TOP_LEFT);
-        StackPane.setMargin(top, new Insets(8, 0, 0, 8));
+        StackPane.setMargin(top, new Insets(cornerMarginY, 0, 0, cornerMarginX));
 
-        Label bottom = cornerLabel(cornerText, textColor);
+        Label bottom = cornerLabel(cornerText, textColor, cornerSize, cornerMinW, cornerMinH);
         bottom.setRotate(180);
         StackPane.setAlignment(bottom, Pos.BOTTOM_RIGHT);
-        StackPane.setMargin(bottom, new Insets(0, 8, 8, 0));
+        StackPane.setMargin(bottom, new Insets(0, cornerMarginX, cornerMarginY, 0));
 
         Label icon = new Label(iconText);
-        icon.setStyle("-fx-font-size: 34px; -fx-font-weight: bold; -fx-text-fill: " + textColor
+        icon.setStyle("-fx-font-size: " + iconSize + "px; -fx-font-weight: bold; -fx-text-fill: " + textColor
                 + "; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.28), 2, 0, 1, 1);");
         Label sub = new Label(subText);
-        sub.setStyle("-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: " + textColor + ";");
+        sub.setStyle("-fx-font-size: " + subSize + "px; -fx-font-weight: bold; -fx-text-fill: " + textColor + ";");
         sub.setWrapText(true);
         sub.setTextAlignment(TextAlignment.CENTER);
 
         StackPane face = new StackPane();
-        face.setPrefSize(WIDTH, HEIGHT);
-        face.setMinSize(WIDTH, HEIGHT);
-        face.setMaxSize(WIDTH, HEIGHT);
+        face.setPrefSize(w, h);
+        face.setMinSize(w, h);
+        face.setMaxSize(w, h);
         face.setStyle("-fx-background-color: #11100e, " + bg + ";"
                 + " -fx-background-insets: 0, 3;"
                 + " -fx-background-radius: 7, 4;"
                 + " -fx-border-color: #11100e; -fx-border-width: 0; -fx-border-radius: 7;"
                 + " -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 4, 0, 1, 2);");
 
-        VBox box = new VBox(4, icon, sub);
+        VBox box = new VBox(4 * scale, icon, sub);
         box.setAlignment(Pos.CENTER);
-        box.setMaxWidth(WIDTH - 16);
+        box.setMaxWidth(w - 16 * scale);
         face.getChildren().setAll(box, top, bottom);
         getChildren().setAll(face);
     }
 
     private void renderBack() {
+        double scale = w / WIDTH;
+        int lockSize  = (int) Math.round(38 * scale);
+        int plankSize = (int) Math.round(22 * scale);
+        double plankSpacing = 7 * scale;
+
         Label lock = new Label("▣");
-        lock.setStyle("-fx-font-size: 34px; -fx-font-weight: bold; -fx-text-fill: #f1c15d;"
+        lock.setStyle("-fx-font-size: " + lockSize + "px; -fx-font-weight: bold; -fx-text-fill: #f1c15d;"
                 + " -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.55), 2, 0, 1, 1);");
         Label plank = new Label("━\n━\n━");
-        plank.setStyle("-fx-font-size: 20px; -fx-text-fill: rgba(35,18,10,0.55); -fx-line-spacing: 7;");
+        plank.setStyle("-fx-font-size: " + plankSize + "px; -fx-text-fill: rgba(35,18,10,0.55); -fx-line-spacing: " + plankSpacing + ";");
         plank.setTextAlignment(TextAlignment.CENTER);
         StackPane back = new StackPane();
-        back.setPrefSize(WIDTH, HEIGHT);
-        back.setMinSize(WIDTH, HEIGHT);
-        back.setMaxSize(WIDTH, HEIGHT);
+        back.setPrefSize(w, h);
+        back.setMinSize(w, h);
+        back.setMaxSize(w, h);
         back.setStyle("-fx-background-color: #11100e, linear-gradient(to bottom, #8a5529, #5b331b 45%, #7a4521), #d7a84e;"
                 + " -fx-background-insets: 0, 3, 8;"
                 + " -fx-background-radius: 7, 4, 3;"
@@ -157,13 +191,13 @@ public final class CardView extends StackPane {
         getChildren().setAll(back);
     }
 
-    private Label cornerLabel(String text, String textColor) {
+    private Label cornerLabel(String text, String textColor, int fontSize, int minW, int minH) {
         Label label = new Label(text);
         label.setPadding(Insets.EMPTY);
-        label.setMinSize(18, 22);
+        label.setMinSize(minW, minH);
         label.setAlignment(Pos.CENTER);
         label.setStyle("-fx-font-family: 'Arial Black', 'Malgun Gothic';"
-                + " -fx-font-size: 17px; -fx-font-weight: 900; -fx-text-fill: " + textColor
+                + " -fx-font-size: " + fontSize + "px; -fx-font-weight: 900; -fx-text-fill: " + textColor
                 + "; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 1, 0, 0.8, 0.8);");
         return label;
     }
