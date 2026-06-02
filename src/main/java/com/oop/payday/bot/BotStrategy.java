@@ -1,0 +1,40 @@
+package com.oop.payday.bot;
+
+import java.util.List;
+
+import com.oop.payday.decision.CashInAction;
+import com.oop.payday.decision.CashInContext;
+import com.oop.payday.decision.ChoiceView;
+import com.oop.payday.decision.SplitDecision;
+import com.oop.payday.model.card.Card;
+import com.oop.payday.model.helper.HelperCard;
+
+/**
+ * 봇의 두뇌. 봇 의사결정의 단일 확장점이다(전략 패턴).
+ *
+ * <p>이 인터페이스만 구현하면 봇의 실력/방식을 통째로 교체할 수 있다:
+ * 규칙 기반({@link HeuristicBotStrategy}), 난이도별 변형, 혹은 추후 LLM 기반 전략 등.
+ * 게임 엔진과 {@code BotPlayer} 는 구체 구현을 모른 채 이 계약에만 의존한다.
+ *
+ * <p>각 메서드는 입력만으로 결정을 내리는 순수 함수에 가깝게 두어,
+ * 동기 휴리스틱이든 비동기 호출(LLM)을 감싼 구현이든 끼울 수 있게 한다.
+ */
+public interface BotStrategy {
+
+    /** 꾀부리기: 손에 든 5장으로 분할 결정을 만든다. */
+    SplitDecision decideSplit(List<Card> hand);
+
+    /** 분배: 두 묶음 중 가져갈 인덱스(0 또는 1). */
+    int decideChoice(ChoiceView view);
+
+    /** 준비: 도우미 후보 중 사용할 카드를 고른다. */
+    List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount);
+
+    /** 환금: 보관 카드와 도우미로 수행할 행동 목록. */
+    List<CashInAction> decideCashIn(CashInContext context);
+
+    /** 화면/로그 표기에 쓰일 전략 이름(예: "규칙 기반"). */
+    default String displayName() {
+        return "봇";
+    }
+}

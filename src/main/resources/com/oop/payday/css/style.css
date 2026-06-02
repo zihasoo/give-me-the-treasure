@@ -1,0 +1,359 @@
+.root {
+    -fx-font-family: "Malgun Gothic", "Book Antiqua", serif;
+    -fx-font-size: 14px;
+}
+
+.main-menu {
+    -fx-background-color: linear-gradient(to bottom, #12262a, #1b3037 58%, #2d2431);
+    -fx-padding: 40;
+}
+
+.title {
+    -fx-font-family: "Book Antiqua", "Malgun Gothic", serif;
+    -fx-font-size: 46px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #f2d36b;
+}
+
+.subtitle {
+    -fx-font-size: 17px;
+    -fx-text-fill: #b9c8c2;
+    -fx-padding: 0 0 20 0;
+}
+
+.menu-button {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-background-color: #f2d36b;
+    -fx-text-fill: #172024;
+    -fx-background-radius: 8;
+    -fx-padding: 9 18;
+}
+
+.menu-button:hover {
+    -fx-background-color: #ffe58a;
+}
+
+.status {
+    -fx-text-fill: #91dfc0;
+    -fx-font-size: 14px;
+}
+
+.check-box {
+    -fx-text-fill: #e8f1ed;
+    -fx-font-size: 14px;
+}
+
+.check-box .box {
+    -fx-background-color: rgba(255,255,255,0.10);
+    -fx-border-color: rgba(242,211,107,0.65);
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+}
+
+.check-box:selected .mark {
+    -fx-background-color: #172024;
+}
+
+.check-box:selected .box {
+    -fx-background-color: #f2d36b;
+}
+
+.board {
+    -fx-background-color: radial-gradient(center 50% 40%, radius 90%, #36545c 0%, #233940 45%, #15242b 100%);
+}
+
+.top-stack,
+.bottom-stack {
+    -fx-background-color: transparent;
+    -fx-padding: 16 28 20 28;
+}
+
+.info-bar {
+    -fx-background-color: rgba(10, 19, 24, 0.72);
+    -fx-background-radius: 999;
+    -fx-padding: 10 22 10 22;
+    -fx-border-color: rgba(242,211,107,0.26);
+    -fx-border-radius: 999;
+    -fx-border-width: 1;
+}
+
+.info {
+    -fx-text-fill: #d8e3df;
+    -fx-font-size: 15px;
+}
+
+.center-area {
+    -fx-padding: 20 28;
+}
+
+.content-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-border-color: transparent;
+    -fx-fit-to-width: true;
+    -fx-pannable: true;
+}
+
+.content-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.field-stage {
+    -fx-alignment: center;
+}
+
+.field-strip {
+    -fx-background-color: transparent;
+    -fx-padding: 4 0;
+    -fx-min-height: 150;
+    -fx-pref-height: 150;
+    -fx-max-height: 150;
+    -fx-max-width: 1120;
+}
+
+.field-title {
+    -fx-text-fill: #f6e3a2;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-alignment: center;
+    -fx-text-alignment: center;
+    -fx-wrap-text: true;
+    -fx-background-color: rgba(11, 19, 23, 0.66);
+    -fx-background-radius: 999;
+    -fx-border-color: rgba(242,211,107,0.22);
+    -fx-border-radius: 999;
+    -fx-padding: 8 16 8 16;
+}
+
+.field-empty {
+    -fx-text-fill: #7d918d;
+    -fx-font-size: 13px;
+}
+
+.field-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-padding: 0;
+    -fx-pref-height: 122;
+    -fx-max-height: 122;
+    -fx-border-color: transparent;
+}
+
+.field-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.bottom-bar {
+    -fx-background-color: rgba(10, 19, 24, 0.7);
+    -fx-background-radius: 18;
+    -fx-padding: 10 20 12 20;
+    -fx-border-color: rgba(242,211,107,0.18);
+    -fx-border-radius: 18;
+    -fx-border-width: 1;
+}
+
+.turn {
+    -fx-text-fill: #f2d36b;
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+}
+
+.message {
+    -fx-text-fill: #afbeb9;
+    -fx-font-size: 13px;
+}
+
+.guide {
+    -fx-text-fill: #e8f1ed;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+
+.cash-panel {
+    -fx-max-width: 1100;
+}
+
+.cash-card-scroll {
+    -fx-background-color: rgba(12,18,20,0.16);
+    -fx-background-radius: 18;
+    -fx-border-color: rgba(242,211,107,0.16);
+    -fx-border-radius: 18;
+}
+
+.cash-card-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.cash-card-stage {
+    -fx-alignment: center;
+}
+
+.panel-grid {
+    -fx-alignment: top-center;
+}
+
+.panel-column {
+    -fx-background-color: rgba(10, 19, 24, 0.52);
+    -fx-background-radius: 22;
+    -fx-border-color: rgba(242,211,107,0.14);
+    -fx-border-radius: 22;
+    -fx-padding: 16;
+}
+
+.side-panel {
+    -fx-background-color: rgba(10, 19, 24, 0.72);
+    -fx-background-radius: 22;
+    -fx-border-color: rgba(242,211,107,0.18);
+    -fx-border-radius: 22;
+    -fx-padding: 16;
+    -fx-alignment: top-center;
+}
+
+.helper-grid {
+    -fx-alignment: center;
+}
+
+.preview {
+    -fx-text-fill: #91dfc0;
+    -fx-font-size: 14px;
+}
+
+.limit-warning {
+    -fx-text-fill: #ff8d8d;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+
+.bundle-box,
+.split-bundle-box {
+    -fx-background-color: rgba(255,255,255,0.055);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(242,211,107,0.38);
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+}
+
+.bundle-picked {
+    -fx-background-color: rgba(145,223,192,0.18);
+    -fx-background-radius: 8;
+    -fx-border-color: #91dfc0;
+    -fx-border-radius: 8;
+    -fx-border-width: 2;
+    -fx-effect: dropshadow(gaussian, rgba(145,223,192,0.45), 18, 0.25, 0, 0);
+}
+
+.split-title {
+    -fx-text-fill: #f2d36b;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+
+.split-drop-zone {
+    -fx-background-color: rgba(0,0,0,0.16);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(216,227,223,0.22);
+    -fx-border-style: segments(7, 5);
+    -fx-border-radius: 8;
+    -fx-border-width: 1.2;
+    -fx-padding: 12;
+}
+
+.split-card {
+    -fx-cursor: move;
+}
+
+.split-face-down {
+    -fx-effect: dropshadow(gaussian, #f2d36b, 18, 0.65, 0, 0);
+}
+
+.face-down-ribbon {
+    -fx-background-color: rgba(13,21,27,0.82);
+    -fx-text-fill: #f2d36b;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 3 7;
+    -fx-background-radius: 6;
+}
+
+.distribution-flash {
+    -fx-background-color: rgba(8,14,18,0.92);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(242,211,107,0.45);
+    -fx-border-radius: 8;
+}
+
+.distribution-flash .guide,
+.distribution-flash .split-title {
+    -fx-text-fill: #f2d36b;
+}
+
+.phase-banner {
+    -fx-font-family: "Book Antiqua", "Malgun Gothic", serif;
+    -fx-font-size: 34px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #f2d36b;
+    -fx-background-color: rgba(8,14,18,0.84);
+    -fx-background-radius: 8;
+    -fx-padding: 18 32;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.42), 22, 0.3, 0, 6);
+}
+
+.helper-button {
+    -fx-font-size: 14px;
+    -fx-background-color: rgba(255,255,255,0.07);
+    -fx-text-fill: #e8f1ed;
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(242,211,107,0.35);
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-padding: 14;
+}
+
+.helper-button:selected {
+    -fx-background-color: #f2d36b;
+    -fx-text-fill: #172024;
+}
+
+.helper-action-button {
+    -fx-font-size: 13px;
+    -fx-background-color: #2e8e86;
+    -fx-text-fill: white;
+    -fx-background-radius: 8;
+    -fx-padding: 8 12;
+}
+
+.helper-action-button:hover {
+    -fx-background-color: #3eb5aa;
+}
+
+.card {
+    -fx-cursor: hand;
+}
+
+.card-selected {
+    -fx-effect: dropshadow(gaussian, #f2d36b, 14, 0.6, 0, 0);
+    -fx-translate-y: -8;
+}
+
+.coin-float {
+    -fx-font-family: "Book Antiqua", "Malgun Gothic", serif;
+    -fx-font-size: 28px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(11,19,23,0.78);
+    -fx-background-radius: 999;
+    -fx-padding: 6 14 6 14;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.28), 16, 0.22, 0, 4);
+}
+
+.coin-float-gain {
+    -fx-text-fill: #9df2a6;
+    -fx-border-color: rgba(157,242,166,0.35);
+    -fx-border-radius: 999;
+}
+
+.coin-float-loss {
+    -fx-text-fill: #ff8f8f;
+    -fx-border-color: rgba(255,143,143,0.3);
+    -fx-border-radius: 999;
+}

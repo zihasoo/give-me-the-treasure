@@ -1,0 +1,29 @@
+plugins {
+    id 'java'
+    id 'org.openjfx.javafxplugin' version '0.1.0'
+    id 'application'
+}
+
+group = 'com.oop'
+version = '1.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+javafx {
+    version = '21'
+    modules = ['javafx.controls', 'javafx.fxml']
+}
+
+application {
+    mainClass = 'com.oop.payday.Main'
+    // JavaFX 21 을 Java 25 에서 실행할 때 뜨는 네이티브 접근 경고 억제.
+    applicationDefaultJvmArgs = ['--enable-native-access=javafx.graphics']
+}
+
+repositories {
+    mavenCentral()
+}

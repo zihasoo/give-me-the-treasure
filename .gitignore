@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Metals / Bloop (Scala LSP, used by some Java setups)
+.metals/
+.bloop/
+
+# Compiled output
+bin/
+out/
+
+# OS
+.DS_Store
+Thumbs.db

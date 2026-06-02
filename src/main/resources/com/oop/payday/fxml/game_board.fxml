@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane fx:id="root" styleClass="board"
+            xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.oop.payday.controller.GameBoardController">
+    <top>
+        <VBox alignment="TOP_CENTER" styleClass="top-stack" spacing="10.0">
+            <children>
+                <StackPane fx:id="fieldBStage" styleClass="field-stage">
+                    <children>
+                        <VBox alignment="CENTER" styleClass="field-strip field-strip-opponent" spacing="10.0">
+                            <children>
+                                <Label fx:id="fieldBLabel" styleClass="field-title" text="상대 필드" />
+                                <ScrollPane fitToHeight="true" fitToWidth="true" hbarPolicy="AS_NEEDED"
+                                            vbarPolicy="NEVER" styleClass="field-scroll">
+                                    <content>
+                                        <HBox fx:id="fieldBFlow" alignment="CENTER" spacing="8.0" />
+                                    </content>
+                                </ScrollPane>
+                            </children>
+                        </VBox>
+                    </children>
+                </StackPane>
+                <HBox alignment="CENTER" styleClass="info-bar" spacing="24.0">
+                    <children>
+                        <Label fx:id="roundLabel" styleClass="info" text="라운드 -" />
+                        <Label fx:id="phaseLabel" styleClass="info" text="단계 -" />
+                    </children>
+                </HBox>
+            </children>
+        </VBox>
+    </top>
+    <center>
+        <StackPane fx:id="centerArea" styleClass="center-area">
+            <children>
+                <ScrollPane fx:id="contentScroll" fitToWidth="true" fitToHeight="true"
+                            hbarPolicy="NEVER" vbarPolicy="AS_NEEDED" styleClass="content-scroll">
+                    <content>
+                        <StackPane fx:id="contentArea" />
+                    </content>
+                </ScrollPane>
+                <StackPane fx:id="overlayArea" mouseTransparent="true" />
+            </children>
+        </StackPane>
+    </center>
+    <bottom>
+        <VBox alignment="BOTTOM_CENTER" styleClass="bottom-stack" spacing="10.0">
+            <children>
+                <VBox alignment="CENTER" styleClass="bottom-bar" spacing="4.0">
+                    <children>
+                        <Label fx:id="turnLabel" styleClass="turn" />
+                        <Label fx:id="messageLabel" styleClass="message" />
+                    </children>
+                </VBox>
+                <StackPane fx:id="fieldAStage" styleClass="field-stage">
+                    <children>
+                        <VBox alignment="CENTER" styleClass="field-strip field-strip-mine" spacing="10.0">
+                            <children>
+                                <Label fx:id="fieldALabel" styleClass="field-title" text="내 필드" />
+                                <ScrollPane fitToHeight="true" fitToWidth="true" hbarPolicy="AS_NEEDED"
+                                            vbarPolicy="NEVER" styleClass="field-scroll">
+                                    <content>
+                                        <HBox fx:id="fieldAFlow" alignment="CENTER" spacing="8.0" />
+                                    </content>
+                                </ScrollPane>
+                            </children>
+                        </VBox>
+                    </children>
+                </StackPane>
+            </children>
+        </VBox>
+    </bottom>
+</BorderPane>
