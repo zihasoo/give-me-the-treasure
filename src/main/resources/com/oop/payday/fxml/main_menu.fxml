@@ -26,10 +26,12 @@
                 <VBox alignment="CENTER" spacing="10.0">
                     <children>
                         <Label styleClass="menu-section" text="게임 모드" />
-                        <Button fx:id="pvpButton" maxWidth="Infinity" styleClass="menu-mode-button"
-                                text="사람 vs 사람" onAction="#onPlayerVsPlayer" />
-                        <Button fx:id="pvbButton" maxWidth="Infinity" styleClass="menu-mode-button"
-                                text="사람 vs 봇" onAction="#onPlayerVsBot" />
+                        <Button maxWidth="Infinity" styleClass="menu-mode-button"
+                                text="플레이 봇과 대전" onAction="#onPlayerVsPlayBot" />
+                        <Button maxWidth="Infinity" styleClass="menu-mode-button"
+                                text="테스트 봇과 대전" onAction="#onPlayerVsTestBot" />
+                        <Button maxWidth="Infinity" styleClass="menu-mode-button" disable="true"
+                                text="네트워크 대전 (준비 중)" />
                     </children>
                 </VBox>
 

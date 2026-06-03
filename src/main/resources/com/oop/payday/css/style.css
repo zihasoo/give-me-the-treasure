@@ -259,6 +259,22 @@
     -fx-font-weight: bold;
 }
 
+.waiting-panel {
+    -fx-background-color: rgba(10, 19, 24, 0.62);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(242, 211, 107, 0.24);
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-alignment: center;
+}
+
+.waiting-label {
+    -fx-text-fill: #f2d36b;
+    -fx-font-size: 21px;
+    -fx-font-weight: bold;
+    -fx-text-alignment: center;
+}
+
 .cash-panel {
     -fx-max-width: 1100;
 }
@@ -375,17 +391,6 @@
 .distribution-flash .guide,
 .distribution-flash .split-title {
     -fx-text-fill: #f2d36b;
-}
-
-.phase-banner {
-    -fx-font-family: "Book Antiqua", "Malgun Gothic", serif;
-    -fx-font-size: 34px;
-    -fx-font-weight: bold;
-    -fx-text-fill: #f2d36b;
-    -fx-background-color: rgba(8,14,18,0.84);
-    -fx-background-radius: 8;
-    -fx-padding: 18 32;
-    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.42), 22, 0.3, 0, 6);
 }
 
 .helper-button {

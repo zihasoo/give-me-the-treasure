@@ -10,7 +10,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 
 /**
- * 메인 메뉴 컨트롤러. 게임 모드(PvP / PvBot)와 연습 룰 여부를 선택해 게임을 시작한다.
+ * 메인 메뉴 컨트롤러. 봇 종류(플레이/테스트)와 연습 룰 여부를 선택해 게임을 시작한다.
  */
 public class MainMenuController {
 
@@ -21,20 +21,20 @@ public class MainMenuController {
     private Label statusLabel;
 
     @FXML
-    private void onPlayerVsPlayer() {
+    private void onPlayerVsPlayBot() {
         startGame(false);
     }
 
     @FXML
-    private void onPlayerVsBot() {
+    private void onPlayerVsTestBot() {
         startGame(true);
     }
 
-    private void startGame(boolean vsBot) {
+    private void startGame(boolean testBot) {
         boolean practice = practiceRuleCheck.isSelected();
-        GameConfig config = practice ? GameConfig.practice(vsBot) : GameConfig.standard(vsBot);
+        GameConfig config = practice ? GameConfig.practice(true) : GameConfig.standard(true);
         try {
-            GameApp.get().showGameBoard(config, vsBot);
+            GameApp.get().showGameBoard(config, testBot);
         } catch (IOException e) {
             statusLabel.setText("게임 화면을 여는 데 실패했습니다: " + e.getMessage());
         }

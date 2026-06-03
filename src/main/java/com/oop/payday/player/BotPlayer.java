@@ -13,42 +13,62 @@ import com.oop.payday.model.helper.HelperCard;
 
 /**
  * 봇 플레이어. 모든 의사결정을 주입받은 {@link BotStrategy} 에 위임한다(전략 패턴).
- * 전략만 갈아끼우면 봇의 실력/방식을 바꿀 수 있다.
  *
- * <p>각 결정 전에 사람처럼 "생각하는" 시간을 두어, 봇전이 순식간에 끝나지 않고
- * 화면 연출(묶음 공개·환금 애니메이션)을 눈으로 따라갈 수 있게 한다. 게임 로직은
- * 전용 스레드에서 돌기 때문에 여기서 잠깐 블록해도 UI 응답성에는 영향이 없다.
+ * <p>정적 팩토리 {@link #test}와 {@link #play}로 생성한다:
+ * <ul>
+ *   <li>{@code test} — 딜레이 없음. 자동 테스트·빠른 반복용.
+ *   <li>{@code play} — 결정마다 사람처럼 생각 시간 + 환금 단계별 공개 텀(플레이용).
+ * </ul>
  */
 public final class BotPlayer extends Player {
 
     private final BotStrategy strategy;
+    private final int thinkMin;
+    private final int thinkMax;
+    private final int pace;
 
-    public BotPlayer(String name, BotStrategy strategy) {
+    private BotPlayer(String name, BotStrategy strategy, int thinkMin, int thinkMax, int pace) {
         super(name);
         this.strategy = strategy;
+        this.thinkMin = thinkMin;
+        this.thinkMax = thinkMax;
+        this.pace = pace;
+    }
+
+    /** 딜레이 없는 테스트 봇. */
+    public static BotPlayer test(BotStrategy strategy) {
+        return new BotPlayer("봇", strategy, 0, 0, 0);
+    }
+
+    /** 생각 시간 + 환금 단계 공개 텀이 있는 플레이용 봇. */
+    public static BotPlayer play(BotStrategy strategy) {
+        return new BotPlayer("봇", strategy, 2000, 4000, 850);
     }
 
     @Override
+    public int revealPaceMillis() { return pace; }
+
+    @Override
     public SplitDecision decideSplit(List<Card> hand) {
-        think(900, 1700);
+        think();
         return strategy.decideSplit(hand);
     }
 
     @Override
     public int decideChoice(ChoiceView view) {
-        think(900, 1700);
+        think();
         return strategy.decideChoice(view);
     }
 
     @Override
     public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount) {
-        think(700, 1200);
+        think();
         return strategy.decideHelpers(options, chooseCount);
     }
 
     @Override
     public List<CashInAction> decideCashIn(CashInContext context) {
-        think(1000, 1800);
+        think();
         return strategy.decideCashIn(context);
     }
 
@@ -57,10 +77,10 @@ public final class BotPlayer extends Player {
         return true;
     }
 
-    /** 사람처럼 보이도록 결정 직전에 무작위로 잠깐 멈춘다(게임 스레드 한정). */
-    private void think(int minMillis, int maxMillis) {
+    private void think() {
+        if (thinkMin <= 0 && thinkMax <= 0) return;
         try {
-            Thread.sleep(ThreadLocalRandom.current().nextInt(minMillis, maxMillis + 1));
+            Thread.sleep(ThreadLocalRandom.current().nextInt(thinkMin, thinkMax + 1));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

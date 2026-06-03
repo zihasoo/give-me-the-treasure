@@ -10,6 +10,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 
 import com.oop.payday.decision.BundleView;
 import com.oop.payday.decision.CashInAction;
@@ -93,6 +95,7 @@ public final class Game {
 
     private void schemePhase() {
         listener.onPhaseChanged(Phase.SCHEME, round, splitTeam);
+        listener.awaitAnimations();
         Player splitter = splitTeam.leader();
         List<Card> hand = deck.draw(5);
         listener.onHandDealt(splitter, hand);
@@ -108,6 +111,7 @@ public final class Game {
 
     private void distributePhase() {
         listener.onPhaseChanged(Phase.DISTRIBUTE, round, splitTeam);
+        listener.awaitAnimations();
 
         List<Card> bundleA = currentSplit.bundleA();
         List<Card> bundleB = currentSplit.bundleB();
@@ -166,21 +170,47 @@ public final class Game {
         listener.awaitAnimations();
         cashCountsThisRound.clear();
         cashBlockedThisRound.clear();
+
+        // 순서 목록 + 팀 매핑
+        List<Player> players = new ArrayList<>();
+        Map<Player, Team> playerTeam = new HashMap<>();
         for (Team team : List.of(splitTeam, chooseTeam)) {
-            for (Player player : team.members()) {
-                processCashIn(player, team);
-                if (instantWinner != null) {
-                    return;
-                }
+            for (Player p : team.members()) {
+                players.add(p);
+                playerTeam.put(p, team);
+            }
+        }
+
+        // 스냅샷 생성 (게임 스레드, 순차)
+        List<CashInContext> contexts = players.stream()
+                .map(p -> new CashInContext(
+                        p.holdings(), p.helpers(), usedHelpers,
+                        deck.discardView(), playerTeam.get(p).coins(), p.holdLimit()))
+                .toList();
+
+        // 의사결정 수집 (동시, 가상 스레드)
+        @SuppressWarnings("unchecked")
+        List<CashInAction>[] decisions = new List[players.size()];
+        List<Runnable> tasks = new ArrayList<>();
+        for (int i = 0; i < players.size(); i++) {
+            int idx = i;
+            Player p = players.get(i);
+            CashInContext ctx = contexts.get(i);
+            tasks.add(() -> decisions[idx] = p.decideCashIn(ctx));
+        }
+        runConcurrently(tasks);
+
+        // 적용 (게임 스레드, 순차) — revealPaceMillis 텀으로 단계 공개
+        for (int i = 0; i < players.size(); i++) {
+            applyPlayerCashIn(players.get(i), playerTeam.get(players.get(i)), decisions[i]);
+            if (instantWinner != null) {
+                return;
             }
         }
         applyEndOfCashLeaderEffects();
     }
 
-    private void processCashIn(Player player, Team team) {
-        CashInContext context = new CashInContext(
-                player.holdings(), player.helpers(), usedHelpers, deck.discardView(), team.coins(), player.holdLimit());
-        List<CashInAction> actions = player.decideCashIn(context);
+    private void applyPlayerCashIn(Player player, Team team, List<CashInAction> actions) {
         TreasureSet lastCashedSet = null;
         for (CashInAction action : actions) {
             switch (action) {
@@ -196,6 +226,17 @@ public final class Game {
             if (instantWinner != null) {
                 return;
             }
+            sleepRevealPace(player);
+        }
+    }
+
+    private void sleepRevealPace(Player player) {
+        int millis = player.revealPaceMillis();
+        if (millis <= 0) return;
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -377,15 +418,49 @@ public final class Game {
 
     private void setupHelpers() {
         List<HelperCard> helperDeck = HelperCards.shuffledDeck(random);
-        for (Team team : List.of(splitTeam, chooseTeam)) {
-            Player player = team.leader();
-            List<HelperCard> options = drawHelpers(helperDeck, 3);
-            List<HelperCard> selected = player.decideHelpers(options, 2);
-            if (!isValidHelperSelection(options, selected, 2)) {
-                selected = options.subList(0, Math.min(2, options.size()));
+        Player splitLeader = splitTeam.leader();
+        Player chooseLeader = chooseTeam.leader();
+
+        // 후보 드로우 (게임 스레드, 순차 — 덱 순서 결정론적)
+        List<HelperCard> optionsSplit = drawHelpers(helperDeck, 3);
+        List<HelperCard> optionsChoose = drawHelpers(helperDeck, 3);
+
+        // 선택 (동시, 가상 스레드)
+        @SuppressWarnings("unchecked")
+        List<HelperCard>[] results = new List[2];
+        runConcurrently(List.of(
+                () -> results[0] = splitLeader.decideHelpers(optionsSplit, 2),
+                () -> results[1] = chooseLeader.decideHelpers(optionsChoose, 2)));
+
+        // 검증·등록 (게임 스레드, 순차)
+        applyHelperSelection(splitLeader, optionsSplit, results[0]);
+        applyHelperSelection(chooseLeader, optionsChoose, results[1]);
+    }
+
+    private void applyHelperSelection(Player player, List<HelperCard> options, List<HelperCard> selected) {
+        if (!isValidHelperSelection(options, selected, 2)) {
+            selected = options.subList(0, Math.min(2, options.size()));
+        }
+        player.receiveHelpers(selected);
+        listener.onPlayerSetup(player);
+    }
+
+    /** 태스크 목록을 가상 스레드로 동시 실행하고 전부 완료될 때까지 블록(join 배리어). */
+    private void runConcurrently(List<Runnable> tasks) {
+        try (var exec = Executors.newVirtualThreadPerTaskExecutor()) {
+            var futures = tasks.stream().map(exec::submit).toList();
+            for (var f : futures) {
+                try {
+                    f.get();
+                } catch (ExecutionException e) {
+                    Throwable cause = e.getCause();
+                    if (cause instanceof RuntimeException re) throw re;
+                    throw new RuntimeException("동시 실행 중 오류", cause);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("동시 실행 중 인터럽트", e);
+                }
             }
-            player.receiveHelpers(selected);
-            listener.onPlayerSetup(player);
         }
     }
 

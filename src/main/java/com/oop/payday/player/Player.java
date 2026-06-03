@@ -14,10 +14,13 @@ import com.oop.payday.model.helper.HelperCard;
 import com.oop.payday.model.officer.OfficerTile;
 
 /**
- * 플레이어의 공통 상태와 의사결정 계약(추상). 상속·다형성의 축.
+ * 플레이어의 공통 상태와 의사결정 계약(추상). 상속·다형성의 축이자 플레이어 컨트롤러 seam.
  *
  * <p>{@code Game} 은 구체 타입(사람/봇)을 모른 채 {@code decideXxx} 를 호출한다.
- * {@link HumanPlayer} 는 UI 입력을, {@code BotPlayer}(M4)는 전략을 통해 응답한다.
+ * {@link HumanPlayer} 는 UI 입력을, {@code BotPlayer} 는 전략을 통해 응답한다.
+ * 추후 네트워크 대전은 {@code NetworkPlayer} 가 이 메서드들에서 원격 클라이언트에
+ * 요청을 보내고 응답이 올 때까지 가상 스레드를 블록하는 방식으로 붙일 수 있다.
+ * 이때 서버/엔진은 비공개 정보(분할 손패, 도우미 후보)를 소유자에게만 보내야 한다.
  */
 public abstract class Player {
 
@@ -129,6 +132,9 @@ public abstract class Player {
     public abstract List<CashInAction> decideCashIn(CashInContext context);
 
     public abstract boolean isBot();
+
+    /** 환금 행동을 한 단계씩 공개할 때 행동 사이 대기 시간(ms). 0이면 즉시. */
+    public int revealPaceMillis() { return 0; }
 
     @Override
     public String toString() {

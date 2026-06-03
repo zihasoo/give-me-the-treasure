@@ -60,11 +60,11 @@ public class GameApp extends Application {
     }
 
     /** 게임 보드 화면으로 전환하고 게임을 시작한다. */
-    public void showGameBoard(GameConfig config, boolean vsBot) throws IOException {
+    public void showGameBoard(GameConfig config, boolean testBot) throws IOException {
         FXMLLoader loader = load("game_board.fxml");
         applyScene(loader.getRoot());
         GameBoardController controller = loader.getController();
-        controller.startGame(config, vsBot);
+        controller.startGame(config, testBot);
     }
 
     private FXMLLoader load(String fxmlFile) throws IOException {

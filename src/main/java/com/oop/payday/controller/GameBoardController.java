@@ -45,6 +45,7 @@ import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Point2D;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
@@ -101,6 +102,8 @@ public final class GameBoardController implements GameListener, HumanUi {
 
     private Team teamA;
     private Team teamB;
+    private HumanPlayer localPlayer;
+    private Team currentSplitTeam;
     private final Queue<Runnable> overlayQueue = new ArrayDeque<>();
     private final Queue<Runnable> afterOverlayQueue = new ArrayDeque<>();
     private final Map<Team, Integer> pendingCoinPreview = new HashMap<>();
@@ -108,6 +111,10 @@ public final class GameBoardController implements GameListener, HumanUi {
     private boolean distributionFieldUpdatePending;
     private VBox activeBundle0;
     private VBox activeBundle1;
+    private int centerRevision;
+    private FadeTransition activeCenterTransition;
+    private boolean opponentWaitingVisible;
+    private int phaseRevision;
 
     /** 카드 표시 순서: 보물(색→숫자) → 굉장한 보물 → 저주받은 그림(숫자) → 기타. */
     private static final Comparator<Card> CARD_ORDER =
@@ -161,18 +168,13 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     /** 메인 메뉴에서 호출. 플레이어/팀/게임을 구성하고 게임 스레드를 시작한다. */
-    public void startGame(GameConfig config, boolean vsBot) {
+    public void startGame(GameConfig config, boolean testBot) {
         HumanPlayer p1 = new HumanPlayer("플레이어 1");
         p1.setUi(this);
+        localPlayer = p1;
 
-        Player p2;
-        if (vsBot) {
-            p2 = new BotPlayer("봇", new HeuristicBotStrategy());
-        } else {
-            HumanPlayer human2 = new HumanPlayer("플레이어 2");
-            human2.setUi(this);
-            p2 = human2;
-        }
+        HeuristicBotStrategy strategy = new HeuristicBotStrategy();
+        Player p2 = testBot ? BotPlayer.test(strategy) : BotPlayer.play(strategy);
 
         teamA = new Team(p1.name(), List.of(p1));
         teamB = new Team(p2.name(), List.of(p2));
@@ -189,8 +191,17 @@ public final class GameBoardController implements GameListener, HumanUi {
     @Override
     public void onPhaseChanged(Phase phase, int round, Team splitTeam) {
         Platform.runLater(() -> {
-            showPhaseBanner(phase.korean());
+            int phaseToken = ++phaseRevision;
+            currentSplitTeam = splitTeam;
+            clearCenterIfOpponentWaiting();
+            turnLabel.setText(phase.korean());
             updateBoardStatus();
+            if (phase == Phase.SCHEME && !isLocalActor(splitTeam.leader())) {
+                runAfterOverlay(() -> setWaitingIfCurrent(phaseToken, "상대가 카드를 분할 중입니다"));
+            } else if (phase == Phase.DISTRIBUTE) {
+                activeBundle0 = null;
+                activeBundle1 = null;
+            }
         });
     }
 
@@ -203,11 +214,11 @@ public final class GameBoardController implements GameListener, HumanUi {
     public void onChoiceReady(GameListener.BundlePair bundles) {
         Platform.runLater(() -> {
             distributionFieldUpdatePending = true;
-            runAfterOverlay(() -> {
-                if (activeBundle0 == null || activeBundle1 == null) {
-                    setCenterAnimated(buildWaitingChoicePanel(bundles));
-                }
-            });
+            int phaseToken = phaseRevision;
+            Team chooser = otherTeam(currentSplitTeam);
+            if (chooser != null && !isLocalActor(chooser.leader())) {
+                runAfterOverlay(() -> setWaitingChoiceIfCurrent(phaseToken, bundles));
+            }
         });
     }
 
@@ -220,6 +231,7 @@ public final class GameBoardController implements GameListener, HumanUi {
                     + chooseTeam.name() + " " + chooseCards + " / "
                     + splitTeam.name() + " " + splitCards);
             ensureDistributionAnimationPanel(chosenIndex, chooseCards, splitCards);
+            opponentWaitingVisible = false;
             playDistributionTransition(chosenIndex, chooseTeam, splitTeam, () -> {
                 distributionFieldUpdatePending = false;
                 updateBoardStatus();
@@ -288,9 +300,11 @@ public final class GameBoardController implements GameListener, HumanUi {
 
     @Override
     public void requestSplit(HumanPlayer player, List<Card> hand) {
+        if (!isLocalActor(player)) {
+            return;
+        }
         Platform.runLater(() -> {
             runAfterOverlay(() -> {
-                turnLabel.setText(player.name() + " 차례 — 꾀부리기(분할)");
                 updateBoardStatus();
                 setCenterAnimated(buildSplitPanel(player, hand));
             });
@@ -299,9 +313,11 @@ public final class GameBoardController implements GameListener, HumanUi {
 
     @Override
     public void requestChoice(HumanPlayer player, ChoiceView view) {
+        if (!isLocalActor(player)) {
+            return;
+        }
         Platform.runLater(() -> {
             runAfterOverlay(() -> {
-                turnLabel.setText(player.name() + " 차례 — 묶음 선택");
                 updateBoardStatus();
                 setCenterAnimated(buildChoicePanel(player, view));
             });
@@ -310,19 +326,25 @@ public final class GameBoardController implements GameListener, HumanUi {
 
     @Override
     public void requestHelperSelection(HumanPlayer player, List<HelperCard> options, int chooseCount) {
+        if (!isLocalActor(player)) {
+            return;
+        }
         Platform.runLater(() -> {
-            turnLabel.setText(player.name() + " 차례 — 도우미 선택");
-            updateBoardStatus();
-            setCenterAnimated(buildHelperSelectionPanel(player, options, chooseCount));
+            runAfterOverlay(() -> {
+                updateBoardStatus();
+                setCenterAnimated(buildHelperSelectionPanel(player, options, chooseCount));
+            });
         });
     }
 
     @Override
     public void requestCashIn(HumanPlayer player, CashInContext context) {
+        if (!isLocalActor(player)) {
+            return;
+        }
         Platform.runLater(() -> {
             runAfterOverlay(() -> {
                 Team team = teamFor(player);
-                turnLabel.setText(player.name() + " 차례 — 환금/처분");
                 setMessage(player.name() + " 환금 입력 대기 — 보관 카드 " + context.holdings().size() + "장");
                 updateBoardStatus();
                 renderCashInPanel(player, team, new ArrayList<>(context.holdings()), context.helpers(), new ArrayList<>());
@@ -391,7 +413,7 @@ public final class GameBoardController implements GameListener, HumanUi {
                         + cardsA.size() + " + " + cardsB.size() + ")");
                 return;
             }
-            setCenterAnimated(buildWaitingChoicePanel(cardsA, cardsB, faceDown[0]));
+            clearCenter();
             player.provideSplit(decision);
         });
 
@@ -544,7 +566,7 @@ public final class GameBoardController implements GameListener, HumanUi {
 
     private Node buildWaitingChoicePanel(List<Card> visible0, boolean faceDown0,
             List<Card> visible1, boolean faceDown1) {
-        VBox root = panelRoot("상대가 선택 중입니다.");
+        VBox root = panelRoot("상대의 선택을 기다리는 중입니다.");
         HBox bundlesRow = new HBox(40);
         bundlesRow.setAlignment(Pos.CENTER);
         activeBundle0 = bundleBox("묶음 ①", visible0, faceDown0);
@@ -568,7 +590,7 @@ public final class GameBoardController implements GameListener, HumanUi {
             activeBundle1 = chosenBox;
         }
 
-        VBox root = panelRoot("상대가 선택 중입니다.");
+        VBox root = panelRoot("상대의 선택을 기다리는 중입니다.");
         HBox row = new HBox(40, activeBundle0, activeBundle1);
         row.setAlignment(Pos.CENTER);
         root.getChildren().add(row);
@@ -654,7 +676,7 @@ public final class GameBoardController implements GameListener, HumanUi {
                 alert(chooseCount + "장을 선택하세요.");
                 return;
             }
-            setCenter(waitingPanel("게임 준비 중…"));
+            clearCenter();
             player.provideHelpers(selected);
         });
 
@@ -756,7 +778,7 @@ public final class GameBoardController implements GameListener, HumanUi {
                         + "장입니다. 환금하거나 처분해 한도 이하로 맞춰주세요.");
                 return;
             }
-            setCenterAnimated(waitingPanel("진행 중…"));
+            clearCenter();
             player.provideCashIn(actions);
         });
 
@@ -898,28 +920,99 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     private Node waitingPanel(String text) {
-        return new StackPane();
+        Label label = new Label(text);
+        label.getStyleClass().add("waiting-label");
+        label.setWrapText(true);
+
+        StackPane panel = new StackPane(label);
+        panel.getStyleClass().add("waiting-panel");
+        panel.setPadding(new Insets(28));
+        panel.setMaxWidth(680);
+        panel.setMinHeight(180);
+        return panel;
+    }
+
+    private void setWaiting(String text) {
+        opponentWaitingVisible = true;
+        setCenterAnimated(waitingPanel(text), true);
+    }
+
+    private void setWaitingIfCurrent(int phaseToken, String text) {
+        if (phaseToken == phaseRevision) {
+            setWaiting(text);
+        }
+    }
+
+    private void setWaitingChoiceIfCurrent(int phaseToken, GameListener.BundlePair bundles) {
+        if (phaseToken != phaseRevision) {
+            return;
+        }
+        opponentWaitingVisible = true;
+        setCenterAnimated(buildWaitingChoicePanel(bundles), true);
+    }
+
+    private void clearCenterIfOpponentWaiting() {
+        if (opponentWaitingVisible) {
+            clearCenter();
+        }
+    }
+
+    private void clearCenter() {
+        setCenter(new StackPane());
     }
 
     private void setCenter(Node node) {
+        opponentWaitingVisible = false;
+        centerRevision++;
+        stopActiveCenterTransition();
+        node.setOpacity(1);
         contentArea.getChildren().setAll(node);
     }
 
     private void setCenterAnimated(Node node) {
+        setCenterAnimated(node, false);
+    }
+
+    private void setCenterAnimated(Node node, boolean opponentWaiting) {
+        opponentWaitingVisible = opponentWaiting;
+        int revision = ++centerRevision;
+        stopActiveCenterTransition();
         if (contentArea.getChildren().isEmpty()) {
             node.setOpacity(0);
             contentArea.getChildren().setAll(node);
-            fade(node, 0, 1, 420).play();
+            playCenterFadeIn(node, revision);
             return;
         }
         Node old = contentArea.getChildren().get(0);
-            FadeTransition out = fade(old, old.getOpacity(), 0, 280);
+        FadeTransition out = fade(old, old.getOpacity(), 0, 220);
+        activeCenterTransition = out;
         out.setOnFinished(e -> {
+            if (revision != centerRevision) {
+                return;
+            }
             node.setOpacity(0);
             contentArea.getChildren().setAll(node);
-            fade(node, 0, 1, 420).play();
+            playCenterFadeIn(node, revision);
         });
         out.play();
+    }
+
+    private void playCenterFadeIn(Node node, int revision) {
+        FadeTransition in = fade(node, 0, 1, 280);
+        activeCenterTransition = in;
+        in.setOnFinished(e -> {
+            if (revision == centerRevision) {
+                activeCenterTransition = null;
+            }
+        });
+        in.play();
+    }
+
+    private void stopActiveCenterTransition() {
+        if (activeCenterTransition != null) {
+            activeCenterTransition.stop();
+            activeCenterTransition = null;
+        }
     }
 
     private FadeTransition fade(Node node, double from, double to, int millis) {
@@ -927,25 +1020,6 @@ public final class GameBoardController implements GameListener, HumanUi {
         transition.setFromValue(from);
         transition.setToValue(to);
         return transition;
-    }
-
-    private void showPhaseBanner(String text) {
-        enqueueOverlay(() -> {
-            Label banner = new Label(text);
-            banner.getStyleClass().add("phase-banner");
-            banner.setOpacity(0);
-            overlayArea.getChildren().add(banner);
-            FadeTransition in = fade(banner, 0, 1, 360);
-            PauseTransition stay = new PauseTransition(Duration.millis(1450));
-            FadeTransition out = fade(banner, 1, 0, 420);
-            in.setOnFinished(e -> stay.play());
-            stay.setOnFinished(e -> out.play());
-            out.setOnFinished(e -> {
-                overlayArea.getChildren().remove(banner);
-                playNextOverlay();
-            });
-            in.play();
-        });
     }
 
     private void playDistributionTransition(int chosenIndex, Team chooseTeam, Team splitTeam, Runnable afterFinished) {
@@ -972,7 +1046,7 @@ public final class GameBoardController implements GameListener, HumanUi {
                 resetBundleAnimation(chosenBox);
                 resetBundleAnimation(otherBox);
                 afterFinished.run();
-                setCenter(waitingPanel("분배 완료"));
+                clearCenter();
                 playNextOverlay();
             });
             hold.play();
@@ -1089,6 +1163,20 @@ public final class GameBoardController implements GameListener, HumanUi {
         return null;
     }
 
+    private Team otherTeam(Team team) {
+        if (team == teamA) {
+            return teamB;
+        }
+        if (team == teamB) {
+            return teamA;
+        }
+        return null;
+    }
+
+    private boolean isLocalActor(Player player) {
+        return player != null && player == localPlayer;
+    }
+
     private int displayedCoins(Team team) {
         return Math.max(0, team.coins() + pendingCoinPreview.getOrDefault(team, 0));
     }
@@ -1156,8 +1244,9 @@ public final class GameBoardController implements GameListener, HumanUi {
         floating.setOpacity(0);
 
         Bounds bounds = coinsLabel.localToScene(coinsLabel.getBoundsInLocal());
-        floating.setLayoutX(bounds.getMinX());
-        floating.setLayoutY(bounds.getMinY() - 8);
+        Point2D anchor = globalOverlay.sceneToLocal(bounds.getMaxX() + 8, bounds.getMinY() - 6);
+        floating.setLayoutX(anchor.getX());
+        floating.setLayoutY(anchor.getY());
         globalOverlay.getChildren().add(floating);
 
         FadeTransition fadeIn = fade(floating, 0, 1, 120);
