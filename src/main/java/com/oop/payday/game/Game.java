@@ -70,6 +70,8 @@ public final class Game {
     /** 게임을 끝까지 진행한다(승자가 나올 때까지). 블로킹 호출. */
     public void play() {
         setupHelpers();
+        listener.onGameSetup(allPlayers());
+        listener.awaitAnimations();
         announceSetup();
         listener.onMessage("게임 시작! 목표: " + config.winningCoins() + "코인");
         round = 0;
@@ -147,14 +149,23 @@ public final class Game {
     private void handleSteal(Player player, List<Card> takenCards) {
         for (Card card : takenCards) {
             if (card instanceof StealCard steal) {
-                player.remove(steal);
-                deck.absorbDiscardWith(steal);
-                Card drawn = deck.draw();
-                if (drawn != null) {
-                    player.receive(drawn);
-                }
-                listener.onMessage(player.name() + " 슬쩍하기 발동 — 카드 더미에서 1장 획득");
+                processSteal(player, steal);
             }
+        }
+    }
+
+    /** 슬쩍하기 1회 처리. 뽑은 카드도 슬쩍하기면 재귀 호출. */
+    private void processSteal(Player player, StealCard steal) {
+        player.remove(steal);
+        deck.absorbDiscardWith(steal);
+        Card drawn = deck.draw();
+        if (drawn != null) {
+            player.receive(drawn);
+        }
+        listener.onStealActivated(player, drawn);
+        listener.awaitAnimations();
+        if (drawn instanceof StealCard nextSteal) {
+            processSteal(player, nextSteal);
         }
     }
 
@@ -307,6 +318,7 @@ public final class Game {
             return;
         }
         int beforeCoins = team.coins();
+        Set<Card> holdingsBefore = new HashSet<>(player.holdings());
         HelperUseContext context = new HelperUseContext(
                 player, team, opponentOf(team), deck, lastCashedSet, usedHelpers, copyTarget);
         if (!helper.canUse(context)) {
@@ -332,6 +344,11 @@ public final class Game {
         if (delta != 0) {
             listener.onCoinsChanged(team, delta);
         }
+        // 도우미 효과로 새로 드로우한 카드 중 슬쩍하기가 있으면 즉시 처리.
+        List<Card> newCards = player.holdings().stream()
+                .filter(c -> !holdingsBefore.contains(c))
+                .toList();
+        handleSteal(player, newCards);
     }
 
     // --- 6-4 종료 ---

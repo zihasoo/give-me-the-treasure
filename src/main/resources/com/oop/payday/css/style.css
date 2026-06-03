@@ -211,16 +211,12 @@
 
 .sidebar-helper-flow {
     -fx-padding: 3 0 1 0;
-    -fx-pref-wrap-length: 208;
 }
 
 .sidebar-helper-card {
-    -fx-min-width: 208;
-    -fx-pref-width: 208;
-    -fx-max-width: 208;
-    -fx-min-height: 106;
-    -fx-pref-height: 106;
-    -fx-max-height: 106;
+    -fx-min-height: 88;
+    -fx-pref-height: 88;
+    -fx-max-height: 88;
     -fx-padding: 9 12 17 12;
     -fx-background-radius: 8;
     -fx-border-radius: 8;
@@ -281,7 +277,6 @@
     -fx-font-size: 8px;
     -fx-font-weight: bold;
     -fx-padding: 1 0 2 0;
-    -fx-min-width: 206;
     -fx-alignment: center;
     -fx-text-alignment: center;
 }

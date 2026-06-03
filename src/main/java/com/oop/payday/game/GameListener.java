@@ -62,6 +62,14 @@ public interface GameListener {
     default void onMessage(String message) {
     }
 
+    /** 게임 준비 완료: 모든 플레이어의 간부·도우미가 확정됨. 애니메이션 후 {@code awaitAnimations} 호출 권장. */
+    default void onGameSetup(java.util.List<Player> players) {
+    }
+
+    /** 슬쩍하기 발동: 덱 리셔플 후 {@code drawnCard} 획득(덱 소진이면 null). */
+    default void onStealActivated(Player player, Card drawnCard) {
+    }
+
     /**
      * 게임 스레드를 블록해 UI 애니메이션이 완료될 때까지 대기한다.
      * 구현체는 현재 진행 중인 오버레이(배너·분배 애니메이션)가 끝난 뒤 반환해야 한다.

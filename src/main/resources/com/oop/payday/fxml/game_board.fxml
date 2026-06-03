@@ -22,8 +22,8 @@
                             <children>
                                 <Label fx:id="fieldBTitleLabel" styleClass="info-card-title" wrapText="true" />
                                 <Region styleClass="info-divider" />
-                                <FlowPane fx:id="fieldBHelperFlow" styleClass="sidebar-helper-flow"
-                                          alignment="CENTER" hgap="0.0" vgap="6.0" />
+                                <VBox fx:id="fieldBHelperFlow" styleClass="sidebar-helper-flow" spacing="6.0" />
+                                <Region styleClass="info-divider" />
                                 <VBox styleClass="officer-portrait" spacing="3.0">
                                     <children>
                                         <Label fx:id="fieldBOfficerLabel" styleClass="officer-name" wrapText="true" />
@@ -45,8 +45,8 @@
                                         <Label fx:id="fieldAOfficerEffectLabel" styleClass="officer-effect" wrapText="true" />
                                     </children>
                                 </VBox>
-                                <FlowPane fx:id="fieldAHelperFlow" styleClass="sidebar-helper-flow"
-                                          alignment="CENTER" hgap="0.0" vgap="6.0" />
+                                <Region styleClass="info-divider" />
+                                <VBox fx:id="fieldAHelperFlow" styleClass="sidebar-helper-flow" spacing="6.0" />
                                 <Region styleClass="info-divider" />
                                 <Label fx:id="fieldATitleLabel" styleClass="info-card-title" wrapText="true" />
                             </children>

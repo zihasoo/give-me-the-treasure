@@ -42,6 +42,8 @@ import com.oop.payday.view.CardView;
 import javafx.animation.FadeTransition;
 import javafx.animation.ParallelTransition;
 import javafx.animation.PauseTransition;
+import javafx.animation.ScaleTransition;
+import javafx.animation.SequentialTransition;
 import javafx.animation.TranslateTransition;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -97,8 +99,8 @@ public final class GameBoardController implements GameListener, HumanUi {
     @FXML private Pane globalOverlay;
     @FXML private FlowPane fieldAFlow;
     @FXML private FlowPane fieldBFlow;
-    @FXML private FlowPane fieldAHelperFlow;
-    @FXML private FlowPane fieldBHelperFlow;
+    @FXML private VBox fieldAHelperFlow;
+    @FXML private VBox fieldBHelperFlow;
     @FXML private StackPane centerArea;
     @FXML private StackPane contentArea;
     @FXML private StackPane overlayArea;
@@ -192,6 +194,16 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     // ===== GameListener (게임 스레드 → UI) =====
+
+    @Override
+    public void onGameSetup(List<Player> players) {
+        Platform.runLater(() -> enqueueOverlay(() -> playOfficerSetupAnimation(players)));
+    }
+
+    @Override
+    public void onStealActivated(Player player, Card drawnCard) {
+        Platform.runLater(() -> enqueueOverlay(() -> playStealAnimation(player, drawnCard)));
+    }
 
     @Override
     public void onPhaseChanged(Phase phase, int round, Team splitTeam) {
@@ -1126,6 +1138,216 @@ public final class GameBoardController implements GameListener, HumanUi {
         return root;
     }
 
+    // ===== 게임 시작 간부 애니메이션 =====
+
+    private void playOfficerSetupAnimation(List<Player> players) {
+        VBox panel = new VBox(22);
+        panel.setAlignment(Pos.CENTER);
+        panel.setPadding(new Insets(36, 48, 36, 48));
+        panel.setMaxWidth(560);
+
+        Label title = new Label("간부 배정");
+        title.getStyleClass().add("waiting-label");
+
+        Label sub = new Label("각 플레이어에게 간부가 배정되었습니다");
+        sub.setStyle("-fx-text-fill: #8aa0a8; -fx-font-size: 13px;");
+
+        HBox cardsRow = new HBox(32);
+        cardsRow.setAlignment(Pos.CENTER);
+
+        List<StackPane> containers = new ArrayList<>();
+        List<Node> fronts = new ArrayList<>();
+
+        for (Player p : players) {
+            StackPane container = new StackPane(buildOfficerCardBack());
+            container.setPrefSize(CardView.WIDTH, CardView.HEIGHT);
+            container.setMinSize(CardView.WIDTH, CardView.HEIGHT);
+            container.setMaxSize(CardView.WIDTH, CardView.HEIGHT);
+
+            String desc = p.name() + (isLocalActor(p) ? "  (나)" : "");
+            Label nameLabel = new Label(desc);
+            nameLabel.setStyle("-fx-text-fill: #b9c8c2; -fx-font-size: 12px; -fx-font-weight: bold;");
+
+            VBox col = new VBox(10, container, nameLabel);
+            col.setAlignment(Pos.CENTER);
+            cardsRow.getChildren().add(col);
+            containers.add(container);
+            fronts.add(buildOfficerCardFront(p));
+        }
+
+        panel.getChildren().addAll(title, sub, cardsRow);
+        setCenter(panel);
+
+        SequentialTransition seq = new SequentialTransition();
+        seq.getChildren().add(new PauseTransition(Duration.millis(500)));
+        for (int i = 0; i < containers.size(); i++) {
+            seq.getChildren().add(buildCardFlip(containers.get(i), fronts.get(i)));
+            seq.getChildren().add(new PauseTransition(Duration.millis(380)));
+        }
+        seq.getChildren().add(new PauseTransition(Duration.millis(1300)));
+        seq.setOnFinished(e -> { clearCenter(); playNextOverlay(); });
+        seq.play();
+    }
+
+    private Node buildOfficerCardBack() {
+        StackPane card = new StackPane();
+        card.setPrefSize(CardView.WIDTH, CardView.HEIGHT);
+        card.setMaxSize(CardView.WIDTH, CardView.HEIGHT);
+        card.setStyle(
+            "-fx-background-color: #0d1518, linear-gradient(to bottom, #1e3040, #0e1e2a);"
+            + " -fx-background-insets: 0, 3; -fx-background-radius: 10, 7;"
+            + " -fx-border-color: rgba(242,211,107,0.45); -fx-border-radius: 10; -fx-border-width: 1.5;"
+            + " -fx-effect: dropshadow(gaussian,rgba(0,0,0,0.5),8,0.2,0,3);");
+        Label q = new Label("?");
+        q.setStyle("-fx-text-fill: rgba(242,211,107,0.5); -fx-font-size: 32px; -fx-font-weight: bold;");
+        card.getChildren().add(q);
+        return card;
+    }
+
+    private Node buildOfficerCardFront(Player player) {
+        boolean hasOfficer = player.officer() != null;
+        String officerName   = hasOfficer ? player.officer().korean()     : "없음";
+        String officerEffect = hasOfficer ? player.officer().effectText() : "";
+
+        StackPane card = new StackPane();
+        card.setPrefSize(CardView.WIDTH, CardView.HEIGHT);
+        card.setMaxSize(CardView.WIDTH, CardView.HEIGHT);
+        card.setStyle(
+            "-fx-background-color: #0d1518, linear-gradient(to bottom, #1a2f40, #0e1e2c);"
+            + " -fx-background-insets: 0, 3; -fx-background-radius: 10, 7;"
+            + " -fx-border-color: rgba(242,211,107,0.85); -fx-border-radius: 10; -fx-border-width: 1.5;"
+            + " -fx-effect: dropshadow(gaussian,rgba(242,211,107,0.25),14,0.2,0,0);");
+
+        Label icon = new Label("★");
+        icon.setStyle("-fx-text-fill: rgba(242,211,107,0.45); -fx-font-size: 20px;");
+
+        Label nameLbl = new Label(officerName);
+        nameLbl.setStyle("-fx-text-fill: #f2d36b; -fx-font-size: 14px; -fx-font-weight: bold;"
+            + " -fx-alignment: center; -fx-text-alignment: center;");
+        nameLbl.setWrapText(true);
+        nameLbl.setMaxWidth(CardView.WIDTH - 14);
+
+        Label effectLbl = new Label(officerEffect);
+        effectLbl.setStyle("-fx-text-fill: #91dfc0; -fx-font-size: 9px;"
+            + " -fx-alignment: center; -fx-text-alignment: center;");
+        effectLbl.setWrapText(true);
+        effectLbl.setMaxWidth(CardView.WIDTH - 14);
+
+        VBox content = new VBox(5, icon, nameLbl, effectLbl);
+        content.setAlignment(Pos.CENTER);
+        content.setMaxWidth(CardView.WIDTH - 14);
+        card.getChildren().add(content);
+        return card;
+    }
+
+    private SequentialTransition buildCardFlip(StackPane container, Node front) {
+        ScaleTransition shrink = new ScaleTransition(Duration.millis(180), container);
+        shrink.setToX(0);
+        PauseTransition swap = new PauseTransition(Duration.millis(10));
+        swap.setOnFinished(e -> container.getChildren().setAll(front));
+        ScaleTransition grow = new ScaleTransition(Duration.millis(200), container);
+        grow.setFromX(0);
+        grow.setToX(1);
+        return new SequentialTransition(shrink, swap, grow);
+    }
+
+    // ===== 슬쩍하기 애니메이션 =====
+
+    private void playStealAnimation(Player player, Card drawnCard) {
+        VBox panel = new VBox(16);
+        panel.setAlignment(Pos.CENTER);
+        panel.setPadding(new Insets(28, 44, 28, 44));
+        panel.getStyleClass().add("waiting-panel");
+        panel.setMaxWidth(460);
+
+        Label title = new Label("↪  슬쩍하기!");
+        title.setStyle("-fx-text-fill: #c97a52; -fx-font-size: 26px; -fx-font-weight: bold;"
+            + " -fx-font-family: 'Book Antiqua','Malgun Gothic',serif;");
+
+        Label whoLabel = new Label(player.name() + "  —  카드 더미 리셔플");
+        whoLabel.setStyle("-fx-text-fill: #8aa0a8; -fx-font-size: 12px;");
+
+        // 카드 더미 시각화: 3장 겹쳐서 뒷면
+        StackPane pile = new StackPane();
+        for (int i = 2; i >= 0; i--) {
+            CardView cv = new CardView(new com.oop.payday.model.card.WildCard(-1), false, true);
+            cv.setTranslateX((i - 1) * 7.0);
+            cv.setTranslateY((i - 1) * -4.0);
+            cv.setRotate((i - 1) * 6.0);
+            pile.getChildren().add(cv);
+        }
+        pile.setPrefSize(CardView.PANEL_WIDTH + 24, CardView.PANEL_HEIGHT + 18);
+
+        // 획득 카드 영역 (처음에는 뒷면 + 투명)
+        StackPane drawnSlot = new StackPane();
+        drawnSlot.setPrefSize(CardView.PANEL_WIDTH, CardView.PANEL_HEIGHT);
+        drawnSlot.setMinSize(CardView.PANEL_WIDTH, CardView.PANEL_HEIGHT);
+        drawnSlot.setOpacity(0);
+        if (drawnCard != null) {
+            drawnSlot.getChildren().add(new CardView(drawnCard, false, true));
+        }
+
+        Label drawnLabel = new Label("획득 카드");
+        drawnLabel.setStyle("-fx-text-fill: #91dfc0; -fx-font-size: 11px; -fx-font-weight: bold;");
+        drawnLabel.setOpacity(0);
+
+        VBox drawnCol = new VBox(6, drawnLabel, drawnSlot);
+        drawnCol.setAlignment(Pos.CENTER);
+
+        HBox deckRow = new HBox(32, pile, drawnCol);
+        deckRow.setAlignment(Pos.CENTER);
+
+        panel.getChildren().addAll(title, whoLabel, deckRow);
+        setCenter(panel);
+
+        // 더미 흔들기 → 획득 카드 공개 순서로 애니메이션
+        double[][] moves = {{-7,-5},{9,3},{-5,-3},{7,5},{-4,-2},{3,2},{0,0}};
+        SequentialTransition jitter = new SequentialTransition(pile);
+        for (double[] m : moves) {
+            TranslateTransition tt = new TranslateTransition(Duration.millis(75), pile);
+            tt.setToX(m[0]);  tt.setToY(m[1]);
+            jitter.getChildren().add(tt);
+        }
+
+        jitter.setOnFinished(e -> {
+            // 획득 카드 레이블 페이드인
+            FadeTransition showLbl = new FadeTransition(Duration.millis(160), drawnLabel);
+            showLbl.setToValue(1);
+            showLbl.play();
+
+            // 뒷면 카드 표시 후 뒤집기
+            drawnSlot.setOpacity(1);
+            PauseTransition prePause = new PauseTransition(Duration.millis(280));
+            prePause.setOnFinished(pe -> {
+                ScaleTransition shrink = new ScaleTransition(Duration.millis(150), drawnSlot);
+                shrink.setToX(0);
+                shrink.setOnFinished(se -> {
+                    drawnSlot.getChildren().clear();
+                    if (drawnCard != null) {
+                        drawnSlot.getChildren().add(new CardView(drawnCard, true, true));
+                    } else {
+                        Label empty = new Label("없음");
+                        empty.setStyle("-fx-text-fill: #7d918d; -fx-font-size: 13px;");
+                        drawnSlot.getChildren().add(empty);
+                    }
+                    ScaleTransition grow = new ScaleTransition(Duration.millis(190), drawnSlot);
+                    grow.setFromX(0);
+                    grow.setToX(1);
+                    grow.setOnFinished(ge -> {
+                        PauseTransition hold = new PauseTransition(Duration.millis(1500));
+                        hold.setOnFinished(he -> { clearCenter(); playNextOverlay(); });
+                        hold.play();
+                    });
+                    grow.play();
+                });
+                shrink.play();
+            });
+            prePause.play();
+        });
+
+        jitter.play();
+    }
+
     private Node waitingPanel(String text) {
         Label label = new Label(text);
         label.getStyleClass().add("waiting-label");
@@ -1327,7 +1549,7 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     private void renderField(Label titleLabel, Label officerLabel, Label officerEffectLabel,
-            Label coinsLabel, Label countLabel, FlowPane field, FlowPane helpers, Team team, String fallback) {
+            Label coinsLabel, Label countLabel, FlowPane field, VBox helpers, Team team, String fallback) {
         if (team == null) {
             titleLabel.setText(fallback);
             officerLabel.setText("간부 없음");
@@ -1364,7 +1586,7 @@ public final class GameBoardController implements GameListener, HumanUi {
         }
     }
 
-    private void renderSidebarHelpers(FlowPane target, Player player) {
+    private void renderSidebarHelpers(VBox target, Player player) {
         target.getChildren().clear();
         boolean local = isLocalActor(player);
         for (HelperCard helper : player.helpers()) {
@@ -1402,6 +1624,7 @@ public final class GameBoardController implements GameListener, HumanUi {
 
         if (helper.isUsed()) {
             Label used = new Label("사용 완료");
+            used.setMaxWidth(Double.MAX_VALUE);
             used.getStyleClass().add("sidebar-helper-used-ribbon");
             StackPane.setAlignment(used, Pos.BOTTOM_CENTER);
             card.getChildren().add(used);

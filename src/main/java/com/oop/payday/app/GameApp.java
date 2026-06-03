@@ -26,7 +26,7 @@ public class GameApp extends Application {
 
     private static final String TITLE = "도적단의 월급날";
     private static final double WIDTH = 1280;
-    private static final double HEIGHT = 860;
+    private static final double HEIGHT = 800;
     private static final double MIN_WIDTH = 1100;
     private static final double MIN_HEIGHT = 760;
 
