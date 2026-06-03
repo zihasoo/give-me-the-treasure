@@ -2,6 +2,7 @@ package com.oop.payday.controller;
 
 import java.util.ArrayList;
 import java.util.ArrayDeque;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -23,6 +24,9 @@ import com.oop.payday.game.GameListener;
 import com.oop.payday.game.Phase;
 import com.oop.payday.game.Team;
 import com.oop.payday.model.card.Card;
+import com.oop.payday.model.card.CursedCard;
+import com.oop.payday.model.card.StealCard;
+import com.oop.payday.model.card.TreasureCard;
 import com.oop.payday.model.helper.HelperCard;
 import com.oop.payday.model.helper.HelperKind;
 import com.oop.payday.model.set.CashInEvaluator;
@@ -52,7 +56,6 @@ import javafx.scene.control.ToggleButton;
 import javafx.geometry.Bounds;
 import javafx.scene.image.WritableImage;
 import javafx.scene.layout.Pane;
-import javafx.scene.shape.Rectangle;
 
 import java.util.concurrent.CountDownLatch;
 import javafx.scene.input.ClipboardContent;
@@ -106,12 +109,40 @@ public final class GameBoardController implements GameListener, HumanUi {
     private VBox activeBundle0;
     private VBox activeBundle1;
 
-    @FXML
-    private void initialize() {
-        Rectangle clip = new Rectangle();
-        clip.widthProperty().bind(contentArea.widthProperty());
-        clip.heightProperty().bind(contentArea.heightProperty());
-        contentArea.setClip(clip);
+    /** 카드 표시 순서: 보물(색→숫자) → 굉장한 보물 → 저주받은 그림(숫자) → 기타. */
+    private static final Comparator<Card> CARD_ORDER =
+            Comparator.<Card>comparingInt(GameBoardController::cardRank)
+                    .thenComparingInt(GameBoardController::cardColorRank)
+                    .thenComparingInt(GameBoardController::cardNumberRank);
+
+    private static int cardRank(Card card) {
+        if (card instanceof TreasureCard) {
+            return 0;
+        }
+        if (card.isWild()) {
+            return 1;
+        }
+        if (card instanceof CursedCard) {
+            return 2;
+        }
+        if (card instanceof StealCard) {
+            return 3;
+        }
+        return 4;
+    }
+
+    private static int cardColorRank(Card card) {
+        return card instanceof TreasureCard t ? t.color().ordinal() : 0;
+    }
+
+    private static int cardNumberRank(Card card) {
+        if (card instanceof TreasureCard t) {
+            return t.number();
+        }
+        if (card instanceof CursedCard c) {
+            return c.number();
+        }
+        return 0;
     }
 
     /**
@@ -371,9 +402,9 @@ public final class GameBoardController implements GameListener, HumanUi {
     private FlowPane splitDropZone(String label) {
         FlowPane pane = new FlowPane(10, 10);
         pane.setAlignment(Pos.CENTER);
-        pane.setPrefWrapLength(200);
-        pane.setMaxWidth(200);
-        pane.setMinHeight(100);
+        pane.setPrefWrapLength(360);
+        pane.setMaxWidth(380);
+        pane.setMinHeight(135);
         pane.getStyleClass().add("split-drop-zone");
         pane.setUserData(label);
         return pane;
@@ -386,7 +417,7 @@ public final class GameBoardController implements GameListener, HumanUi {
         box.setAlignment(Pos.CENTER);
         box.getStyleClass().add("split-bundle-box");
         box.setPadding(new Insets(12));
-        box.setMaxWidth(240);
+        box.setMaxWidth(400);
         return box;
     }
 
@@ -553,8 +584,8 @@ public final class GameBoardController implements GameListener, HumanUi {
     private VBox bundleBox(String title, List<Card> visibleCards, boolean hasFaceDown, Node... controls) {
         FlowPane cards = new FlowPane(8, 8);
         cards.setAlignment(Pos.CENTER);
-        cards.setPrefWrapLength(200);
-        cards.setMaxWidth(200);
+        cards.setPrefWrapLength(360);
+        cards.setMaxWidth(360);
         for (Card c : visibleCards) {
             cards.getChildren().add(new CardView(c, true, true));
         }
@@ -566,7 +597,7 @@ public final class GameBoardController implements GameListener, HumanUi {
         box.setAlignment(Pos.CENTER);
         box.getStyleClass().add("bundle-box");
         box.setPadding(new Insets(12));
-        box.setMaxWidth(240);
+        box.setMaxWidth(400);
         box.getChildren().addAll(new Label(title), cards);
         box.getChildren().addAll(controls);
         return box;
@@ -658,7 +689,9 @@ public final class GameBoardController implements GameListener, HumanUi {
 
         FlowPane cardsPane = new FlowPane(10, 10);
         cardsPane.setAlignment(Pos.CENTER);
-        for (Card card : remaining) {
+        List<Card> sortedRemaining = new ArrayList<>(remaining);
+        sortedRemaining.sort(CARD_ORDER);
+        for (Card card : sortedRemaining) {
             CardView cv = new CardView(card, true, true);
             cv.setOnMouseClicked(e -> {
                 cv.toggleSelected();
@@ -856,6 +889,7 @@ public final class GameBoardController implements GameListener, HumanUi {
         root.setPadding(new Insets(24));
         root.setMaxWidth(1120);
         root.setMaxHeight(Region.USE_PREF_SIZE);
+        root.setMinHeight(Region.USE_PREF_SIZE);
         Label g = new Label(guide);
         g.getStyleClass().add("guide");
         g.setWrapText(true);
@@ -1038,7 +1072,9 @@ public final class GameBoardController implements GameListener, HumanUi {
             field.getChildren().add(empty);
             return;
         }
-        for (Card card : player.holdings()) {
+        List<Card> holdings = new ArrayList<>(player.holdings());
+        holdings.sort(CARD_ORDER);
+        for (Card card : holdings) {
             field.getChildren().add(new CardView(card, true));
         }
     }

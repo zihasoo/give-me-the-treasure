@@ -41,7 +41,7 @@ public final class HeuristicBotStrategy implements BotStrategy {
     @Override
     public SplitDecision decideSplit(List<Card> hand) {
         SplitDecision best = null;
-        int bestScore = Integer.MIN_VALUE;
+        long bestScore = Long.MIN_VALUE;
 
         int n = hand.size(); // 5
         // 한 묶음을 size 1 또는 2 로 고른다(나머지가 4 또는 3). 모든 분할을 망라.
@@ -60,7 +60,7 @@ public final class HeuristicBotStrategy implements BotStrategy {
                 }
             }
             for (Card faceDown : hand) {
-                int score = scoreSplitForSplitter(bundleA, bundleB, faceDown);
+                long score = scoreSplitForSplitter(bundleA, bundleB, faceDown);
                 if (score > bestScore) {
                     bestScore = score;
                     best = new SplitDecision(bundleA, bundleB, faceDown);
@@ -70,13 +70,31 @@ public final class HeuristicBotStrategy implements BotStrategy {
         return best;
     }
 
-    /** 선택 팀이 공개 가치가 높은 묶음을 가져간다고 가정했을 때, 분할 팀이 받을 묶음의 실제 가치. */
-    private int scoreSplitForSplitter(List<Card> bundleA, List<Card> bundleB, Card faceDown) {
+    /**
+     * 분할 후보의 가치를 평가한다. 선택 팀이 자기 이익을 위해 묶음을 고른다고 가정하고
+     * (공개 가치가 큰 쪽, 동률이면 카드가 많은 쪽 — {@link #decideChoice} 와 동일),
+     * 분할 팀이 받게 될 묶음의 실제 가치를 기준으로 점수를 매긴다.
+     *
+     * <p>우선순위: ① 코인 우위(내가 지키는 값 − 상대에게 주는 값) ② 내 진행도(내가 지키는 값)
+     * ③ 균형 분할(2+3) 선호. ③ 덕분에 가치 차이가 없을 때 무의미한 1+4 분할을 남발하지 않는다.
+     */
+    private long scoreSplitForSplitter(List<Card> bundleA, List<Card> bundleB, Card faceDown) {
         int visibleA = coinValue(without(bundleA, faceDown));
         int visibleB = coinValue(without(bundleB, faceDown));
-        // 선택 팀은 공개 가치가 큰 쪽을 가져가고, 분할 팀은 나머지 묶음(전체)을 받는다.
-        List<Card> splitterBundle = (visibleA >= visibleB) ? bundleB : bundleA;
-        return coinValue(splitterBundle);
+        // 선택 팀은 공개 가치가 큰 쪽(동률이면 카드 많은 쪽)을 가져가고, 분할 팀은 나머지를 받는다.
+        boolean chooserTakesA = visibleA > visibleB
+                || (visibleA == visibleB && bundleA.size() >= bundleB.size());
+        List<Card> splitterBundle = chooserTakesA ? bundleB : bundleA;
+        List<Card> chooserBundle = chooserTakesA ? bundleA : bundleB;
+
+        int splitterValue = coinValue(splitterBundle);
+        int chooserValue = coinValue(chooserBundle);
+        boolean balanced = Math.min(bundleA.size(), bundleB.size()) == 2; // 2+3
+
+        long score = (long) (splitterValue - chooserValue) * 10_000L; // ① 코인 우위
+        score += (long) splitterValue * 10L;                          // ② 내 진행도
+        score += balanced ? 1L : 0L;                                  // ③ 균형 분할(2+3) 선호
+        return score;
     }
 
     @Override

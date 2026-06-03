@@ -4,21 +4,70 @@
 }
 
 .main-menu {
-    -fx-background-color: linear-gradient(to bottom, #12262a, #1b3037 58%, #2d2431);
+    -fx-background-color: radial-gradient(center 50% 32%, radius 85%, #2c4a52 0%, #1b3037 55%, #11181d 100%);
     -fx-padding: 40;
+    -fx-alignment: center;
+}
+
+.menu-card {
+    -fx-background-color: rgba(10, 19, 24, 0.78);
+    -fx-background-radius: 22;
+    -fx-border-color: rgba(242, 211, 107, 0.28);
+    -fx-border-radius: 22;
+    -fx-border-width: 1.5;
+    -fx-padding: 34 40 30 40;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.45), 32, 0.2, 0, 12);
+}
+
+.menu-emblem {
+    -fx-font-size: 38px;
+    -fx-text-fill: #f2d36b;
+    -fx-effect: dropshadow(gaussian, rgba(242, 211, 107, 0.40), 14, 0.3, 0, 0);
 }
 
 .title {
     -fx-font-family: "Book Antiqua", "Malgun Gothic", serif;
-    -fx-font-size: 46px;
+    -fx-font-size: 44px;
     -fx-font-weight: bold;
     -fx-text-fill: #f2d36b;
 }
 
 .subtitle {
+    -fx-font-size: 14px;
+    -fx-text-fill: #8aa0a8;
+    -fx-padding: 0;
+}
+
+.menu-divider {
+    -fx-background-color: rgba(242, 211, 107, 0.16);
+    -fx-pref-height: 1;
+    -fx-min-height: 1;
+    -fx-max-height: 1;
+}
+
+.menu-section {
+    -fx-text-fill: #8aa0a8;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.menu-mode-button {
     -fx-font-size: 17px;
-    -fx-text-fill: #b9c8c2;
-    -fx-padding: 0 0 20 0;
+    -fx-font-weight: bold;
+    -fx-text-fill: #f4ecd6;
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-background-radius: 12;
+    -fx-border-color: rgba(242, 211, 107, 0.45);
+    -fx-border-radius: 12;
+    -fx-border-width: 1.2;
+    -fx-padding: 14 20;
+    -fx-cursor: hand;
+}
+
+.menu-mode-button:hover {
+    -fx-background-color: #f2d36b;
+    -fx-text-fill: #172024;
+    -fx-border-color: #f2d36b;
 }
 
 .menu-button {
@@ -79,7 +128,7 @@
 
 .board-center {
     -fx-background-color: transparent;
-    -fx-padding: 18 0;
+    -fx-padding: 18 0 0 0;
 }
 
 .center-field-stage {
@@ -90,15 +139,17 @@
     -fx-max-height: 168;
     -fx-background-color: rgba(0, 0, 0, 0.14);
     -fx-background-radius: 10;
-    -fx-border-color: rgba(200, 215, 210, 0.30);
+    -fx-border-color: rgba(200, 215, 210, 0.32);
     -fx-border-radius: 10;
-    -fx-border-width: 1;
+    -fx-border-width: 1.5;
 }
 
 .opponent-field-stage {
+    -fx-border-color: rgba(120, 175, 235, 0.55);
 }
 
 .mine-field-stage {
+    -fx-border-color: rgba(145, 223, 192, 0.55);
 }
 
 .field-count-label {
