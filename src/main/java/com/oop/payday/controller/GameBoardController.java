@@ -29,7 +29,9 @@ import com.oop.payday.model.card.StealCard;
 import com.oop.payday.model.card.TreasureCard;
 import com.oop.payday.model.helper.HelperCard;
 import com.oop.payday.model.helper.HelperKind;
+import com.oop.payday.model.helper.HelperRules;
 import com.oop.payday.model.set.CashInEvaluator;
+import com.oop.payday.model.set.SetType;
 import com.oop.payday.model.set.TreasureSet;
 import com.oop.payday.player.BotPlayer;
 import com.oop.payday.player.HumanPlayer;
@@ -50,6 +52,7 @@ import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
+import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ScrollPane.ScrollBarPolicy;
@@ -94,6 +97,8 @@ public final class GameBoardController implements GameListener, HumanUi {
     @FXML private Pane globalOverlay;
     @FXML private FlowPane fieldAFlow;
     @FXML private FlowPane fieldBFlow;
+    @FXML private FlowPane fieldAHelperFlow;
+    @FXML private FlowPane fieldBHelperFlow;
     @FXML private StackPane centerArea;
     @FXML private StackPane contentArea;
     @FXML private StackPane overlayArea;
@@ -347,7 +352,7 @@ public final class GameBoardController implements GameListener, HumanUi {
                 Team team = teamFor(player);
                 setMessage(player.name() + " 환금 입력 대기 — 보관 카드 " + context.holdings().size() + "장");
                 updateBoardStatus();
-                renderCashInPanel(player, team, new ArrayList<>(context.holdings()), context.helpers(), new ArrayList<>());
+                renderCashInPanel(player, team, context, new ArrayList<>(context.holdings()), new ArrayList<>());
             });
         });
     }
@@ -685,15 +690,18 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     /** 환금 패널을 (남은 카드, 누적 행동) 상태로 다시 그린다(환금/처분마다 재호출). */
-    private void renderCashInPanel(HumanPlayer player, Team team, List<Card> remaining,
-            List<HelperCard> helpers, List<CashInAction> actions) {
+    private void renderCashInPanel(HumanPlayer player, Team team, CashInContext context, List<Card> remaining,
+            List<CashInAction> actions) {
         VBox root = panelRoot("세트를 선택해 환금하거나, 카드를 처분/도움 요청하세요. 끝나면 '턴 종료'.");
         root.getStyleClass().add("cash-panel");
         root.setSpacing(10);
         root.setPadding(new Insets(16));
         root.setMaxHeight(Double.MAX_VALUE);
+        syncPendingCoinPreview(team, actions);
+        updateBoardStatus();
 
         Set<Card> selected = new LinkedHashSet<>();
+        Set<HelperCard> selectedCashHelpers = new LinkedHashSet<>();
         Label preview = new Label("선택된 카드: 없음");
         preview.getStyleClass().add("preview");
 
@@ -709,6 +717,9 @@ public final class GameBoardController implements GameListener, HumanUi {
         HBox infoRow = new HBox(8, holdLimit, infoSpacer, planned);
         infoRow.setAlignment(Pos.CENTER_LEFT);
 
+        HBox cashHelperToggles = new HBox(6);
+        cashHelperToggles.setAlignment(Pos.CENTER_LEFT);
+
         FlowPane cardsPane = new FlowPane(10, 10);
         cardsPane.setAlignment(Pos.CENTER);
         List<Card> sortedRemaining = new ArrayList<>(remaining);
@@ -723,9 +734,11 @@ public final class GameBoardController implements GameListener, HumanUi {
                     selected.remove(card);
                 }
                 updateCashInPreview(preview, selected);
+                refreshCashHelperToggles(cashHelperToggles, selectedCashHelpers, context.helpers(), actions, selected);
             });
             cardsPane.getChildren().add(cv);
         }
+        refreshCashHelperToggles(cashHelperToggles, selectedCashHelpers, context.helpers(), actions, selected);
         StackPane cardStage = new StackPane(cardsPane);
         cardStage.getStyleClass().add("cash-card-stage");
         cardStage.setAlignment(Pos.CENTER);
@@ -747,10 +760,14 @@ public final class GameBoardController implements GameListener, HumanUi {
                 alert("선택한 카드는 유효한 세트가 아닙니다. 저주받은 그림은 같은 숫자 보물이 포함된 세트와 함께만 무료 처분할 수 있습니다.");
                 return;
             }
-            previewCoinDelta(team, evaluation.get().set().coin());
-            actions.add(new CashInAction.Cash(chosen));
+            List<HelperCard> cashHelpers = selectedCashHelpers.stream()
+                    .filter(helper -> canAttachToCash(helper, evaluation.get().set(), actions))
+                    .toList();
+            actions.add(cashHelpers.isEmpty()
+                    ? new CashInAction.Cash(chosen)
+                    : new CashInAction.CashWithHelpers(chosen, cashHelpers));
             remaining.removeAll(chosen);
-            renderCashInPanel(player, team, remaining, helpers, actions);
+            renderCashInPanel(player, team, context, remaining, actions);
         });
 
         Button discardBtn = new Button("처분");
@@ -760,12 +777,11 @@ public final class GameBoardController implements GameListener, HumanUi {
                 alert("처분할 카드를 선택하세요.");
                 return;
             }
-            previewCoinDelta(team, previewDiscardDelta(team, selected));
             for (Card c : selected) {
                 actions.add(new CashInAction.Discard(c));
             }
             remaining.removeAll(selected);
-            renderCashInPanel(player, team, remaining, helpers, actions);
+            renderCashInPanel(player, team, context, remaining, actions);
         });
 
         Button doneBtn = new Button("턴 종료");
@@ -784,25 +800,208 @@ public final class GameBoardController implements GameListener, HumanUi {
 
         HBox helperButtons = new HBox(8);
         helperButtons.setAlignment(Pos.CENTER_LEFT);
-        for (HelperCard helper : helpers) {
+        for (HelperCard helper : context.helpers()) {
+            if (HelperRules.isCashReaction(helper.kind())) {
+                continue;
+            }
             Button helperBtn = new Button(helper.displayName());
             helperBtn.getStyleClass().add("helper-action-button");
-            helperBtn.setDisable(helper.isUsed() || isHelperQueued(actions, helper));
+            String disabledReason = standaloneDisabledReason(helper, context, remaining, actions);
+            helperBtn.setDisable(disabledReason != null);
             helperBtn.setOnAction(e2 -> {
-                actions.add(new CashInAction.UseHelper(helper));
-                renderCashInPanel(player, team, remaining, helpers, actions);
+                if (helper.kind() == HelperKind.CROC_BROTHERS) {
+                    Optional<HelperCard> target = chooseCrocTarget(context, remaining, actions);
+                    if (target.isEmpty()) {
+                        return;
+                    }
+                    actions.add(new CashInAction.UseHelper(helper, target.get()));
+                } else {
+                    actions.add(new CashInAction.UseHelper(helper));
+                }
+                renderCashInPanel(player, team, context, remaining, actions);
             });
             helperButtons.getChildren().add(helperBtn);
         }
 
         Region btnSpacer = new Region();
         HBox.setHgrow(btnSpacer, Priority.ALWAYS);
-        HBox bottomBar = new HBox(8, helperButtons, btnSpacer, cashBtn, discardBtn, doneBtn);
+        HBox bottomBar = new HBox(8, cashHelperToggles, helperButtons, btnSpacer, cashBtn, discardBtn, doneBtn);
         bottomBar.setAlignment(Pos.CENTER_LEFT);
         bottomBar.getStyleClass().add("cash-bottom-bar");
 
-        root.getChildren().addAll(infoRow, cardScroller, preview, bottomBar);
+        Node plannedActions = buildPlannedActionsPanel(player, team, context, remaining, actions);
+        root.getChildren().addAll(infoRow, cardScroller, preview, plannedActions, bottomBar);
         setCenter(root);
+    }
+
+    private Node buildPlannedActionsPanel(HumanPlayer player, Team team, CashInContext context, List<Card> remaining,
+            List<CashInAction> actions) {
+        FlowPane list = new FlowPane(6, 6);
+        list.setAlignment(Pos.CENTER_LEFT);
+        list.getStyleClass().add("planned-action-list");
+        if (actions.isEmpty()) {
+            Label empty = new Label("예약된 행동 없음");
+            empty.getStyleClass().add("planned-action-empty");
+            list.getChildren().add(empty);
+            return list;
+        }
+        for (int i = 0; i < actions.size(); i++) {
+            int index = i;
+            CashInAction action = actions.get(i);
+            Label text = new Label(actionSummary(action));
+            text.getStyleClass().add("planned-action-text");
+            Button cancel = new Button("취소");
+            cancel.getStyleClass().add("planned-action-cancel");
+            cancel.setOnAction(e -> {
+                restoreActionCards(remaining, action);
+                actions.remove(index);
+                renderCashInPanel(player, team, context, remaining, actions);
+            });
+            HBox item = new HBox(6, text, cancel);
+            item.setAlignment(Pos.CENTER_LEFT);
+            item.getStyleClass().add("planned-action-item");
+            list.getChildren().add(item);
+        }
+        return list;
+    }
+
+    private String actionSummary(CashInAction action) {
+        return switch (action) {
+            case CashInAction.Cash cash -> "환금 " + cash.cards().size() + "장";
+            case CashInAction.CashWithHelpers cash -> "환금 " + cash.cards().size() + "장 + "
+                    + cash.helpers().stream().map(HelperCard::displayName).reduce((a, b) -> a + ", " + b).orElse("");
+            case CashInAction.Discard discard -> "처분 " + discard.card().displayName();
+            case CashInAction.UseHelper use -> use.copyTarget() == null
+                    ? "도움 " + use.helper().displayName()
+                    : "도움 " + use.helper().displayName() + " → " + use.copyTarget().displayName();
+        };
+    }
+
+    private void restoreActionCards(List<Card> remaining, CashInAction action) {
+        switch (action) {
+            case CashInAction.Cash cash -> remaining.addAll(cash.cards());
+            case CashInAction.CashWithHelpers cash -> remaining.addAll(cash.cards());
+            case CashInAction.Discard discard -> remaining.add(discard.card());
+            case CashInAction.UseHelper ignored -> {
+            }
+        }
+    }
+
+    private void refreshCashHelperToggles(HBox target, Set<HelperCard> selectedCashHelpers,
+            List<HelperCard> helpers, List<CashInAction> actions, Set<Card> selected) {
+        target.getChildren().clear();
+        Optional<TreasureSet> selectedSet = CashInEvaluator.evaluate(new ArrayList<>(selected))
+                .map(CashInEvaluator.Result::set);
+        for (HelperCard helper : helpers) {
+            if (!HelperRules.isCashReaction(helper.kind()) || helper.isUsed() || isHelperQueued(actions, helper)) {
+                continue;
+            }
+            HelperSummary summary = helperSummary(helper.kind());
+            ToggleButton toggle = new ToggleButton(summary.description());
+            toggle.getStyleClass().add("cash-helper-toggle");
+            boolean usable = selectedSet.isPresent() && canAttachToCash(helper, selectedSet.get(), actions);
+            toggle.setDisable(!usable);
+            if (!usable) {
+                selectedCashHelpers.remove(helper);
+            }
+            toggle.setSelected(usable && selectedCashHelpers.contains(helper));
+            toggle.setOnAction(e -> {
+                if (toggle.isSelected()) {
+                    selectedCashHelpers.add(helper);
+                } else {
+                    selectedCashHelpers.remove(helper);
+                }
+            });
+            target.getChildren().add(toggle);
+        }
+    }
+
+    private boolean canAttachToCash(HelperCard helper, TreasureSet set, List<CashInAction> actions) {
+        return !helper.isUsed()
+                && !isHelperQueued(actions, helper)
+                && HelperRules.isCashReaction(helper.kind())
+                && matchesCashReaction(helper.kind(), set);
+    }
+
+    private boolean matchesCashReaction(HelperKind kind, TreasureSet set) {
+        return switch (kind) {
+            case CUCKOO -> set.type() == SetType.RUN_SAME_COLOR && set.size() >= 3;
+            case LEO -> set.type() == SetType.SAME_NUMBER && set.size() >= 3;
+            case LUCKY -> set.type() == SetType.RUN_SAME_COLOR && set.size() == 5;
+            case ALPHA -> set.size() == 4
+                    && set.cards().stream().noneMatch(Card::isWild)
+                    && set.cards().stream().allMatch(c -> c instanceof TreasureCard t && t.number() == 1);
+            default -> false;
+        };
+    }
+
+    private String standaloneDisabledReason(HelperCard helper, CashInContext context, List<Card> remaining,
+            List<CashInAction> actions) {
+        if (helper.isUsed()) {
+            return "이미 사용한 도우미입니다.";
+        }
+        if (isHelperQueued(actions, helper)) {
+            return "이미 이번 턴 행동에 예약된 도우미입니다.";
+        }
+        return switch (helper.kind()) {
+            case DOUG -> remaining.stream().anyMatch(c -> !(c instanceof CursedCard))
+                    ? null : "저주가 아닌 보관 카드가 필요합니다.";
+            case TUSKER -> null;
+            case VIPER -> remaining.stream().anyMatch(CursedCard.class::isInstance)
+                    ? null : "저주받은 그림을 보유해야 합니다.";
+            case JUNK_DEALER -> context.discardPile().stream().anyMatch(Card::isWild)
+                    ? null : "버림 더미에 굉장한 보물이 있어야 합니다.";
+            case CROC_BROTHERS -> crocCopyTargets(context, remaining, actions).isEmpty()
+                    ? "복사 가능한 사용 완료 도우미가 없습니다." : null;
+            default -> "환금할 세트에 붙여 사용하는 도우미입니다.";
+        };
+    }
+
+    private Optional<HelperCard> chooseCrocTarget(CashInContext context, List<Card> remaining,
+            List<CashInAction> actions) {
+        List<HelperCard> targets = crocCopyTargets(context, remaining, actions);
+        if (targets.isEmpty()) {
+            alert("복사할 수 있는 사용 완료 도우미가 없습니다.");
+            return Optional.empty();
+        }
+        ChoiceDialog<HelperCard> dialog = new ChoiceDialog<>(targets.get(0), targets);
+        dialog.setTitle("크록 형제");
+        dialog.setHeaderText("복사할 도우미를 선택하세요.");
+        dialog.setContentText("복사 대상");
+        return dialog.showAndWait();
+    }
+
+    private List<HelperCard> crocCopyTargets(CashInContext context, List<Card> remaining,
+            List<CashInAction> actions) {
+        TreasureSet lastSet = lastQueuedCashSet(actions).orElse(null);
+        return context.usedHelpers().stream()
+                .filter(helper -> helper.kind() != HelperKind.CROC_BROTHERS)
+                .filter(helper -> canCopyInPreview(helper.kind(), lastSet, remaining, context.discardPile()))
+                .toList();
+    }
+
+    private Optional<TreasureSet> lastQueuedCashSet(List<CashInAction> actions) {
+        Optional<TreasureSet> result = Optional.empty();
+        for (CashInAction action : actions) {
+            if (action instanceof CashInAction.Cash cash) {
+                result = CashInEvaluator.evaluate(cash.cards()).map(CashInEvaluator.Result::set);
+            } else if (action instanceof CashInAction.CashWithHelpers cash) {
+                result = CashInEvaluator.evaluate(cash.cards()).map(CashInEvaluator.Result::set);
+            }
+        }
+        return result;
+    }
+
+    private boolean canCopyInPreview(HelperKind kind, TreasureSet lastSet, List<Card> remaining,
+            List<Card> discardPile) {
+        return switch (kind) {
+            case CUCKOO, LEO, LUCKY, ALPHA -> lastSet != null && matchesCashReaction(kind, lastSet);
+            case DOUG -> remaining.stream().anyMatch(c -> !(c instanceof CursedCard));
+            case TUSKER -> true;
+            case VIPER -> remaining.stream().anyMatch(CursedCard.class::isInstance);
+            case JUNK_DEALER -> discardPile.stream().anyMatch(Card::isWild);
+            case CROC_BROTHERS -> false;
+        };
     }
 
     private String holdLimitText(Player player, List<Card> remaining, List<CashInAction> actions) {
@@ -828,13 +1027,21 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     private boolean isHelperKindQueued(List<CashInAction> actions, HelperKind kind) {
-        return actions.stream().anyMatch(action ->
-                action instanceof CashInAction.UseHelper use && use.helper().kind() == kind);
+        return actions.stream().anyMatch(action -> switch (action) {
+            case CashInAction.UseHelper use -> use.helper().kind() == kind
+                    || (use.copyTarget() != null && use.copyTarget().kind() == kind);
+            case CashInAction.CashWithHelpers cash -> cash.helpers().stream()
+                    .anyMatch(helper -> helper.kind() == kind);
+            default -> false;
+        });
     }
 
     private boolean isHelperQueued(List<CashInAction> actions, HelperCard helper) {
-        return actions.stream().anyMatch(action ->
-                action instanceof CashInAction.UseHelper use && use.helper() == helper);
+        return actions.stream().anyMatch(action -> switch (action) {
+            case CashInAction.UseHelper use -> use.helper() == helper;
+            case CashInAction.CashWithHelpers cash -> cash.helpers().contains(helper);
+            default -> false;
+        });
     }
 
     private void updateCashInPreview(Label preview, Set<Card> selected) {
@@ -1113,12 +1320,14 @@ public final class GameBoardController implements GameListener, HumanUi {
         if (distributionFieldUpdatePending) {
             return;
         }
-        renderField(fieldATitleLabel, fieldAOfficerLabel, fieldAOfficerEffectLabel, fieldACoinsLabel, fieldACountLabel, fieldAFlow, teamA, "내 필드");
-        renderField(fieldBTitleLabel, fieldBOfficerLabel, fieldBOfficerEffectLabel, fieldBCoinsLabel, fieldBCountLabel, fieldBFlow, teamB, "상대 필드");
+        renderField(fieldATitleLabel, fieldAOfficerLabel, fieldAOfficerEffectLabel, fieldACoinsLabel,
+                fieldACountLabel, fieldAFlow, fieldAHelperFlow, teamA, "내 필드");
+        renderField(fieldBTitleLabel, fieldBOfficerLabel, fieldBOfficerEffectLabel, fieldBCoinsLabel,
+                fieldBCountLabel, fieldBFlow, fieldBHelperFlow, teamB, "상대 필드");
     }
 
     private void renderField(Label titleLabel, Label officerLabel, Label officerEffectLabel,
-            Label coinsLabel, Label countLabel, FlowPane field, Team team, String fallback) {
+            Label coinsLabel, Label countLabel, FlowPane field, FlowPane helpers, Team team, String fallback) {
         if (team == null) {
             titleLabel.setText(fallback);
             officerLabel.setText("간부 없음");
@@ -1126,6 +1335,7 @@ public final class GameBoardController implements GameListener, HumanUi {
             coinsLabel.setText("0 코인");
             countLabel.setText("");
             field.getChildren().clear();
+            helpers.getChildren().clear();
             return;
         }
         Player player = team.leader();
@@ -1139,6 +1349,7 @@ public final class GameBoardController implements GameListener, HumanUi {
         }
         coinsLabel.setText(displayedCoins(team) + " 코인");
         countLabel.setText("보유 " + player.holdingCount() + " / " + player.holdLimit());
+        renderSidebarHelpers(helpers, player);
         field.getChildren().clear();
         if (player.holdings().isEmpty()) {
             Label empty = new Label("보물 없음");
@@ -1151,6 +1362,69 @@ public final class GameBoardController implements GameListener, HumanUi {
         for (Card card : holdings) {
             field.getChildren().add(new CardView(card, true));
         }
+    }
+
+    private void renderSidebarHelpers(FlowPane target, Player player) {
+        target.getChildren().clear();
+        boolean local = isLocalActor(player);
+        for (HelperCard helper : player.helpers()) {
+            boolean faceUp = local || helper.isUsed();
+            target.getChildren().add(buildSidebarHelperCard(helper, faceUp));
+        }
+    }
+
+    private Node buildSidebarHelperCard(HelperCard helper, boolean faceUp) {
+        StackPane card = new StackPane();
+        card.getStyleClass().addAll("sidebar-helper-card", faceUp ? "sidebar-helper-front" : "sidebar-helper-back");
+        if (helper.isUsed()) {
+            card.getStyleClass().add("sidebar-helper-used");
+        }
+
+        VBox content = new VBox(2);
+        content.setAlignment(Pos.CENTER);
+        if (faceUp) {
+            Label name = new Label(helper.displayName());
+            name.getStyleClass().add("sidebar-helper-name");
+            name.setWrapText(true);
+            Label description = new Label(helper.effectText());
+            description.getStyleClass().add("sidebar-helper-description");
+            description.setWrapText(true);
+            content.getChildren().addAll(name, description);
+        } else {
+            Label mark = new Label("?");
+            mark.getStyleClass().add("sidebar-helper-back-mark");
+            Label label = new Label("비공개");
+            label.getStyleClass().add("sidebar-helper-kind");
+            label.setWrapText(true);
+            content.getChildren().addAll(mark, label);
+        }
+        card.getChildren().add(content);
+
+        if (helper.isUsed()) {
+            Label used = new Label("사용 완료");
+            used.getStyleClass().add("sidebar-helper-used-ribbon");
+            StackPane.setAlignment(used, Pos.BOTTOM_CENTER);
+            card.getChildren().add(used);
+        }
+
+        return card;
+    }
+
+    private HelperSummary helperSummary(HelperKind kind) {
+        return switch (kind) {
+            case CUCKOO -> new HelperSummary("색 3+ 환금 +3");
+            case LEO -> new HelperSummary("숫자 3+ 환금 +3");
+            case LUCKY -> new HelperSummary("색 5장 환금 +7");
+            case ALPHA -> new HelperSummary("1 네 장 환금 승리");
+            case DOUG -> new HelperSummary("비저주 버리고 드로우");
+            case TUSKER -> new HelperSummary("1장 드로우, 한도 무시");
+            case VIPER -> new HelperSummary("저주 제거 후 +코인");
+            case JUNK_DEALER -> new HelperSummary("와일드 회수, 환금 금지");
+            case CROC_BROTHERS -> new HelperSummary("사용된 도우미 복사");
+        };
+    }
+
+    private record HelperSummary(String description) {
     }
 
     private Team teamFor(Player player) {
@@ -1179,6 +1453,51 @@ public final class GameBoardController implements GameListener, HumanUi {
 
     private int displayedCoins(Team team) {
         return Math.max(0, team.coins() + pendingCoinPreview.getOrDefault(team, 0));
+    }
+
+    private void syncPendingCoinPreview(Team team, List<CashInAction> actions) {
+        if (team == null) {
+            return;
+        }
+        int delta = projectedCoinDelta(team, actions);
+        if (delta == 0) {
+            pendingCoinPreview.remove(team);
+        } else {
+            pendingCoinPreview.put(team, delta);
+        }
+    }
+
+    private int projectedCoinDelta(Team team, List<CashInAction> actions) {
+        int coins = team.coins();
+        int delta = 0;
+        for (CashInAction action : actions) {
+            int change = switch (action) {
+                case CashInAction.Cash cash -> CashInEvaluator.evaluate(cash.cards())
+                        .map(result -> result.set().coin())
+                        .orElse(0);
+                case CashInAction.CashWithHelpers cash -> CashInEvaluator.evaluate(cash.cards())
+                        .map(result -> result.set().coin() + cash.helpers().stream()
+                                .mapToInt(this::previewHelperCoinDelta)
+                                .sum())
+                        .orElse(0);
+                case CashInAction.Discard discard -> discard.card() instanceof CursedCard
+                        ? -Math.min(2, coins)
+                        : 0;
+                case CashInAction.UseHelper use -> previewHelperCoinDelta(use.helper())
+                        + (use.copyTarget() == null ? 0 : previewHelperCoinDelta(use.copyTarget()));
+            };
+            coins = Math.max(0, coins + change);
+            delta += change;
+        }
+        return delta;
+    }
+
+    private int previewHelperCoinDelta(HelperCard helper) {
+        return switch (helper.kind()) {
+            case CUCKOO, LEO -> 3;
+            case LUCKY -> 7;
+            default -> 0;
+        };
     }
 
     private void previewCoinDelta(Team team, int requestedDelta) {

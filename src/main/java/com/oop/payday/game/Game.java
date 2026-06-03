@@ -24,6 +24,7 @@ import com.oop.payday.model.card.CursedCard;
 import com.oop.payday.model.card.StealCard;
 import com.oop.payday.model.helper.HelperCard;
 import com.oop.payday.model.helper.HelperCards;
+import com.oop.payday.model.helper.HelperRules;
 import com.oop.payday.model.helper.HelperUseContext;
 import com.oop.payday.model.officer.LeaderContext;
 import com.oop.payday.model.officer.OfficerTile;
@@ -220,8 +221,25 @@ public final class Game {
                         lastCashedSet = set;
                     }
                 }
+                case CashInAction.CashWithHelpers cash -> {
+                    TreasureSet set = applyCash(player, team, cash.cards());
+                    if (set != null) {
+                        lastCashedSet = set;
+                        for (HelperCard helper : cash.helpers()) {
+                            if (!HelperRules.isCashReaction(helper.kind())) {
+                                listener.onMessage(player.name() + ": " + helper.displayName()
+                                        + "은(는) 환금 보너스로 사용할 수 없음");
+                                continue;
+                            }
+                            applyHelper(player, team, helper, set, null);
+                            if (instantWinner != null) {
+                                return;
+                            }
+                        }
+                    }
+                }
                 case CashInAction.Discard discard -> applyDiscard(player, team, discard.card());
-                case CashInAction.UseHelper use -> applyHelper(player, team, use.helper(), lastCashedSet);
+                case CashInAction.UseHelper use -> applyHelper(player, team, use.helper(), lastCashedSet, use.copyTarget());
             }
             if (instantWinner != null) {
                 return;
@@ -283,16 +301,17 @@ public final class Game {
         }
     }
 
-    private void applyHelper(Player player, Team team, HelperCard helper, TreasureSet lastCashedSet) {
+    private void applyHelper(Player player, Team team, HelperCard helper, TreasureSet lastCashedSet, HelperCard copyTarget) {
         if (!player.ownsHelper(helper) || helper.isUsed()) {
             listener.onMessage(player.name() + ": 사용할 수 없는 도우미");
             return;
         }
         int beforeCoins = team.coins();
         HelperUseContext context = new HelperUseContext(
-                player, team, opponentOf(team), deck, lastCashedSet, usedHelpers);
+                player, team, opponentOf(team), deck, lastCashedSet, usedHelpers, copyTarget);
         if (!helper.canUse(context)) {
-            listener.onMessage(player.name() + ": " + helper.displayName() + " 조건 불충족");
+            listener.onMessage(player.name() + ": " + helper.displayName() + " "
+                    + HelperRules.availability(helper, context).reason());
             return;
         }
         helper.use(context);

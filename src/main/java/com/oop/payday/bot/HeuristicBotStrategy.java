@@ -2,8 +2,10 @@ package com.oop.payday.bot;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
@@ -13,6 +15,7 @@ import com.oop.payday.model.card.Card;
 import com.oop.payday.model.card.CursedCard;
 import com.oop.payday.model.helper.HelperCard;
 import com.oop.payday.model.helper.HelperKind;
+import com.oop.payday.model.helper.HelperRules;
 import com.oop.payday.model.set.CashInEvaluator;
 import com.oop.payday.model.set.SetEvaluator;
 import com.oop.payday.model.set.SetType;
@@ -140,32 +143,39 @@ public final class HeuristicBotStrategy implements BotStrategy {
     public List<CashInAction> decideCashIn(CashInContext context) {
         List<CashInAction> actions = new ArrayList<>();
         List<Card> remaining = new ArrayList<>(context.holdings());
+        Set<HelperCard> queuedHelpers = new HashSet<>();
         while (true) {
             Optional<TreasureSet> best = SetEvaluator.findBestSet(remaining);
             if (best.isEmpty()) {
                 break;
             }
             List<Card> setCards = withMatchingCurses(best.get().cards(), remaining);
-            actions.add(new CashInAction.Cash(setCards));
-            addUsefulConditionalHelpers(actions, context.helpers(), best.get());
+            List<HelperCard> cashHelpers = usefulConditionalHelpers(context.helpers(), queuedHelpers, best.get());
+            actions.add(cashHelpers.isEmpty()
+                    ? new CashInAction.Cash(setCards)
+                    : new CashInAction.CashWithHelpers(setCards, cashHelpers));
+            queuedHelpers.addAll(cashHelpers);
             remaining.removeAll(setCards);
         }
-        addUsefulActionHelper(actions, context, remaining);
+        addUsefulActionHelper(actions, context, remaining, queuedHelpers);
         if (!isTuskerQueued(actions)) {
             discardDownToLimit(actions, remaining, context.holdLimit());
         }
         return actions;
     }
 
-    private void addUsefulConditionalHelpers(List<CashInAction> actions, List<HelperCard> helpers, TreasureSet set) {
+    private List<HelperCard> usefulConditionalHelpers(List<HelperCard> helpers, Set<HelperCard> queuedHelpers,
+            TreasureSet set) {
+        List<HelperCard> result = new ArrayList<>();
         for (HelperCard helper : helpers) {
-            if (helper.isUsed()) {
+            if (helper.isUsed() || queuedHelpers.contains(helper)) {
                 continue;
             }
             if (matchesConditionalHelper(helper.kind(), set)) {
-                actions.add(new CashInAction.UseHelper(helper));
+                result.add(helper);
             }
         }
+        return result;
     }
 
     private List<Card> withMatchingCurses(List<Card> setCards, List<Card> remaining) {
@@ -197,36 +207,68 @@ public final class HeuristicBotStrategy implements BotStrategy {
         };
     }
 
-    private void addUsefulActionHelper(List<CashInAction> actions, CashInContext context, List<Card> remaining) {
+    private void addUsefulActionHelper(List<CashInAction> actions, CashInContext context, List<Card> remaining,
+            Set<HelperCard> queuedHelpers) {
         for (HelperCard helper : context.helpers()) {
-            if (helper.isUsed()) {
+            if (helper.isUsed() || queuedHelpers.contains(helper) || HelperRules.isCashReaction(helper.kind())) {
                 continue;
             }
+            HelperCard copyTarget = null;
             boolean use = switch (helper.kind()) {
                 case VIPER -> remaining.stream().filter(CursedCard.class::isInstance).count() >= 1;
                 case TUSKER -> remaining.size() <= context.holdLimit();
                 case DOUG -> SetEvaluator.findBestSet(remaining).isEmpty()
                         && remaining.stream().filter(c -> !(c instanceof CursedCard)).count() >= 2;
                 case JUNK_DEALER -> context.discardPile().stream().anyMatch(Card::isWild);
-                case CROC_BROTHERS -> !context.usedHelpers().isEmpty();
+                case CROC_BROTHERS -> {
+                    copyTarget = chooseCrocTarget(context, remaining);
+                    yield copyTarget != null;
+                }
                 default -> false;
             };
             if (use) {
-                actions.add(new CashInAction.UseHelper(helper));
+                actions.add(new CashInAction.UseHelper(helper, copyTarget));
+                queuedHelpers.add(helper);
                 return;
             }
         }
     }
 
+    private HelperCard chooseCrocTarget(CashInContext context, List<Card> remaining) {
+        return context.usedHelpers().stream()
+                .filter(h -> h.kind() != HelperKind.CROC_BROTHERS)
+                .filter(h -> canCopyNow(h.kind(), context, remaining))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private boolean canCopyNow(HelperKind kind, CashInContext context, List<Card> remaining) {
+        return switch (kind) {
+            case TUSKER -> true;
+            case VIPER -> remaining.stream().anyMatch(CursedCard.class::isInstance);
+            case JUNK_DEALER -> context.discardPile().stream().anyMatch(Card::isWild);
+            case DOUG -> remaining.stream().anyMatch(c -> !(c instanceof CursedCard));
+            default -> false;
+        };
+    }
+
     private boolean isTuskerQueued(List<CashInAction> actions) {
-        return actions.stream().anyMatch(action ->
-                action instanceof CashInAction.UseHelper use && use.helper().kind() == HelperKind.TUSKER);
+        return actions.stream().anyMatch(action -> switch (action) {
+            case CashInAction.UseHelper use -> use.helper().kind() == HelperKind.TUSKER;
+            case CashInAction.CashWithHelpers cash -> cash.helpers().stream()
+                    .anyMatch(helper -> helper.kind() == HelperKind.TUSKER);
+            default -> false;
+        });
     }
 
     private void discardDownToLimit(List<CashInAction> actions, List<Card> remaining, int holdLimit) {
         List<Card> projected = new ArrayList<>(remaining);
-        if (actions.stream().anyMatch(action ->
-                action instanceof CashInAction.UseHelper use && use.helper().kind() == HelperKind.VIPER)) {
+        if (actions.stream().anyMatch(action -> switch (action) {
+            case CashInAction.UseHelper use -> use.helper().kind() == HelperKind.VIPER;
+            case CashInAction.CashWithHelpers cash -> cash.helpers().stream()
+                    .anyMatch(helper -> helper.kind() == HelperKind.VIPER);
+            default -> false;
+        })) {
             projected.removeIf(CursedCard.class::isInstance);
         }
         while (projected.size() > holdLimit) {

@@ -117,9 +117,9 @@
     -fx-border-color: transparent rgba(242,211,107,0.15) transparent transparent;
     -fx-border-width: 1;
     -fx-padding: 14 10 14 10;
-    -fx-min-width: 230;
-    -fx-pref-width: 250;
-    -fx-max-width: 270;
+    -fx-min-width: 250;
+    -fx-pref-width: 260;
+    -fx-max-width: 280;
 }
 
 .center-area {
@@ -170,10 +170,12 @@
 
 .opponent-card {
     -fx-border-color: rgba(100, 160, 220, 0.30);
+    -fx-translate-y: 10;
 }
 
 .mine-card {
     -fx-border-color: rgba(145, 223, 192, 0.30);
+    -fx-translate-y: -10;
 }
 
 .info-card-title {
@@ -207,6 +209,83 @@
     -fx-text-alignment: center;
 }
 
+.sidebar-helper-flow {
+    -fx-padding: 3 0 1 0;
+    -fx-pref-wrap-length: 208;
+}
+
+.sidebar-helper-card {
+    -fx-min-width: 208;
+    -fx-pref-width: 208;
+    -fx-max-width: 208;
+    -fx-min-height: 106;
+    -fx-pref-height: 106;
+    -fx-max-height: 106;
+    -fx-padding: 9 12 17 12;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-cursor: hand;
+}
+
+.sidebar-helper-front {
+    -fx-background-color: linear-gradient(to bottom, #203f47, #13262c);
+    -fx-border-color: rgba(242, 211, 107, 0.40);
+}
+
+.sidebar-helper-back {
+    -fx-background-color: linear-gradient(to bottom, #263848, #111b27);
+    -fx-border-color: rgba(120, 175, 235, 0.44);
+}
+
+.sidebar-helper-used {
+    -fx-opacity: 0.72;
+    -fx-border-color: rgba(160, 174, 170, 0.38);
+}
+
+.sidebar-helper-name {
+    -fx-text-fill: #f2d36b;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-alignment: center;
+    -fx-text-alignment: center;
+}
+
+.sidebar-helper-description {
+    -fx-text-fill: #f2f6f4;
+    -fx-font-size: 11px;
+    -fx-font-weight: normal;
+    -fx-alignment: center;
+    -fx-text-alignment: center;
+}
+
+.sidebar-helper-kind {
+    -fx-text-fill: #b9c8c2;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-alignment: center;
+    -fx-text-alignment: center;
+}
+
+.sidebar-helper-back-mark {
+    -fx-text-fill: #8fc6f0;
+    -fx-font-size: 22px;
+    -fx-font-weight: bold;
+    -fx-font-family: "Book Antiqua", "Malgun Gothic", serif;
+}
+
+.sidebar-helper-used-ribbon {
+    -fx-background-color: rgba(8, 14, 18, 0.84);
+    -fx-background-radius: 0 0 8 8;
+    -fx-text-fill: #d7dedb;
+    -fx-font-size: 8px;
+    -fx-font-weight: bold;
+    -fx-padding: 1 0 2 0;
+    -fx-min-width: 206;
+    -fx-alignment: center;
+    -fx-text-alignment: center;
+}
+
 .info-coins {
     -fx-text-fill: #f2d36b;
     -fx-font-size: 26px;
@@ -221,6 +300,45 @@
     -fx-padding: 8 0 0 0;
     -fx-border-color: rgba(242, 211, 107, 0.14) transparent transparent transparent;
     -fx-border-width: 1 0 0 0;
+}
+
+.planned-action-list {
+    -fx-padding: 2 0 4 0;
+}
+
+.planned-action-empty {
+    -fx-text-fill: #6f827d;
+    -fx-font-size: 12px;
+}
+
+.planned-action-item {
+    -fx-background-color: rgba(255,255,255,0.055);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(242,211,107,0.18);
+    -fx-border-radius: 8;
+    -fx-padding: 5 6 5 8;
+}
+
+.planned-action-text {
+    -fx-text-fill: #d7e2dd;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.planned-action-cancel {
+    -fx-background-color: rgba(255, 115, 115, 0.14);
+    -fx-text-fill: #ffb4a9;
+    -fx-background-radius: 6;
+    -fx-border-color: rgba(255, 143, 143, 0.28);
+    -fx-border-radius: 6;
+    -fx-border-width: 1;
+    -fx-padding: 3 7;
+    -fx-font-size: 11px;
+    -fx-cursor: hand;
+}
+
+.planned-action-cancel:hover {
+    -fx-background-color: rgba(255, 115, 115, 0.24);
 }
 
 .info-divider {
@@ -419,6 +537,24 @@
 
 .helper-action-button:hover {
     -fx-background-color: #3eb5aa;
+}
+
+.cash-helper-toggle {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(255,255,255,0.07);
+    -fx-text-fill: #dbe8e2;
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(242,211,107,0.32);
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-padding: 7 9;
+}
+
+.cash-helper-toggle:selected {
+    -fx-background-color: #f2d36b;
+    -fx-text-fill: #172024;
+    -fx-border-color: #f2d36b;
 }
 
 .card {

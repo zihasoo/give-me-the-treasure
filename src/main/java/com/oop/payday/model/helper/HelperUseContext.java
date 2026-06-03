@@ -19,6 +19,7 @@ public final class HelperUseContext {
     private final Deck deck;
     private final TreasureSet lastCashedSet;
     private final List<HelperCard> usedHelpers;
+    private final HelperCard copyTarget;
 
     private String message;
     private Team instantWinner;
@@ -27,12 +28,18 @@ public final class HelperUseContext {
 
     public HelperUseContext(Player player, Team team, Team opponent, Deck deck,
             TreasureSet lastCashedSet, List<HelperCard> usedHelpers) {
+        this(player, team, opponent, deck, lastCashedSet, usedHelpers, null);
+    }
+
+    public HelperUseContext(Player player, Team team, Team opponent, Deck deck,
+            TreasureSet lastCashedSet, List<HelperCard> usedHelpers, HelperCard copyTarget) {
         this.player = player;
         this.team = team;
         this.opponent = opponent;
         this.deck = deck;
         this.lastCashedSet = lastCashedSet;
         this.usedHelpers = usedHelpers;
+        this.copyTarget = copyTarget;
     }
 
     public Player player() {
@@ -57,6 +64,10 @@ public final class HelperUseContext {
 
     public List<HelperCard> usedHelpers() {
         return usedHelpers;
+    }
+
+    public HelperCard copyTarget() {
+        return copyTarget;
     }
 
     public void addCoins(int amount) {

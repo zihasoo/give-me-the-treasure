@@ -1,0 +1,80 @@
+package com.oop.payday.game;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+import java.util.List;
+import java.util.Random;
+
+import org.junit.jupiter.api.Test;
+
+import com.oop.payday.bot.HeuristicBotStrategy;
+import com.oop.payday.decision.CashInAction;
+import com.oop.payday.decision.CashInContext;
+import com.oop.payday.model.card.Card;
+import com.oop.payday.model.card.CardColor;
+import com.oop.payday.model.card.TreasureCard;
+import com.oop.payday.model.Deck;
+import com.oop.payday.model.helper.HelperCard;
+import com.oop.payday.model.helper.HelperCards;
+import com.oop.payday.model.helper.HelperKind;
+import com.oop.payday.model.helper.HelperUseContext;
+import com.oop.payday.player.BotPlayer;
+import com.oop.payday.player.Player;
+
+final class HelperActionModelTest {
+
+    @Test
+    void botAttachesCashReactionHelperToCashAction() {
+        HelperCard lucky = helper(HelperKind.LUCKY);
+        List<Card> sameColorRun = List.of(
+                new TreasureCard(100, CardColor.RED, 1),
+                new TreasureCard(101, CardColor.RED, 2),
+                new TreasureCard(102, CardColor.RED, 3),
+                new TreasureCard(103, CardColor.RED, 4),
+                new TreasureCard(104, CardColor.RED, 5));
+        CashInContext context = new CashInContext(sameColorRun, List.of(lucky), List.of(), List.of(), 0, 5);
+
+        List<CashInAction> actions = new HeuristicBotStrategy().decideCashIn(context);
+
+        CashInAction.CashWithHelpers action = assertInstanceOf(CashInAction.CashWithHelpers.class, actions.get(0));
+        assertEquals(sameColorRun.size(), action.cards().size());
+        assertEquals(List.of(lucky), action.helpers());
+    }
+
+    @Test
+    void crocBrothersActionKeepsSelectedCopyTarget() {
+        HelperCard croc = helper(HelperKind.CROC_BROTHERS);
+        HelperCard tusker = helper(HelperKind.TUSKER);
+        CashInContext context = new CashInContext(List.of(), List.of(croc), List.of(tusker), List.of(), 0, 5);
+
+        List<CashInAction> actions = new HeuristicBotStrategy().decideCashIn(context);
+
+        CashInAction.UseHelper action = assertInstanceOf(CashInAction.UseHelper.class, actions.get(0));
+        assertSame(croc, action.helper());
+        assertSame(tusker, action.copyTarget());
+    }
+
+    @Test
+    void crocBrothersCopyingTuskerSuspendsHoldLimit() {
+        HelperCard croc = helper(HelperKind.CROC_BROTHERS);
+        HelperCard tusker = helper(HelperKind.TUSKER);
+        Player player = BotPlayer.test(new HeuristicBotStrategy());
+        Team team = new Team("테스트 팀", List.of(player));
+        Team opponent = new Team("상대 팀", List.of(BotPlayer.test(new HeuristicBotStrategy())));
+        HelperUseContext context = new HelperUseContext(
+                player, team, opponent, new Deck(new Random(3)), null, List.of(tusker), tusker);
+
+        croc.use(context);
+
+        assertEquals(true, context.holdLimitSuspended());
+    }
+
+    private static HelperCard helper(HelperKind kind) {
+        return HelperCards.shuffledDeck(new Random(7)).stream()
+                .filter(helper -> helper.kind() == kind)
+                .findFirst()
+                .orElseThrow();
+    }
+}

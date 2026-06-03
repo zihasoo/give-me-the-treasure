@@ -183,36 +183,29 @@ public final class HelperCards {
         return new HelperCard(id, HelperKind.CROC_BROTHERS) {
             @Override
             public boolean canUse(HelperUseContext context) {
-                return super.canUse(context) && context.usedHelpers().stream()
-                        .anyMatch(h -> h.kind() != HelperKind.CROC_BROTHERS && canCopy(h.kind(), context));
+                if (!super.canUse(context)) {
+                    return false;
+                }
+                HelperCard target = context.copyTarget();
+                if (target != null) {
+                    return target.kind() != HelperKind.CROC_BROTHERS
+                            && context.usedHelpers().contains(target)
+                            && HelperRules.canCopy(target.kind(), context);
+                }
+                return !HelperRules.copyTargets(context).isEmpty();
             }
 
             @Override
             protected void apply(HelperUseContext context) {
-                HelperCard target = context.usedHelpers().stream()
-                        .filter(h -> h.kind() != HelperKind.CROC_BROTHERS && canCopy(h.kind(), context))
+                HelperCard target = context.copyTarget();
+                if (target == null) {
+                    target = HelperRules.copyTargets(context).stream()
                         .max(Comparator.comparingInt(HelperCard::id))
                         .orElseThrow();
+                }
                 copyEffect(target.kind(), context);
                 context.setMessage(displayName() + " — " + target.displayName() + " 효과 복사");
             }
-        };
-    }
-
-    private static boolean canCopy(HelperKind kind, HelperUseContext context) {
-        return switch (kind) {
-            case CUCKOO -> isSameColorSet(context.lastCashedSet(), 3);
-            case LEO -> {
-                TreasureSet set = context.lastCashedSet();
-                yield set != null && set.type() == SetType.SAME_NUMBER && set.size() >= 3;
-            }
-            case LUCKY -> isSameColorSet(context.lastCashedSet(), 5);
-            case ALPHA -> context.lastCashedSet() != null && hasFourNaturalOnes(context.lastCashedSet());
-            case DOUG -> context.player().holdings().stream().anyMatch(c -> !(c instanceof CursedCard));
-            case TUSKER -> true;
-            case VIPER -> context.player().holdings().stream().anyMatch(CursedCard.class::isInstance);
-            case JUNK_DEALER -> context.deck().discardView().stream().anyMatch(Card::isWild);
-            case CROC_BROTHERS -> false;
         };
     }
 
