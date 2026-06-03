@@ -69,9 +69,9 @@ public final class Game {
 
     /** 게임을 끝까지 진행한다(승자가 나올 때까지). 블로킹 호출. */
     public void play() {
-        setupHelpers();
         listener.onGameSetup(allPlayers());
         listener.awaitAnimations();
+        setupHelpers();
         announceSetup();
         listener.onMessage("게임 시작! 목표: " + config.winningCoins() + "코인");
         round = 0;

@@ -210,7 +210,7 @@
 }
 
 .sidebar-helper-flow {
-    -fx-padding: 3 0 1 0;
+    -fx-padding: 2 0 2 0;
 }
 
 .sidebar-helper-card {
@@ -274,9 +274,9 @@
     -fx-background-color: rgba(8, 14, 18, 0.84);
     -fx-background-radius: 0 0 8 8;
     -fx-text-fill: #d7dedb;
-    -fx-font-size: 8px;
+    -fx-font-size: 11px;
     -fx-font-weight: bold;
-    -fx-padding: 1 0 2 0;
+    -fx-padding: 2 0 3 0;
     -fx-alignment: center;
     -fx-text-alignment: center;
 }
@@ -334,6 +334,15 @@
 
 .planned-action-cancel:hover {
     -fx-background-color: rgba(255, 115, 115, 0.24);
+}
+
+.sidebar-mid-divider {
+    -fx-pref-height: 2;
+    -fx-max-height: 2;
+    -fx-min-height: 2;
+    -fx-border-color: rgba(190, 210, 205, 0.28);
+    -fx-border-style: segments(6, 5) line-cap butt;
+    -fx-border-width: 1.5 0 0 0;
 }
 
 .info-divider {

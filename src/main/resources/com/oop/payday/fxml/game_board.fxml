@@ -35,6 +35,8 @@
                         </VBox>
 
                         <Region VBox.vgrow="ALWAYS" />
+                        <Region styleClass="sidebar-mid-divider" />
+                        <Region VBox.vgrow="ALWAYS" />
 
                         <VBox styleClass="info-card mine-card" spacing="6.0">
                             <children>

@@ -116,6 +116,7 @@ public final class GameBoardController implements GameListener, HumanUi {
     private final Map<Team, Integer> pendingCoinPreview = new HashMap<>();
     private boolean overlayPlaying;
     private boolean distributionFieldUpdatePending;
+    private boolean introPhase = true;
     private VBox activeBundle0;
     private VBox activeBundle1;
     private int centerRevision;
@@ -208,6 +209,7 @@ public final class GameBoardController implements GameListener, HumanUi {
     @Override
     public void onPhaseChanged(Phase phase, int round, Team splitTeam) {
         Platform.runLater(() -> {
+            introPhase = false;
             int phaseToken = ++phaseRevision;
             currentSplitTeam = splitTeam;
             clearCenterIfOpponentWaiting();
@@ -1141,10 +1143,12 @@ public final class GameBoardController implements GameListener, HumanUi {
     // ===== 게임 시작 간부 애니메이션 =====
 
     private void playOfficerSetupAnimation(List<Player> players) {
-        VBox panel = new VBox(22);
+        final double CW = 124, CH = 176;
+
+        VBox panel = new VBox(20);
         panel.setAlignment(Pos.CENTER);
-        panel.setPadding(new Insets(36, 48, 36, 48));
-        panel.setMaxWidth(560);
+        panel.setPadding(new Insets(32, 44, 32, 44));
+        panel.setMaxWidth(480);
 
         Label title = new Label("간부 배정");
         title.getStyleClass().add("waiting-label");
@@ -1152,66 +1156,96 @@ public final class GameBoardController implements GameListener, HumanUi {
         Label sub = new Label("각 플레이어에게 간부가 배정되었습니다");
         sub.setStyle("-fx-text-fill: #8aa0a8; -fx-font-size: 13px;");
 
-        HBox cardsRow = new HBox(32);
-        cardsRow.setAlignment(Pos.CENTER);
+        VBox cardsCol = new VBox(12);
+        cardsCol.setAlignment(Pos.CENTER_LEFT);
+        cardsCol.setMaxWidth(Double.MAX_VALUE);
 
         List<StackPane> containers = new ArrayList<>();
         List<Node> fronts = new ArrayList<>();
 
-        for (Player p : players) {
-            StackPane container = new StackPane(buildOfficerCardBack());
-            container.setPrefSize(CardView.WIDTH, CardView.HEIGHT);
-            container.setMinSize(CardView.WIDTH, CardView.HEIGHT);
-            container.setMaxSize(CardView.WIDTH, CardView.HEIGHT);
+        List<Player> ordered = players.stream()
+                .sorted(java.util.Comparator.comparingInt(p -> isLocalActor(p) ? 1 : 0))
+                .toList();
+        for (Player p : ordered) {
+            boolean local = isLocalActor(p);
 
-            String desc = p.name() + (isLocalActor(p) ? "  (나)" : "");
-            Label nameLabel = new Label(desc);
-            nameLabel.setStyle("-fx-text-fill: #b9c8c2; -fx-font-size: 12px; -fx-font-weight: bold;");
+            StackPane container = new StackPane(buildOfficerCardBack(CW, CH));
+            container.setPrefSize(CW, CH);
+            container.setMinSize(CW, CH);
+            container.setMaxSize(CW, CH);
 
-            VBox col = new VBox(10, container, nameLabel);
-            col.setAlignment(Pos.CENTER);
-            cardsRow.getChildren().add(col);
+            Label nameLabel = new Label(p.name());
+            nameLabel.setStyle("-fx-text-fill: " + (local ? "#f2d36b" : "#b9c8c2")
+                + "; -fx-font-size: 14px; -fx-font-weight: bold;");
+            HBox.setHgrow(nameLabel, Priority.ALWAYS);
+
+            Label badge = new Label(local ? "나" : "상대");
+            badge.setStyle("-fx-text-fill: " + (local ? "#101a1e" : "#8aa0a8")
+                + "; -fx-background-color: " + (local ? "#f2d36b" : "rgba(180,200,210,0.25)")
+                + "; -fx-background-radius: 4; -fx-font-size: 11px;"
+                + " -fx-font-weight: bold; -fx-padding: 1 6 1 6;");
+
+            HBox nameRow = new HBox(8, badge, nameLabel);
+            nameRow.setAlignment(Pos.CENTER_LEFT);
+
+            VBox nameCol = new VBox(4, nameRow);
+            nameCol.setAlignment(Pos.CENTER_LEFT);
+            HBox.setHgrow(nameCol, Priority.ALWAYS);
+
+            HBox row = new HBox(18, nameCol, container);
+            row.setAlignment(Pos.CENTER_LEFT);
+            row.setPadding(new Insets(12, 16, 12, 16));
+            row.setStyle("-fx-background-color: "
+                + (local ? "rgba(242,211,107,0.07)" : "rgba(255,255,255,0.04)")
+                + "; -fx-background-radius: 10; -fx-border-color: "
+                + (local ? "rgba(242,211,107,0.25)" : "rgba(255,255,255,0.08)")
+                + "; -fx-border-radius: 10; -fx-border-width: 1;");
+            row.setMaxWidth(Double.MAX_VALUE);
+
+            cardsCol.getChildren().add(row);
             containers.add(container);
-            fronts.add(buildOfficerCardFront(p));
+            fronts.add(buildOfficerCardFront(p, CW, CH));
         }
 
-        panel.getChildren().addAll(title, sub, cardsRow);
+        panel.getChildren().addAll(title, sub, cardsCol);
+        StackPane.setAlignment(panel, Pos.CENTER);
         setCenter(panel);
 
         SequentialTransition seq = new SequentialTransition();
         seq.getChildren().add(new PauseTransition(Duration.millis(500)));
         for (int i = 0; i < containers.size(); i++) {
             seq.getChildren().add(buildCardFlip(containers.get(i), fronts.get(i)));
-            seq.getChildren().add(new PauseTransition(Duration.millis(380)));
+            long afterPause = (i < containers.size() - 1) ? 1000 : 300;
+            seq.getChildren().add(new PauseTransition(Duration.millis(afterPause)));
         }
-        seq.getChildren().add(new PauseTransition(Duration.millis(1300)));
+        seq.getChildren().add(new PauseTransition(Duration.millis(2000)));
         seq.setOnFinished(e -> { clearCenter(); playNextOverlay(); });
         seq.play();
     }
 
-    private Node buildOfficerCardBack() {
+    private Node buildOfficerCardBack(double w, double h) {
         StackPane card = new StackPane();
-        card.setPrefSize(CardView.WIDTH, CardView.HEIGHT);
-        card.setMaxSize(CardView.WIDTH, CardView.HEIGHT);
+        card.setPrefSize(w, h);
+        card.setMaxSize(w, h);
         card.setStyle(
             "-fx-background-color: #0d1518, linear-gradient(to bottom, #1e3040, #0e1e2a);"
             + " -fx-background-insets: 0, 3; -fx-background-radius: 10, 7;"
             + " -fx-border-color: rgba(242,211,107,0.45); -fx-border-radius: 10; -fx-border-width: 1.5;"
             + " -fx-effect: dropshadow(gaussian,rgba(0,0,0,0.5),8,0.2,0,3);");
         Label q = new Label("?");
-        q.setStyle("-fx-text-fill: rgba(242,211,107,0.5); -fx-font-size: 32px; -fx-font-weight: bold;");
+        q.setStyle("-fx-text-fill: rgba(242,211,107,0.5); -fx-font-size: 40px; -fx-font-weight: bold;");
         card.getChildren().add(q);
         return card;
     }
 
-    private Node buildOfficerCardFront(Player player) {
+    private Node buildOfficerCardFront(Player player, double w, double h) {
         boolean hasOfficer = player.officer() != null;
         String officerName   = hasOfficer ? player.officer().korean()     : "없음";
         String officerEffect = hasOfficer ? player.officer().effectText() : "";
 
         StackPane card = new StackPane();
-        card.setPrefSize(CardView.WIDTH, CardView.HEIGHT);
-        card.setMaxSize(CardView.WIDTH, CardView.HEIGHT);
+        card.setPrefSize(w, h);
+        card.setMaxSize(w, h);
         card.setStyle(
             "-fx-background-color: #0d1518, linear-gradient(to bottom, #1a2f40, #0e1e2c);"
             + " -fx-background-insets: 0, 3; -fx-background-radius: 10, 7;"
@@ -1219,23 +1253,23 @@ public final class GameBoardController implements GameListener, HumanUi {
             + " -fx-effect: dropshadow(gaussian,rgba(242,211,107,0.25),14,0.2,0,0);");
 
         Label icon = new Label("★");
-        icon.setStyle("-fx-text-fill: rgba(242,211,107,0.45); -fx-font-size: 20px;");
+        icon.setStyle("-fx-text-fill: rgba(242,211,107,0.45); -fx-font-size: 26px;");
 
         Label nameLbl = new Label(officerName);
-        nameLbl.setStyle("-fx-text-fill: #f2d36b; -fx-font-size: 14px; -fx-font-weight: bold;"
+        nameLbl.setStyle("-fx-text-fill: #f2d36b; -fx-font-size: 18px; -fx-font-weight: bold;"
             + " -fx-alignment: center; -fx-text-alignment: center;");
         nameLbl.setWrapText(true);
-        nameLbl.setMaxWidth(CardView.WIDTH - 14);
+        nameLbl.setMaxWidth(w - 18);
 
         Label effectLbl = new Label(officerEffect);
-        effectLbl.setStyle("-fx-text-fill: #91dfc0; -fx-font-size: 9px;"
+        effectLbl.setStyle("-fx-text-fill: #91dfc0; -fx-font-size: 11px;"
             + " -fx-alignment: center; -fx-text-alignment: center;");
         effectLbl.setWrapText(true);
-        effectLbl.setMaxWidth(CardView.WIDTH - 14);
+        effectLbl.setMaxWidth(w - 18);
 
-        VBox content = new VBox(5, icon, nameLbl, effectLbl);
+        VBox content = new VBox(6, icon, nameLbl, effectLbl);
         content.setAlignment(Pos.CENTER);
-        content.setMaxWidth(CardView.WIDTH - 14);
+        content.setMaxWidth(w - 18);
         card.getChildren().add(content);
         return card;
     }
@@ -1542,6 +1576,8 @@ public final class GameBoardController implements GameListener, HumanUi {
         if (distributionFieldUpdatePending) {
             return;
         }
+        fieldACountLabel.setVisible(!introPhase);
+        fieldBCountLabel.setVisible(!introPhase);
         renderField(fieldATitleLabel, fieldAOfficerLabel, fieldAOfficerEffectLabel, fieldACoinsLabel,
                 fieldACountLabel, fieldAFlow, fieldAHelperFlow, teamA, "내 필드");
         renderField(fieldBTitleLabel, fieldBOfficerLabel, fieldBOfficerEffectLabel, fieldBCoinsLabel,
@@ -1570,13 +1606,15 @@ public final class GameBoardController implements GameListener, HumanUi {
             officerEffectLabel.setText("");
         }
         coinsLabel.setText(displayedCoins(team) + " 코인");
-        countLabel.setText("보유 " + player.holdingCount() + " / " + player.holdLimit());
+        countLabel.setText(introPhase ? "" : "보유 " + player.holdingCount() + " / " + player.holdLimit());
         renderSidebarHelpers(helpers, player);
         field.getChildren().clear();
         if (player.holdings().isEmpty()) {
-            Label empty = new Label("보물 없음");
-            empty.getStyleClass().add("field-empty");
-            field.getChildren().add(empty);
+            if (!introPhase) {
+                Label empty = new Label("보물 없음");
+                empty.getStyleClass().add("field-empty");
+                field.getChildren().add(empty);
+            }
             return;
         }
         List<Card> holdings = new ArrayList<>(player.holdings());
@@ -1627,6 +1665,7 @@ public final class GameBoardController implements GameListener, HumanUi {
             used.setMaxWidth(Double.MAX_VALUE);
             used.getStyleClass().add("sidebar-helper-used-ribbon");
             StackPane.setAlignment(used, Pos.BOTTOM_CENTER);
+            StackPane.setMargin(used, new javafx.geometry.Insets(0, -12, -17, -12));
             card.getChildren().add(used);
         }
 
