@@ -25,23 +25,13 @@ public final class CardView extends StackPane {
     public static final double WIDTH = 90;
     public static final double HEIGHT = 128;
 
-    /** 패널(분할·선택·환금 UI)에 사용하는 크기 — 필드 크기의 약 87%. */
-    public static final double PANEL_WIDTH = 78;
-    public static final double PANEL_HEIGHT = 111;
-
     private final Card card;
     private boolean selected;
     private final double w;
     private final double h;
 
-    /** 카드 필드용 — 큰 크기. */
     public CardView(Card card, boolean faceUp) {
         this(card, faceUp, WIDTH, HEIGHT);
-    }
-
-    /** 패널용 — {@code panelSize=true} 이면 작은 크기 사용. */
-    public CardView(Card card, boolean faceUp, boolean panelSize) {
-        this(card, faceUp, panelSize ? PANEL_WIDTH : WIDTH, panelSize ? PANEL_HEIGHT : HEIGHT);
     }
 
     private CardView(Card card, boolean faceUp, double w, double h) {

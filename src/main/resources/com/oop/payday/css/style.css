@@ -388,21 +388,6 @@
     -fx-max-width: 1100;
 }
 
-.cash-card-scroll {
-    -fx-background-color: rgba(12,18,20,0.16);
-    -fx-background-radius: 18;
-    -fx-border-color: rgba(242,211,107,0.16);
-    -fx-border-radius: 18;
-}
-
-.cash-card-scroll > .viewport {
-    -fx-background-color: transparent;
-}
-
-.cash-card-stage {
-    -fx-alignment: center;
-}
-
 .panel-grid {
     -fx-alignment: top-center;
 }

@@ -334,21 +334,21 @@ final class BoardAnimator {
         // 카드 더미 시각화: 3장 겹쳐서 뒷면
         StackPane pile = new StackPane();
         for (int i = 2; i >= 0; i--) {
-            CardView cv = new CardView(new WildCard(-1), false, true);
+            CardView cv = new CardView(new WildCard(-1), false);
             cv.setTranslateX((i - 1) * 7.0);
             cv.setTranslateY((i - 1) * -4.0);
             cv.setRotate((i - 1) * 6.0);
             pile.getChildren().add(cv);
         }
-        pile.setPrefSize(CardView.PANEL_WIDTH + 24, CardView.PANEL_HEIGHT + 18);
+        pile.setPrefSize(CardView.WIDTH + 24, CardView.HEIGHT + 18);
 
         // 획득 카드 영역 (처음에는 뒷면 + 투명)
         StackPane drawnSlot = new StackPane();
-        drawnSlot.setPrefSize(CardView.PANEL_WIDTH, CardView.PANEL_HEIGHT);
-        drawnSlot.setMinSize(CardView.PANEL_WIDTH, CardView.PANEL_HEIGHT);
+        drawnSlot.setPrefSize(CardView.WIDTH, CardView.HEIGHT);
+        drawnSlot.setMinSize(CardView.WIDTH, CardView.HEIGHT);
         drawnSlot.setOpacity(0);
         if (drawnCard != null) {
-            drawnSlot.getChildren().add(new CardView(drawnCard, false, true));
+            drawnSlot.getChildren().add(new CardView(drawnCard, false));
         }
 
         Label drawnLabel = new Label("획득 카드");
@@ -388,7 +388,7 @@ final class BoardAnimator {
                 shrink.setOnFinished(se -> {
                     drawnSlot.getChildren().clear();
                     if (drawnCard != null) {
-                        drawnSlot.getChildren().add(new CardView(drawnCard, true, true));
+                        drawnSlot.getChildren().add(new CardView(drawnCard, true));
                     } else {
                         Label empty = new Label("없음");
                         empty.setStyle("-fx-text-fill: #7d918d; -fx-font-size: 13px;");
@@ -558,7 +558,7 @@ final class BoardAnimator {
         List<Card> sorted = new ArrayList<>(cards);
         sorted.sort(cardOrder);
         for (Card c : sorted) {
-            row.getChildren().add(new CardView(c, true, true));
+            row.getChildren().add(new CardView(c, true));
         }
         VBox col = new VBox(6, cap, row);
         col.setAlignment(Pos.CENTER);
