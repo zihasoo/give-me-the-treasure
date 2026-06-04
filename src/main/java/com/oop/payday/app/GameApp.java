@@ -11,6 +11,7 @@ import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.text.Font;
 import javafx.stage.Stage;
 
 /**
@@ -42,6 +43,7 @@ public class GameApp extends Application {
     @Override
     public void start(Stage stage) throws IOException {
         instance = this;
+        Font.loadFont(getClass().getResourceAsStream("/com/oop/payday/fonts/BlackHanSans-Regular.ttf"), 10);
         this.primaryStage = stage;
         stage.setTitle(TITLE);
         stage.setMinWidth(MIN_WIDTH);

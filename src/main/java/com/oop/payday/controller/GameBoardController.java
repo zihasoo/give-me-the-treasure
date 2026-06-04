@@ -22,6 +22,7 @@ import com.oop.payday.game.GameListener;
 import com.oop.payday.game.Phase;
 import com.oop.payday.game.Team;
 import com.oop.payday.model.card.Card;
+import com.oop.payday.model.card.CardColor;
 import com.oop.payday.model.card.CursedCard;
 import com.oop.payday.model.card.StealCard;
 import com.oop.payday.model.card.TreasureCard;
@@ -35,6 +36,7 @@ import com.oop.payday.player.BotPlayer;
 import com.oop.payday.player.HumanPlayer;
 import com.oop.payday.player.Player;
 import com.oop.payday.view.CardView;
+import com.oop.payday.view.ScoreTableBuilder;
 
 import javafx.animation.FadeTransition;
 import javafx.animation.Interpolator;
@@ -124,6 +126,7 @@ public final class GameBoardController implements GameListener, Initializable {
     private boolean distributionFieldUpdatePending;
     private boolean introPhase = true;
     private boolean gameOver = false;
+    private Node cachedScoreTablePanel;
     private VBox activeBundle0;
     private VBox activeBundle1;
     private int phaseRevision;
@@ -330,7 +333,9 @@ public final class GameBoardController implements GameListener, Initializable {
 
     @Override
     public void onMessage(String message) {
-        Platform.runLater(() -> setMessage(message));
+        if (isStatusBarMessage(message)) {
+            Platform.runLater(() -> setMessage(message));
+        }
     }
 
     @Override
@@ -1109,10 +1114,37 @@ public final class GameBoardController implements GameListener, Initializable {
         screenOverlay.getStyleClass().setAll("screen-overlay");
         screenOverlay.setMouseTransparent(false);
         screenOverlay.setPickOnBounds(true);
+        screenOverlay.setOnMouseClicked(null);
         StackPane.setAlignment(node, Pos.CENTER);
         node.setOpacity(0);
         screenOverlay.getChildren().setAll(node);
         fade(node, 0, 1, 220).play();
+    }
+
+    @FXML
+    private void onScoreTable() {
+        if (cachedScoreTablePanel == null) {
+            cachedScoreTablePanel = buildScoreTablePanel();
+        }
+        screenOverlay.getStyleClass().setAll("screen-overlay");
+        screenOverlay.setMouseTransparent(false);
+        screenOverlay.setPickOnBounds(true);
+        screenOverlay.setOnMouseClicked(null);
+        StackPane.setAlignment(cachedScoreTablePanel, Pos.CENTER);
+        cachedScoreTablePanel.setOpacity(1);
+        screenOverlay.getChildren().setAll(cachedScoreTablePanel);
+    }
+
+    private Node buildScoreTablePanel() {
+        return ScoreTableBuilder.build(this::hideScreenOverlay);
+    }
+
+    private void hideScreenOverlay() {
+        screenOverlay.getChildren().clear();
+        screenOverlay.getStyleClass().clear();
+        screenOverlay.setMouseTransparent(true);
+        screenOverlay.setPickOnBounds(false);
+        screenOverlay.setOnMouseClicked(null);
     }
 
     private VBox buildScoreCard(Team team, boolean win, boolean isBottom) {
@@ -1271,6 +1303,22 @@ public final class GameBoardController implements GameListener, Initializable {
 
     private void setMessage(String message) {
         messageLabel.setText(message);
+    }
+
+    private boolean isStatusBarMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        return message.contains("무효")
+                || message.contains("사용할 수 없는")
+                || message.contains("이미 사용")
+                || message.contains("필요")
+                || message.contains("있어야")
+                || message.contains("초과")
+                || message.contains("금지")
+                || message.contains("게임 시작")
+                || message.contains("라운드")
+                || message.contains("게임 종료");
     }
 
     private void updateBoardStatus() {

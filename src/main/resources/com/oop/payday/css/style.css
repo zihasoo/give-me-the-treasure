@@ -26,10 +26,10 @@
 }
 
 .title {
-    -fx-font-family: "Book Antiqua", "Malgun Gothic", serif;
+    -fx-font-family: "Black Han Sans", "Malgun Gothic", serif;
     -fx-font-size: 44px;
-    -fx-font-weight: bold;
-    -fx-text-fill: #f2d36b;
+    -fx-font-weight: normal;
+    -fx-text-fill: white;
 }
 
 .subtitle {
@@ -346,7 +346,7 @@
 
 .center-status-bar {
     -fx-background-color: rgba(10, 19, 24, 0.55);
-    -fx-padding: 7 22 8 22;
+    -fx-padding: 7 14 8 22;
     -fx-border-color: rgba(242, 211, 107, 0.12) transparent transparent transparent;
     -fx-border-width: 1 0 0 0;
 }
@@ -360,6 +360,24 @@
 .message {
     -fx-text-fill: #afbeb9;
     -fx-font-size: 13px;
+    -fx-text-overrun: ellipsis;
+}
+
+.score-table-button {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(242, 211, 107, 0.12);
+    -fx-text-fill: #f2d36b;
+    -fx-background-radius: 5;
+    -fx-border-color: rgba(242, 211, 107, 0.40);
+    -fx-border-radius: 5;
+    -fx-border-width: 1;
+    -fx-padding: 6 12;
+    -fx-cursor: hand;
+}
+
+.score-table-button:hover {
+    -fx-background-color: rgba(242, 211, 107, 0.22);
 }
 
 .guide {
@@ -613,6 +631,91 @@
 
 .screen-overlay {
     -fx-background-color: rgba(4, 10, 14, 0.56);
+}
+
+.score-table-panel {
+    -fx-background-color: rgba(12, 20, 24, 0.94);
+    -fx-background-radius: 10;
+    -fx-border-color: rgba(242, 211, 107, 0.30);
+    -fx-border-radius: 10;
+    -fx-border-width: 1.2;
+    -fx-padding: 22 26;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.45), 28, 0.20, 0, 10);
+}
+
+.score-table-title {
+    -fx-font-family: "Malgun Gothic", "Book Antiqua", serif;
+    -fx-font-size: 24px;
+    -fx-font-weight: 900;
+    -fx-text-fill: #f2d36b;
+}
+
+.score-table-close {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(255, 255, 255, 0.07);
+    -fx-text-fill: #d9e5df;
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(255, 255, 255, 0.16);
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-padding: 8 16;
+    -fx-cursor: hand;
+}
+
+.score-table-close:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.13);
+}
+
+.score-table-column {
+    -fx-background-color: rgba(255, 255, 255, 0.045);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(242, 211, 107, 0.16);
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-padding: 13 14 15 14;
+    -fx-min-width: 300;
+    -fx-pref-width: 300;
+}
+
+.score-table-heading {
+    -fx-text-fill: #dbe8e2;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(8, 14, 18, 0.72);
+    -fx-background-radius: 999;
+    -fx-border-color: rgba(242, 211, 107, 0.24);
+    -fx-border-radius: 999;
+    -fx-padding: 5 15;
+}
+
+.score-table-row {
+    -fx-min-height: 116;
+}
+
+.score-table-points {
+    -fx-font-family: "Arial Black", "Malgun Gothic", sans-serif;
+    -fx-font-size: 42px;
+    -fx-font-weight: 900;
+    -fx-text-fill: #f5f7fb;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.52), 3, 0.5, 1, 2);
+}
+
+.score-table-unit {
+    -fx-text-fill: #f5f7fb;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.score-table-note {
+    -fx-text-fill: #91dfc0;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(145, 223, 192, 0.10);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(145, 223, 192, 0.22);
+    -fx-border-radius: 8;
+    -fx-padding: 8 12;
 }
 
 .score-win-badge {
