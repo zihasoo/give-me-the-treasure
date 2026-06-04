@@ -107,7 +107,6 @@ public final class GameBoardController implements GameListener, Initializable {
     private Team teamA;
     private Team teamB;
     private HumanPlayer localPlayer;
-    private Game game;
     private final Set<Card> cashSelection = new LinkedHashSet<>(); // 환금 패널 카드 선택(재렌더 사이 보존)
     private final Set<HelperCard> cashSelectedHelpers = new LinkedHashSet<>(); // 콤보 도우미 토글 상태
     // 환금 패널 증분 업데이트 참조. 카드 선택 UI는 중앙 패널이 아니라 내 필드에 붙인다.
@@ -214,7 +213,6 @@ public final class GameBoardController implements GameListener, Initializable {
         updateBoardStatus();
 
         Game game = new Game(config, teamA, teamB, this);
-        this.game = game;
         Thread loop = new Thread(game::play, "game-loop");
         loop.setDaemon(true);
         loop.start();

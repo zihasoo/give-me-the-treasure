@@ -243,10 +243,6 @@ public final class Game {
             if (instantWinner != null) {
                 return;
             }
-            if (cashBlockedThisRound.contains(team)) { // 고물상: 환금 불가 팀 자동 종료.
-                passed.add(who);
-                listener.onCashDone(who);
-            }
             listener.awaitAnimations();              // lockstep: 연출이 끝난 뒤 다음 행동을 처리.
             broadcastCashTurn(players, passed);      // 모든 사람의 패널을 최신 상태로 갱신.
         }

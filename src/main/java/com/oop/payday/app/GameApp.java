@@ -25,10 +25,10 @@ public class GameApp extends Application {
     private static final String CSS_PATH = "/com/oop/payday/css/style.css";
 
     private static final String TITLE = "도적단의 월급날";
-    private static final double WIDTH = 1280;
-    private static final double HEIGHT = 720;
-    private static final double MIN_WIDTH = 1024;
-    private static final double MIN_HEIGHT = 576;
+    private static final double WIDTH = 1360;
+    private static final double HEIGHT = 765;
+    private static final double MIN_WIDTH = 1360;
+    private static final double MIN_HEIGHT = 765;
 
     private static GameApp instance;
 

@@ -431,15 +431,19 @@ final class BoardAnimator {
         panel.setAlignment(Pos.CENTER);
         panel.setPadding(new Insets(24, 38, 24, 38));
         panel.getStyleClass().add("waiting-panel");
+        panel.setStyle("-fx-background-color: rgba(10, 19, 24, 0.72);");
         panel.setMaxWidth(620);
         panel.setMaxHeight(Region.USE_PREF_SIZE);
 
         Label title = new Label("✦  도우미 발동");
-        title.setStyle("-fx-text-fill: #f2d36b; -fx-font-size: 21px; -fx-font-weight: bold;"
-            + " -fx-font-family: 'Book Antiqua','Malgun Gothic',serif;");
+        title.setStyle("-fx-text-fill: #f2d36b; -fx-font-size: 22px; -fx-font-weight: black;"
+            + " -fx-font-family: 'Malgun Gothic','Book Antiqua',serif;");
 
         Label who = new Label(player.name() + (isLocalActor.test(player) ? "  (나)" : "  (상대)"));
-        who.setStyle("-fx-text-fill: #8aa0a8; -fx-font-size: 12px;");
+        who.setStyle("-fx-text-fill: #b6c7c1; -fx-font-size: 13px; -fx-font-weight: bold;");
+
+        HBox header = new HBox(10, title, who);
+        header.setAlignment(Pos.CENTER);
 
         StackPane container = new StackPane(buildOfficerCardBack(CW, CH));
         container.setPrefSize(CW, CH);
@@ -447,8 +451,9 @@ final class BoardAnimator {
         container.setMaxSize(CW, CH);
         Node front = buildHelperFrontCard(helper, CW, CH);
 
-        Label effect = new Label(message);
-        effect.setStyle("-fx-text-fill: #91dfc0; -fx-font-size: 13px;");
+        Label effect = new Label(helperEffectMessage(helper, message));
+        effect.setStyle("-fx-text-fill: #91dfc0; -fx-font-size: 13px;"
+            + " -fx-alignment: center; -fx-text-alignment: center;");
         effect.setWrapText(true);
         effect.setMaxWidth(520);
         effect.setOpacity(0);
@@ -464,19 +469,24 @@ final class BoardAnimator {
         }
         boolean hasChanges = !changes.getChildren().isEmpty();
 
-        panel.getChildren().addAll(title, who, container, effect);
+        panel.getChildren().addAll(header, container, effect);
         if (hasChanges) {
             panel.getChildren().add(changes);
         }
 
         // 필드 카드보다 위(z 최상위)인 globalOverlay 에 띄워 잘리지 않게 한다.
         StackPane host = new StackPane(panel);
-        host.setMouseTransparent(true);
-        host.setStyle("-fx-background-color: rgba(6,11,15,0.66);");
+        host.setMouseTransparent(false);
+        host.setPickOnBounds(true);
+        host.setStyle("-fx-background-color: rgba(6,11,15,0.58);");
         host.setOpacity(0);
         host.prefWidthProperty().bind(globalOverlay.widthProperty());
         host.prefHeightProperty().bind(globalOverlay.heightProperty());
         alignOverPlayField(host); // 좌측 사이드바를 제외하고 게임 필드 기준 가운데 정렬
+        boolean wasMouseTransparent = globalOverlay.isMouseTransparent();
+        boolean wasPickOnBounds = globalOverlay.isPickOnBounds();
+        globalOverlay.setMouseTransparent(false);
+        globalOverlay.setPickOnBounds(true);
         globalOverlay.getChildren().add(host);
 
         SequentialTransition seq = new SequentialTransition();
@@ -491,13 +501,28 @@ final class BoardAnimator {
             }
         });
         seq.getChildren().add(reveal);
-        seq.getChildren().add(new PauseTransition(Duration.millis(hasChanges ? 5300 : 4800))); // 뒤집힌 뒤 유지(정보량 많음)
+        seq.getChildren().add(new PauseTransition(Duration.millis(5000))); // 뒤집힌 뒤 총 유지 시간이 약 5.5초가 되도록 조정
         seq.getChildren().add(fade(host, 1, 0, 240));
         seq.setOnFinished(e -> {
             globalOverlay.getChildren().remove(host);
+            globalOverlay.setMouseTransparent(wasMouseTransparent);
+            globalOverlay.setPickOnBounds(wasPickOnBounds);
             playNextOverlay();
         });
         seq.play();
+    }
+
+    private String helperEffectMessage(HelperCard helper, String message) {
+        if (message == null) {
+            return "";
+        }
+        for (String separator : List.of(" — ", " -- ")) {
+            String prefix = helper.displayName() + separator;
+            if (message.startsWith(prefix)) {
+                return message.substring(prefix.length());
+            }
+        }
+        return message;
     }
 
     /**
@@ -523,7 +548,7 @@ final class BoardAnimator {
         card.setPrefSize(w, h);
         card.setMaxSize(w, h);
         card.setStyle(
-            "-fx-background-color: #0d1518, linear-gradient(to bottom, #243a2e, #11241c);"
+            "-fx-background-color: #0d1518, linear-gradient(to bottom, #284435, #14281f);"
             + " -fx-background-insets: 0, 3; -fx-background-radius: 10, 7;"
             + " -fx-border-color: rgba(145,223,192,0.85); -fx-border-radius: 10; -fx-border-width: 1.5;"
             + " -fx-effect: dropshadow(gaussian,rgba(145,223,192,0.25),14,0.2,0,0);");
