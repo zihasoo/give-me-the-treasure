@@ -38,7 +38,7 @@ final class HelperActionModelTest {
                 new TreasureCard(104, CardColor.RED, 5));
         CashInContext context = new CashInContext(sameColorRun, List.of(lucky), List.of(), List.of(), 0, 5);
 
-        List<CashInAction> actions = new HeuristicBotStrategy().decideCashIn(context);
+        List<CashInAction> actions = new HeuristicBotStrategy().planCashIn(context);
 
         CashInAction.CashWithHelpers action = assertInstanceOf(CashInAction.CashWithHelpers.class, actions.get(0));
         assertEquals(sameColorRun.size(), action.cards().size());
@@ -51,7 +51,7 @@ final class HelperActionModelTest {
         HelperCard tusker = helper(HelperKind.TUSKER);
         CashInContext context = new CashInContext(List.of(), List.of(croc), List.of(tusker), List.of(), 0, 5);
 
-        List<CashInAction> actions = new HeuristicBotStrategy().decideCashIn(context);
+        List<CashInAction> actions = new HeuristicBotStrategy().planCashIn(context);
 
         CashInAction.UseHelper action = assertInstanceOf(CashInAction.UseHelper.class, actions.get(0));
         assertSame(croc, action.helper());

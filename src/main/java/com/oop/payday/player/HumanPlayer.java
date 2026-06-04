@@ -5,6 +5,7 @@ import java.util.concurrent.SynchronousQueue;
 
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
+import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.model.card.Card;
@@ -22,6 +23,9 @@ public final class HumanPlayer extends Player {
     private final SynchronousQueue<SplitDecision> splitChannel = new SynchronousQueue<>();
     private final SynchronousQueue<Integer> choiceChannel = new SynchronousQueue<>();
     private final SynchronousQueue<List<HelperCard>> helperChannel = new SynchronousQueue<>();
+
+    // 환금 제출 창구. 게임 스레드가 beginCashIn 에서 설정하고, UI 스레드가 submitCash/passCash 로 사용.
+    private volatile CashSink cashSink;
 
     public HumanPlayer(String name) {
         super(name);
@@ -43,9 +47,9 @@ public final class HumanPlayer extends Player {
     }
 
     @Override
-    public List<CashInAction> decideCashIn(CashInContext context) {
-        // 사람 환금은 풀(pull)이 아니라 이벤트 루프로 처리한다(Game.submitCash/passCash). 호출되지 않음.
-        throw new UnsupportedOperationException("사람 환금은 이벤트 루프(submitCash)로 처리합니다.");
+    public void beginCashIn(CashInContext snapshot, CashSink sink) {
+        // 사람은 즉시 제출하지 않는다. sink를 보관해 두고 UI 입력이 올 때 submitCash/passCash로 제출한다.
+        this.cashSink = sink;
     }
 
     @Override
@@ -65,6 +69,16 @@ public final class HumanPlayer extends Player {
 
     public void provideHelpers(List<HelperCard> helpers) {
         put(helperChannel, helpers);
+    }
+
+    /** UI 스레드: 환금 행동 한 건을 제출한다. */
+    public void submitCash(CashInAction action) {
+        cashSink.submit(action);
+    }
+
+    /** UI 스레드: 환금 턴 종료를 제출한다. */
+    public void passCash() {
+        cashSink.pass();
     }
 
     private static <T> T take(SynchronousQueue<T> channel) {

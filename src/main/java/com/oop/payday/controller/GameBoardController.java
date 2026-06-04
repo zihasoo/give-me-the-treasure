@@ -744,7 +744,7 @@ public final class GameBoardController implements GameListener, Initializable {
     /** 환금 행동 한 건을 큐에 제출한다. onCashTurn 콜백이 패널을 증분 갱신한다. */
     private void submitCashAction(CashInAction action) {
         cashSelection.clear();
-        game.submitCash(localPlayer, action);
+        localPlayer.submitCash(action);
     }
 
     /** 환금 패널 증분 업데이트 참조를 초기화한다. 페이즈 전환·완료 시 호출. */
@@ -845,7 +845,7 @@ public final class GameBoardController implements GameListener, Initializable {
             List<Card> toDiscard = new ArrayList<>(cashSelection);
             cashSelection.clear();
             for (Card c : toDiscard) {
-                game.submitCash(localPlayer, new CashInAction.Discard(c));
+                localPlayer.submitCash(new CashInAction.Discard(c));
             }
         });
 
@@ -859,7 +859,7 @@ public final class GameBoardController implements GameListener, Initializable {
                 return;
             }
             cashSelection.clear();
-            game.passCash(localPlayer);
+            localPlayer.passCash();
         });
 
         cashHelperButtonsBox = new HBox(8);

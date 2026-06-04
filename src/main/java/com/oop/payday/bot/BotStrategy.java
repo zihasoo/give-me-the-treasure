@@ -30,8 +30,8 @@ public interface BotStrategy {
     /** 준비: 도우미 후보 중 사용할 카드를 고른다. */
     List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount);
 
-    /** 환금: 보관 카드와 도우미로 수행할 행동 목록. */
-    List<CashInAction> decideCashIn(CashInContext context);
+    /** 환금 시작 시점의 snapshot으로 이번 환금 단계에서 시도할 행동 계획을 만든다. */
+    List<CashInAction> planCashIn(CashInContext context);
 
     /** 화면/로그 표기에 쓰일 전략 이름(예: "규칙 기반"). */
     default String displayName() {

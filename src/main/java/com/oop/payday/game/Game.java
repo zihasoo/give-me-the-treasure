@@ -18,6 +18,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import com.oop.payday.decision.BundleView;
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
+import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.model.Deck;
@@ -216,13 +217,10 @@ public final class Game {
 
         Set<Player> passed = new HashSet<>();
 
-        // 봇은 가상 스레드 액터로: 초기 스냅샷으로 계획을 한 번 만들어 행동을 순서대로 제출하고 마지막에 패스.
-        // 스냅샷은 게임 스레드(여기)에서 생성해 ConcurrentModificationException 을 방지한다.
+        // 모든 참가자에게 환금 시작을 알린다(봇은 자기 스레드에서, 사람은 UI 입력으로 sink에 제출).
+        // 스냅샷은 게임 스레드(여기)에서 생성 → CashInContext가 불변 복사하므로 봇 스레드가 읽어도 안전.
         for (Player p : players) {
-            if (p.isBot()) {
-                CashInContext snapshot = snapshotFor(p, playerTeam.get(p));
-                Thread.ofVirtual().start(() -> runBotActor(p, snapshot));
-            }
+            p.beginCashIn(snapshotFor(p, playerTeam.get(p)), sinkFor(p));
         }
         broadcastCashTurn(players, passed);        // 사람들에게 초기 패널을 띄운다.
 
@@ -255,24 +253,17 @@ public final class Game {
         applyEndOfCashLeaderEffects();
     }
 
-    /** 봇 가상 스레드 액터: 초기 스냅샷으로 계획을 세우고 행동을 하나씩 제출한 뒤 패스를 보낸다. */
-    private void runBotActor(Player bot, CashInContext snapshot) {
-        List<CashInAction> plan = bot.decideCashIn(snapshot);
-        for (CashInAction action : plan) {
-            pause(bot.nextCashPaceMillis());
-            cashInbox.offer(new Submission(bot, action));
-        }
-        pause(bot.nextCashPaceMillis());
-        cashInbox.offer(new Submission(bot, null)); // 패스
-    }
+    /** 플레이어별 제출 창구. 봇·사람·(미래)네트워크의 모든 제출을 단일 인박스로 직렬화한다. */
+    private CashSink sinkFor(Player who) {
+        return new CashSink() {
+            @Override public void submit(CashInAction action) {
+                cashInbox.offer(new Submission(who, action));
+            }
+            @Override public void pass() {
+                cashInbox.offer(new Submission(who, null));
+            }
+        };
 
-    private static void pause(int millis) {
-        if (millis <= 0) return;
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 
     /** 환금 인박스에서 다음 제출을 블로킹 대기한다. 인터럽트 시 {@code null}. */
@@ -328,16 +319,6 @@ public final class Game {
             case CashInAction.UseHelper use ->
                 applyHelper(player, team, use.helper(), lastCashedSet.get(player), use.copyTarget(), use.selectedCards());
         }
-    }
-
-    /** 사람 UI(FX 스레드)가 행동을 제출한다. {@code action == null} 이면 턴 종료. */
-    public void submitCash(Player who, CashInAction action) {
-        cashInbox.offer(new Submission(who, action));
-    }
-
-    /** 사람 UI(FX 스레드)가 턴 종료를 제출한다. */
-    public void passCash(Player who) {
-        cashInbox.offer(new Submission(who, null));
     }
 
     private CashInContext snapshotFor(Player player, Team team) {

@@ -43,7 +43,7 @@ public interface GameListener {
     /**
      * 환금 이벤트 루프가 이 사람 플레이어의 입력을 기다린다. 매 행동(자신·상대 무관)이 적용된 뒤
      * 최신 스냅샷과 함께 호출되므로, 뷰는 이 사람의 환금 패널을 (재)렌더링한다.
-     * 사람은 {@code Game.submitCash}/{@code passCash} 로 행동을 큐에 넣는다.
+     * 사람은 {@code HumanPlayer.submitCash}/{@code passCash} 로 행동을 제출한다.
      */
     default void onCashTurn(Player player, com.oop.payday.decision.CashInContext snapshot) {
     }

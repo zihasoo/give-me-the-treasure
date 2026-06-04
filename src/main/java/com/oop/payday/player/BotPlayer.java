@@ -6,6 +6,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import com.oop.payday.bot.BotStrategy;
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
+import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.model.card.Card;
@@ -47,14 +48,13 @@ public final class BotPlayer extends Player {
 
     /** 생각 시간 + 환금 이벤트 루프에서 행동 사이 사람 같은 텀이 있는 플레이용 봇. */
     public static BotPlayer play(BotStrategy strategy) {
-        return new BotPlayer("봇", strategy, 2000, 4000, 850, 600, 1400);
+        return new BotPlayer("봇", strategy, 2000, 4000, 850, 800, 1400);
     }
 
     @Override
     public int revealPaceMillis() { return pace; }
 
-    @Override
-    public int nextCashPaceMillis() {
+    private int nextCashPaceMillis() {
         if (cashPaceMax <= 0) return 0;
         return ThreadLocalRandom.current().nextInt(cashPaceMin, cashPaceMax + 1);
     }
@@ -78,9 +78,18 @@ public final class BotPlayer extends Player {
     }
 
     @Override
-    public List<CashInAction> decideCashIn(CashInContext context) {
-        // 환금은 이벤트 루프가 행동마다 호출하므로 페이스는 nextCashPaceMillis 로 따로 준다(여기선 즉시 결정).
-        return strategy.decideCashIn(context);
+    public void beginCashIn(CashInContext snapshot, CashSink sink) {
+        // 봇은 자기 가상 스레드에서 계획을 세워 페이스대로 하나씩 제출하고 마지막에 패스한다.
+        // 게임 스레드를 막지 않으므로 think/페이싱을 봇이 직접 소유한다(엔진은 큐만 기다린다).
+        Thread.ofVirtual().name("bot-cash-" + name()).start(() -> {
+            List<CashInAction> plan = strategy.planCashIn(snapshot);
+            for (CashInAction action : plan) {
+                pause(nextCashPaceMillis());
+                sink.submit(action);
+            }
+            pause(nextCashPaceMillis());
+            sink.pass();
+        });
     }
 
     @Override
@@ -92,6 +101,16 @@ public final class BotPlayer extends Player {
         if (thinkMin <= 0 && thinkMax <= 0) return;
         try {
             Thread.sleep(ThreadLocalRandom.current().nextInt(thinkMin, thinkMax + 1));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** 환금 행동 사이 봇 페이스 대기(ms). 0이면 즉시. */
+    private static void pause(int millis) {
+        if (millis <= 0) return;
+        try {
+            Thread.sleep(millis);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

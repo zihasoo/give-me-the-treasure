@@ -5,8 +5,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
+import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.model.card.Card;
@@ -128,16 +128,17 @@ public abstract class Player {
     /** 게임 준비: 받은 도우미 후보 중 사용할 카드를 고른다. */
     public abstract List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount);
 
-    /** 환금: 자기 보관 영역으로 수행할 행동 목록(환금/처분/도움 요청)을 정한다. */
-    public abstract List<CashInAction> decideCashIn(CashInContext context);
+    /**
+     * 환금 단계 시작. 이 플레이어는 {@code snapshot} 을 보고 자기 방식으로 행동을 {@code sink} 에
+     * 제출한 뒤 마지막에 {@link CashSink#pass()} 한다(봇은 자기 스레드, 사람은 UI 입력, 네트워크는 원격 응답).
+     * 게임 스레드에서 호출되므로 오래 블록하면 안 된다 — 봇은 별도 스레드로 위임한다.
+     */
+    public abstract void beginCashIn(CashInContext snapshot, CashSink sink);
 
     public abstract boolean isBot();
 
     /** 환금 행동을 한 단계씩 공개할 때 행동 사이 대기 시간(ms). 0이면 즉시. */
     public int revealPaceMillis() { return 0; }
-
-    /** 환금 이벤트 루프에서 이 플레이어의 행동 사이 생각/페이스(ms). 0이면 즉시. 봇 페이싱용. */
-    public int nextCashPaceMillis() { return 0; }
 
     @Override
     public String toString() {

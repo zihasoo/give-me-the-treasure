@@ -140,7 +140,7 @@ public final class HeuristicBotStrategy implements BotStrategy {
     }
 
     @Override
-    public List<CashInAction> decideCashIn(CashInContext context) {
+    public List<CashInAction> planCashIn(CashInContext context) {
         List<CashInAction> actions = new ArrayList<>();
         List<Card> remaining = new ArrayList<>(context.holdings());
         Set<HelperCard> queuedHelpers = new HashSet<>();
