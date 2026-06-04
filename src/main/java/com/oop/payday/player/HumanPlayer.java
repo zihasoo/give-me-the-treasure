@@ -23,38 +23,22 @@ public final class HumanPlayer extends Player {
     private final SynchronousQueue<Integer> choiceChannel = new SynchronousQueue<>();
     private final SynchronousQueue<List<HelperCard>> helperChannel = new SynchronousQueue<>();
 
-    private HumanUi ui;
-
     public HumanPlayer(String name) {
         super(name);
     }
 
-    /** UI 창구를 연결한다(게임 시작 전 컨트롤러가 호출). */
-    public void setUi(HumanUi ui) {
-        this.ui = ui;
-    }
-
     @Override
     public SplitDecision decideSplit(List<Card> hand) {
-        if (ui != null) {
-            ui.requestSplit(this, hand);
-        }
         return take(splitChannel);
     }
 
     @Override
     public int decideChoice(ChoiceView view) {
-        if (ui != null) {
-            ui.requestChoice(this, view);
-        }
         return take(choiceChannel);
     }
 
     @Override
     public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount) {
-        if (ui != null) {
-            ui.requestHelperSelection(this, options, chooseCount);
-        }
         return take(helperChannel);
     }
 

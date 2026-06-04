@@ -14,7 +14,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 
 import com.oop.payday.decision.BundleView;
 import com.oop.payday.decision.CashInAction;
@@ -43,8 +42,6 @@ import com.oop.payday.player.Player;
  * 호출자(UI)는 별도 스레드에서 실행해야 한다. 상태 변화는 {@link GameListener} 로 알린다.
  */
 public final class Game {
-
-    private static final long CASH_IDLE_POLL_MILLIS = 120; // 사람이 있을 때 인박스 폴링 간격(응답성).
 
     private final GameConfig config;
     private final Deck deck;
@@ -115,6 +112,7 @@ public final class Game {
         List<Card> hand = deck.draw(5);
         listener.onHandDealt(splitter, hand);
 
+        listener.onRequestSplit(splitter, hand);
         SplitDecision decision = splitter.decideSplit(hand);
         if (!decision.isValid()) {
             throw new IllegalStateException("잘못된 분할 결정: " + splitTeam.name());
@@ -139,7 +137,9 @@ public final class Game {
                 viewB.visibleCards(), viewB.hasFaceDown()));
 
         Player chooser = chooseTeam.leader();
-        int index = chooser.decideChoice(new ChoiceView(List.of(viewA, viewB)));
+        ChoiceView choiceView = new ChoiceView(List.of(viewA, viewB));
+        listener.onRequestChoice(chooser, choiceView);
+        int index = chooser.decideChoice(choiceView);
         if (index != 0 && index != 1) {
             throw new IllegalStateException("잘못된 선택 인덱스: " + index);
         }
@@ -215,34 +215,25 @@ public final class Game {
         }
 
         Set<Player> passed = new HashSet<>();
-        broadcastCashTurn(players, passed);        // 사람들에게 패널을 띄운다(초기 스냅샷).
 
-        boolean anyHuman = players.stream().anyMatch(p -> !p.isBot());
-        int botCursor = 0;
-        // 사람전이면 봇 첫 수에 약간의 텀을 둬 사람이 자기 패를 파악할 시간을 준다(헤드리스는 0 → 빠르게).
-        long nextBotAt = System.currentTimeMillis() + (anyHuman ? 900L : 0L);
+        // 봇은 가상 스레드 액터로: 초기 스냅샷으로 계획을 한 번 만들어 행동을 순서대로 제출하고 마지막에 패스.
+        // 스냅샷은 게임 스레드(여기)에서 생성해 ConcurrentModificationException 을 방지한다.
+        for (Player p : players) {
+            if (p.isBot()) {
+                CashInContext snapshot = snapshotFor(p, playerTeam.get(p));
+                Thread.ofVirtual().start(() -> runBotActor(p, snapshot));
+            }
+        }
+        broadcastCashTurn(players, passed);        // 사람들에게 초기 패널을 띄운다.
 
         while (passed.size() < players.size() && instantWinner == null) {
-            boolean fromBot = false;
-            Submission sub = takeSubmission(players, passed, anyHuman);
+            Submission sub = takeSubmission();
             if (sub == null) {
-                // 인박스가 비었음 → 시간이 됐으면 봇 하나가 한 수 둔다(게임 스레드에서 결정 → 경쟁 없음).
-                if (System.currentTimeMillis() < nextBotAt) {
-                    continue;
-                }
-                Player bot = nextActiveBot(players, passed, botCursor);
-                if (bot == null) {
-                    continue; // 활동 중인 봇 없음(사람만 남음) → 계속 폴링하며 사람을 기다린다.
-                }
-                botCursor = players.indexOf(bot) + 1;
-                sub = decideBotSubmission(bot, playerTeam.get(bot));
-                nextBotAt = System.currentTimeMillis() + bot.nextCashPaceMillis();
-                fromBot = true;
+                continue;
             }
-
             Player who = sub.who();
             Team team = playerTeam.get(who);
-            if (who == null || passed.contains(who)) {
+            if (team == null || passed.contains(who)) {
                 continue;
             }
             if (sub.action() == null) {              // 턴 종료
@@ -250,15 +241,11 @@ public final class Game {
                 listener.onCashDone(who);
                 continue;
             }
-            CashProgress before = cashProgress(who, team);
             applyCashSingle(who, team, sub.action());
             if (instantWinner != null) {
                 return;
             }
-            // 봇이 진전 없는 행동(전략↔규칙 불일치로 매번 거부되는 도우미 등)을 무한 반복하면
-            // 상태가 그대로라 루프가 멈추지 않는다 → 그 봇을 강제 종료해 끊는다(사람은 대상 아님).
-            boolean botStuck = fromBot && cashProgress(who, team).equals(before);
-            if (cashBlockedThisRound.contains(team) || botStuck) { // 고물상: 환금 불가 → 자동 종료.
+            if (cashBlockedThisRound.contains(team)) { // 고물상: 환금 불가 팀 자동 종료.
                 passed.add(who);
                 listener.onCashDone(who);
             }
@@ -268,34 +255,34 @@ public final class Game {
         applyEndOfCashLeaderEffects();
     }
 
-    /** 사람이 있으면 짧게 폴링(응답성), 없으면 즉시 반환(헤드리스 속도). 큐가 비면 {@code null}. */
-    private Submission takeSubmission(List<Player> players, Set<Player> passed, boolean anyHuman) {
+    /** 봇 가상 스레드 액터: 초기 스냅샷으로 계획을 세우고 행동을 하나씩 제출한 뒤 패스를 보낸다. */
+    private void runBotActor(Player bot, CashInContext snapshot) {
+        List<CashInAction> plan = bot.decideCashIn(snapshot);
+        for (CashInAction action : plan) {
+            pause(bot.nextCashPaceMillis());
+            cashInbox.offer(new Submission(bot, action));
+        }
+        pause(bot.nextCashPaceMillis());
+        cashInbox.offer(new Submission(bot, null)); // 패스
+    }
+
+    private static void pause(int millis) {
+        if (millis <= 0) return;
         try {
-            boolean humanActive = anyHuman && players.stream().anyMatch(p -> !p.isBot() && !passed.contains(p));
-            return humanActive
-                    ? cashInbox.poll(CASH_IDLE_POLL_MILLIS, TimeUnit.MILLISECONDS)
-                    : cashInbox.poll();
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** 환금 인박스에서 다음 제출을 블로킹 대기한다. 인터럽트 시 {@code null}. */
+    private Submission takeSubmission() {
+        try {
+            return cashInbox.take();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return null;
         }
-    }
-
-    /** 라운드로 순회하며 아직 안 끝낸 봇을 하나 고른다(다인전에서 봇끼리도 교대). */
-    private Player nextActiveBot(List<Player> players, Set<Player> passed, int cursor) {
-        for (int i = 0; i < players.size(); i++) {
-            Player p = players.get((cursor + i) % players.size());
-            if (p.isBot() && !passed.contains(p)) {
-                return p;
-            }
-        }
-        return null;
-    }
-
-    /** 봇이 최신 스냅샷을 보고 다음 한 수를 정한다(빈 계획이면 턴 종료). 게임 스레드에서 호출. */
-    private Submission decideBotSubmission(Player bot, Team team) {
-        List<CashInAction> plan = bot.decideCashIn(snapshotFor(bot, team));
-        return new Submission(bot, plan.isEmpty() ? null : plan.get(0));
     }
 
     /** 아직 안 끝낸 사람들에게 최신 스냅샷을 방송해 패널을 (재)렌더링시킨다. */
@@ -358,14 +345,6 @@ public final class Game {
         return new CashInContext(player.holdings(), player.helpers(), usedHelpers,
                 deck.discardView(), team.coins(), limit);
     }
-
-    /** 환금 행동이 실제로 상태를 바꿨는지 비교할 지문(보유 카드·팀 코인·사용 도우미 수). */
-    private record CashProgress(List<Card> holdings, int coins, int usedHelperCount) {}
-
-    private CashProgress cashProgress(Player player, Team team) {
-        return new CashProgress(new ArrayList<>(player.holdings()), team.coins(), usedHelpers.size());
-    }
-
 
     private TreasureSet applyCash(Player player, Team team, List<Card> cards) {
         if (cashBlockedThisRound.contains(team)) {
@@ -571,8 +550,14 @@ public final class Game {
         @SuppressWarnings("unchecked")
         List<HelperCard>[] results = new List[2];
         runConcurrently(List.of(
-                () -> results[0] = splitLeader.decideHelpers(optionsSplit, 2),
-                () -> results[1] = chooseLeader.decideHelpers(optionsChoose, 2)));
+                () -> {
+                    listener.onRequestHelpers(splitLeader, optionsSplit, 2);
+                    results[0] = splitLeader.decideHelpers(optionsSplit, 2);
+                },
+                () -> {
+                    listener.onRequestHelpers(chooseLeader, optionsChoose, 2);
+                    results[1] = chooseLeader.decideHelpers(optionsChoose, 2);
+                }));
 
         // 검증·등록 (게임 스레드, 순차)
         applyHelperSelection(splitLeader, optionsSplit, results[0]);

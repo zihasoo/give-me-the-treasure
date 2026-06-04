@@ -33,7 +33,6 @@ import com.oop.payday.model.set.SetType;
 import com.oop.payday.model.set.TreasureSet;
 import com.oop.payday.player.BotPlayer;
 import com.oop.payday.player.HumanPlayer;
-import com.oop.payday.player.HumanUi;
 import com.oop.payday.player.Player;
 import com.oop.payday.view.CardView;
 
@@ -75,11 +74,11 @@ import javafx.util.Duration;
 
 /**
  * 게임 보드 컨트롤러. 모델 이벤트({@link GameListener})를 화면에 반영하고,
- * 사람 플레이어의 입력 요청({@link HumanUi})에 맞춰 단계별 입력 패널을 띄운다.
+ * 엔진의 입력 요청 알림({@code onRequestXxx})에 맞춰 단계별 입력 패널을 띄운다.
  *
  * <p>게임 로직은 별도 스레드에서 돌고, 모든 UI 변경은 {@link Platform#runLater} 로 처리한다.
  */
-public final class GameBoardController implements GameListener, HumanUi, Initializable {
+public final class GameBoardController implements GameListener, Initializable {
 
     @FXML private Label fieldATitleLabel;
     @FXML private Label fieldAOfficerLabel;
@@ -204,7 +203,6 @@ public final class GameBoardController implements GameListener, HumanUi, Initial
         screenOverlay.setPickOnBounds(false);
 
         HumanPlayer p1 = new HumanPlayer("플레이어 1");
-        p1.setUi(this);
         localPlayer = p1;
 
         HeuristicBotStrategy strategy = new HeuristicBotStrategy();
@@ -345,43 +343,43 @@ public final class GameBoardController implements GameListener, HumanUi, Initial
         });
     }
 
-    // ===== HumanUi (사람 입력 요청) =====
+    // ===== 입력 요청 (GameListener — 엔진 → UI) =====
 
     @Override
-    public void requestSplit(HumanPlayer player, List<Card> hand) {
-        if (!isLocalActor(player)) {
+    public void onRequestSplit(Player player, List<Card> hand) {
+        if (!(player instanceof HumanPlayer human) || !isLocalActor(human)) {
             return;
         }
         Platform.runLater(() -> {
             runAfterOverlay(() -> {
                 updateBoardStatus();
-                setCenterAnimated(buildSplitPanel(player, hand));
+                setCenterAnimated(buildSplitPanel(human, hand));
             });
         });
     }
 
     @Override
-    public void requestChoice(HumanPlayer player, ChoiceView view) {
-        if (!isLocalActor(player)) {
+    public void onRequestChoice(Player player, ChoiceView view) {
+        if (!(player instanceof HumanPlayer human) || !isLocalActor(human)) {
             return;
         }
         Platform.runLater(() -> {
             runAfterOverlay(() -> {
                 updateBoardStatus();
-                setCenterAnimated(buildChoicePanel(player, view));
+                setCenterAnimated(buildChoicePanel(human, view));
             });
         });
     }
 
     @Override
-    public void requestHelperSelection(HumanPlayer player, List<HelperCard> options, int chooseCount) {
-        if (!isLocalActor(player)) {
+    public void onRequestHelpers(Player player, List<HelperCard> options, int chooseCount) {
+        if (!(player instanceof HumanPlayer human) || !isLocalActor(human)) {
             return;
         }
         Platform.runLater(() -> {
             runAfterOverlay(() -> {
                 updateBoardStatus();
-                setCenterAnimated(buildHelperSelectionPanel(player, options, chooseCount));
+                setCenterAnimated(buildHelperSelectionPanel(human, options, chooseCount));
             });
         });
     }

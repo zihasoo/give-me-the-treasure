@@ -2,6 +2,7 @@ package com.oop.payday.game;
 
 import java.util.List;
 
+import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
 import com.oop.payday.model.set.TreasureSet;
@@ -85,6 +86,30 @@ public interface GameListener {
 
     /** 슬쩍하기 발동: 덱 리셔플 후 {@code drawnCard} 획득(덱 소진이면 null). */
     default void onStealActivated(Player player, Card drawnCard) {
+    }
+
+    /**
+     * 꾀부리기: {@code player} 가 손패 5장을 두 묶음으로 나눠야 한다.
+     * 구현체(UI)는 분할 패널을 띄우고, 완료 시 {@code HumanPlayer.provideSplit} 으로 결정을 돌려준다.
+     * 봇·헤드리스에선 무시해도 된다.
+     */
+    default void onRequestSplit(Player player, List<Card> hand) {
+    }
+
+    /**
+     * 분배: {@code player} 가 두 묶음 중 하나를 골라야 한다.
+     * 구현체(UI)는 선택 패널을 띄우고, 완료 시 {@code HumanPlayer.provideChoice} 로 결과를 돌려준다.
+     * 봇·헤드리스에선 무시해도 된다.
+     */
+    default void onRequestChoice(Player player, ChoiceView view) {
+    }
+
+    /**
+     * 게임 준비: {@code player} 가 도우미 후보 중 사용할 카드를 골라야 한다.
+     * 구현체(UI)는 선택 패널을 띄우고, 완료 시 {@code HumanPlayer.provideHelpers} 로 결과를 돌려준다.
+     * 봇·헤드리스에선 무시해도 된다.
+     */
+    default void onRequestHelpers(Player player, List<HelperCard> options, int chooseCount) {
     }
 
     /**
