@@ -464,8 +464,7 @@ public final class GameBoardController implements GameListener, Initializable {
             }
             SplitDecision decision = new SplitDecision(cardsA, cardsB, faceDown[0]);
             if (!decision.isValid()) {
-                alert("묶음은 2+3 또는 1+4 로 나눠야 합니다. (현재 "
-                        + cardsA.size() + " + " + cardsB.size() + ")");
+                alert("분할이 올바르지 않습니다. 다시 확인하세요.");
                 return;
             }
             clearCenter();
@@ -500,7 +499,7 @@ public final class GameBoardController implements GameListener, Initializable {
 
     private Node buildDraggableSplitCard(Card card, Map<Card, Integer> bundleOf, Card[] faceDown,
             FlowPane bundleA, FlowPane bundleB) {
-        StackPane wrapper = new StackPane(new CardView(card, true));
+        StackPane wrapper = new StackPane(new CardView(card, true, true));
         wrapper.getStyleClass().add("split-card");
         wrapper.setUserData(card);
 
@@ -529,20 +528,35 @@ public final class GameBoardController implements GameListener, Initializable {
 
     private void installDropTarget(FlowPane target, int bundleIndex, Map<Card, Integer> bundleOf, Runnable refresh) {
         target.setOnDragOver(e -> {
-            if (e.getGestureSource() != target && e.getDragboard().hasString()) {
+            if (e.getGestureSource() instanceof Node node
+                    && node.getUserData() instanceof Card card
+                    && e.getDragboard().hasString()
+                    && canMoveSplitCard(card, bundleIndex, bundleOf)) {
                 e.acceptTransferModes(TransferMode.MOVE);
             }
             e.consume();
         });
         target.setOnDragDropped(e -> {
             Object source = e.getGestureSource();
-            if (source instanceof Node node && node.getUserData() instanceof Card card) {
+            if (source instanceof Node node
+                    && node.getUserData() instanceof Card card
+                    && canMoveSplitCard(card, bundleIndex, bundleOf)) {
                 bundleOf.put(card, bundleIndex);
                 refresh.run();
                 e.setDropCompleted(true);
             }
             e.consume();
         });
+    }
+
+    private boolean canMoveSplitCard(Card card, int targetBundle, Map<Card, Integer> bundleOf) {
+        int currentBundle = bundleOf.getOrDefault(card, 0);
+        if (currentBundle == targetBundle) {
+            return true;
+        }
+        long sourceCount = bundleOf.values().stream().filter(index -> index == currentBundle).count();
+        long targetCount = bundleOf.values().stream().filter(index -> index == targetBundle).count();
+        return sourceCount > 1 && targetCount < 4;
     }
 
     private void refreshSplitFaceDown(FlowPane bundleA, FlowPane bundleB, Card faceDown) {
@@ -652,10 +666,10 @@ public final class GameBoardController implements GameListener, Initializable {
         cards.setPrefWrapLength(360);
         cards.setMaxWidth(360);
         for (Card c : visibleCards) {
-            cards.getChildren().add(new CardView(c, true));
+            cards.getChildren().add(new CardView(c, true, true));
         }
         if (hasFaceDown) {
-            cards.getChildren().add(new CardView(new com.oop.payday.model.card.WildCard(-1), false));
+            cards.getChildren().add(new CardView(new com.oop.payday.model.card.WildCard(-1), false, true));
         }
 
         VBox box = new VBox(10);

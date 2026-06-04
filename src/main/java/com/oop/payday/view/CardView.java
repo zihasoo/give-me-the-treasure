@@ -25,6 +25,10 @@ public final class CardView extends StackPane {
     public static final double WIDTH = 90;
     public static final double HEIGHT = 128;
 
+    /** 패널·오버레이에서 사용하는 작은 카드 크기. */
+    public static final double COMPACT_WIDTH = 78;
+    public static final double COMPACT_HEIGHT = 111;
+
     private final Card card;
     private boolean selected;
     private final double w;
@@ -32,6 +36,10 @@ public final class CardView extends StackPane {
 
     public CardView(Card card, boolean faceUp) {
         this(card, faceUp, WIDTH, HEIGHT);
+    }
+
+    public CardView(Card card, boolean faceUp, boolean compact) {
+        this(card, faceUp, compact ? COMPACT_WIDTH : WIDTH, compact ? COMPACT_HEIGHT : HEIGHT);
     }
 
     private CardView(Card card, boolean faceUp, double w, double h) {
