@@ -31,10 +31,21 @@ public sealed interface CashInAction
     record Discard(Card card) implements CashInAction {
     }
 
-    /** 【C】 도움 요청: 자기 도우미 카드 1장을 앞면으로 뒤집어 사용한다. */
-    record UseHelper(HelperCard helper, HelperCard copyTarget) implements CashInAction {
+    /**
+     * 【C】 도움 요청: 자기 도우미 카드 1장을 앞면으로 뒤집어 사용한다.
+     * {@code selectedCards} 는 카드 선택이 필요한 도우미(샛길의 더그)가 버릴 카드. 그 외 도우미는 비어 있다.
+     */
+    record UseHelper(HelperCard helper, HelperCard copyTarget, List<Card> selectedCards) implements CashInAction {
+        public UseHelper {
+            selectedCards = List.copyOf(selectedCards);
+        }
+
         public UseHelper(HelperCard helper) {
-            this(helper, null);
+            this(helper, null, List.of());
+        }
+
+        public UseHelper(HelperCard helper, HelperCard copyTarget) {
+            this(helper, copyTarget, List.of());
         }
     }
 }

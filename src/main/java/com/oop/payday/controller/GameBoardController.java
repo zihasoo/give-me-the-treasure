@@ -1,14 +1,12 @@
 package com.oop.payday.controller;
 
 import java.util.ArrayList;
-import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Queue;
 import java.util.Set;
 
 import com.oop.payday.bot.HeuristicBotStrategy;
@@ -42,8 +40,6 @@ import com.oop.payday.view.CardView;
 import javafx.animation.FadeTransition;
 import javafx.animation.ParallelTransition;
 import javafx.animation.PauseTransition;
-import javafx.animation.ScaleTransition;
-import javafx.animation.SequentialTransition;
 import javafx.animation.TranslateTransition;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -110,18 +106,16 @@ public final class GameBoardController implements GameListener, HumanUi {
     private Team teamA;
     private Team teamB;
     private HumanPlayer localPlayer;
+    private Game game;
+    private final Set<Card> cashSelection = new LinkedHashSet<>(); // 환금 패널 카드 선택(재렌더 사이 보존)
     private Team currentSplitTeam;
-    private final Queue<Runnable> overlayQueue = new ArrayDeque<>();
-    private final Queue<Runnable> afterOverlayQueue = new ArrayDeque<>();
+    private BoardAnimator animator; // 오버레이 큐·센터 전환·발동 연출 (startGame 에서 초기화)
     private final Map<Team, Integer> pendingCoinPreview = new HashMap<>();
-    private boolean overlayPlaying;
     private boolean distributionFieldUpdatePending;
     private boolean introPhase = true;
+    private boolean gameOver = false;
     private VBox activeBundle0;
     private VBox activeBundle1;
-    private int centerRevision;
-    private FadeTransition activeCenterTransition;
-    private boolean opponentWaitingVisible;
     private int phaseRevision;
 
     /** 카드 표시 순서: 보물(색→숫자) → 굉장한 보물 → 저주받은 그림(숫자) → 기타. */
@@ -186,9 +180,11 @@ public final class GameBoardController implements GameListener, HumanUi {
 
         teamA = new Team(p1.name(), List.of(p1));
         teamB = new Team(p2.name(), List.of(p2));
+        animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER);
         updateBoardStatus();
 
         Game game = new Game(config, teamA, teamB, this);
+        this.game = game;
         Thread loop = new Thread(game::play, "game-loop");
         loop.setDaemon(true);
         loop.start();
@@ -198,12 +194,12 @@ public final class GameBoardController implements GameListener, HumanUi {
 
     @Override
     public void onGameSetup(List<Player> players) {
-        Platform.runLater(() -> enqueueOverlay(() -> playOfficerSetupAnimation(players)));
+        Platform.runLater(() -> enqueueOverlay(() -> animator.playOfficerSetup(players)));
     }
 
     @Override
     public void onStealActivated(Player player, Card drawnCard) {
-        Platform.runLater(() -> enqueueOverlay(() -> playStealAnimation(player, drawnCard)));
+        Platform.runLater(() -> enqueueOverlay(() -> animator.playSteal(player, drawnCard)));
     }
 
     @Override
@@ -250,7 +246,7 @@ public final class GameBoardController implements GameListener, HumanUi {
                     + chooseTeam.name() + " " + chooseCards + " / "
                     + splitTeam.name() + " " + splitCards);
             ensureDistributionAnimationPanel(chosenIndex, chooseCards, splitCards);
-            opponentWaitingVisible = false;
+            animator.clearOpponentWaiting();
             playDistributionTransition(chosenIndex, chooseTeam, splitTeam, () -> {
                 distributionFieldUpdatePending = false;
                 updateBoardStatus();
@@ -275,10 +271,14 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     @Override
-    public void onHelperUsed(Player player, HelperCard helper, String message) {
+    public void onHelperUsed(Player player, HelperCard helper, String message,
+            List<Card> drawn, List<Card> discarded) {
         Platform.runLater(() -> {
             setMessage(player.name() + " 도우미: " + message);
-            updateBoardStatus();
+            updateBoardStatus(); // 사이드바 도우미 카드가 앞면(사용 완료)으로 공개됨
+            if (usesEffectOverlay(helper.kind())) {
+                enqueueOverlay(() -> animator.playHelperEffect(player, helper, message, drawn, discarded));
+            }
         });
     }
 
@@ -309,6 +309,7 @@ public final class GameBoardController implements GameListener, HumanUi {
     @Override
     public void onGameOver(Team winner) {
         Platform.runLater(() -> {
+            gameOver = true;
             setCenterAnimated(buildGameOverPanel(winner));
             turnLabel.setText("게임 종료");
             updateBoardStatus();
@@ -357,17 +358,25 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     @Override
-    public void requestCashIn(HumanPlayer player, CashInContext context) {
+    public void onCashTurn(Player player, CashInContext snapshot) {
+        if (!isLocalActor(player)) {
+            return;
+        }
+        Platform.runLater(() -> runAfterOverlay(() -> {
+            Team team = teamFor(player);
+            renderCashInPanel(localPlayer, team, snapshot,
+                    new ArrayList<>(snapshot.holdings()), new ArrayList<>());
+        }));
+    }
+
+    @Override
+    public void onCashDone(Player player) {
         if (!isLocalActor(player)) {
             return;
         }
         Platform.runLater(() -> {
-            runAfterOverlay(() -> {
-                Team team = teamFor(player);
-                setMessage(player.name() + " 환금 입력 대기 — 보관 카드 " + context.holdings().size() + "장");
-                updateBoardStatus();
-                renderCashInPanel(player, team, context, new ArrayList<>(context.holdings()), new ArrayList<>());
-            });
+            cashSelection.clear();
+            runAfterOverlay(() -> setWaiting("환금 완료 — 상대를 기다리는 중"));
         });
     }
 
@@ -674,12 +683,26 @@ public final class GameBoardController implements GameListener, HumanUi {
         row.getStyleClass().add("helper-grid");
         row.setPrefWrapLength(860);
         for (HelperCard helper : options) {
-            ToggleButton toggle = new ToggleButton(helper.displayName() + "\n" + helper.effectText());
-            toggle.setWrapText(true);
+            ToggleButton toggle = new ToggleButton();
             toggle.setUserData(helper);
             toggle.getStyleClass().add("helper-button");
             toggle.setPrefWidth(250);
             toggle.setPrefHeight(136);
+
+            Label nameLbl = new Label(helper.displayName());
+            nameLbl.getStyleClass().add("helper-button-name");
+            nameLbl.setWrapText(true);
+            nameLbl.setMaxWidth(220);
+
+            Label descLbl = new Label(helper.effectText());
+            descLbl.getStyleClass().add("helper-button-desc");
+            descLbl.setWrapText(true);
+            descLbl.setMaxWidth(220);
+
+            VBox content = new VBox(5, nameLbl, descLbl);
+            content.setAlignment(Pos.CENTER);
+            toggle.setGraphic(content);
+
             toggles.add(toggle);
             row.getChildren().add(toggle);
         }
@@ -703,7 +726,14 @@ public final class GameBoardController implements GameListener, HumanUi {
         return root;
     }
 
-    /** 환금 패널을 (남은 카드, 누적 행동) 상태로 다시 그린다(환금/처분마다 재호출). */
+    /** 환금 행동 한 건을 큐에 제출한다. 선택을 비우고 패널을 닫으면, 엔진이 처리 후 onCashTurn 으로 재렌더한다. */
+    private void submitCashAction(CashInAction action) {
+        cashSelection.clear();
+        clearCenter();
+        game.submitCash(localPlayer, action);
+    }
+
+    /** 환금 패널을 최신 스냅샷으로 그린다. 이벤트 루프가 매 행동 후 onCashTurn 으로 재호출한다. */
     private void renderCashInPanel(HumanPlayer player, Team team, CashInContext context, List<Card> remaining,
             List<CashInAction> actions) {
         VBox root = panelRoot("세트를 선택해 환금하거나, 카드를 처분/도움 요청하세요. 끝나면 '턴 종료'.");
@@ -714,13 +744,14 @@ public final class GameBoardController implements GameListener, HumanUi {
         syncPendingCoinPreview(team, actions);
         updateBoardStatus();
 
-        Set<Card> selected = new LinkedHashSet<>();
+        Set<Card> selected = cashSelection;
+        selected.retainAll(remaining); // 더는 보유하지 않는 카드는 선택 해제(상대 행동 후 재렌더 대비)
         Set<HelperCard> selectedCashHelpers = new LinkedHashSet<>();
         Label preview = new Label("선택된 카드: 없음");
         preview.getStyleClass().add("preview");
 
         Label holdLimit = new Label(holdLimitText(player, remaining, actions));
-        holdLimit.getStyleClass().add(remaining.size() > player.holdLimit() && !isTuskerQueued(actions)
+        holdLimit.getStyleClass().add(remaining.size() > player.holdLimit() && !limitSuspended(player, actions)
                 ? "limit-warning" : "preview");
 
         Label planned = new Label("예약된 행동: " + actions.size() + "개");
@@ -740,6 +771,9 @@ public final class GameBoardController implements GameListener, HumanUi {
         sortedRemaining.sort(CARD_ORDER);
         for (Card card : sortedRemaining) {
             CardView cv = new CardView(card, true, true);
+            if (selected.contains(card)) {
+                cv.setSelected(true); // 재렌더 시 이전 선택 복원
+            }
             cv.setOnMouseClicked(e -> {
                 cv.toggleSelected();
                 if (cv.isSelected()) {
@@ -752,6 +786,7 @@ public final class GameBoardController implements GameListener, HumanUi {
             });
             cardsPane.getChildren().add(cv);
         }
+        updateCashInPreview(preview, selected);
         refreshCashHelperToggles(cashHelperToggles, selectedCashHelpers, context.helpers(), actions, selected);
         StackPane cardStage = new StackPane(cardsPane);
         cardStage.getStyleClass().add("cash-card-stage");
@@ -777,11 +812,10 @@ public final class GameBoardController implements GameListener, HumanUi {
             List<HelperCard> cashHelpers = selectedCashHelpers.stream()
                     .filter(helper -> canAttachToCash(helper, evaluation.get().set(), actions))
                     .toList();
-            actions.add(cashHelpers.isEmpty()
+            CashInAction action = cashHelpers.isEmpty()
                     ? new CashInAction.Cash(chosen)
-                    : new CashInAction.CashWithHelpers(chosen, cashHelpers));
-            remaining.removeAll(chosen);
-            renderCashInPanel(player, team, context, remaining, actions);
+                    : new CashInAction.CashWithHelpers(chosen, cashHelpers);
+            submitCashAction(action); // 큐에 넣고 패널은 onCashTurn 으로 재렌더
         });
 
         Button discardBtn = new Button("처분");
@@ -791,25 +825,27 @@ public final class GameBoardController implements GameListener, HumanUi {
                 alert("처분할 카드를 선택하세요.");
                 return;
             }
-            for (Card c : selected) {
-                actions.add(new CashInAction.Discard(c));
+            List<Card> toDiscard = new ArrayList<>(selected);
+            cashSelection.clear();
+            clearCenter();
+            for (Card c : toDiscard) {
+                game.submitCash(localPlayer, new CashInAction.Discard(c));
             }
-            remaining.removeAll(selected);
-            renderCashInPanel(player, team, context, remaining, actions);
         });
 
         Button doneBtn = new Button("턴 종료");
         doneBtn.getStyleClass().add("menu-button");
         doneBtn.setOnAction(e -> {
             int projectedCount = projectedRemainingCount(remaining, actions);
-            if (!isTuskerQueued(actions) && projectedCount > player.holdLimit()) {
+            if (!limitSuspended(player, actions) && projectedCount > player.holdLimit()) {
                 alert("보유 한도를 초과해서 턴을 종료할 수 없습니다. 현재 "
                         + projectedCount + "장 / 한도 " + player.holdLimit()
                         + "장입니다. 환금하거나 처분해 한도 이하로 맞춰주세요.");
                 return;
             }
+            cashSelection.clear();
             clearCenter();
-            player.provideCashIn(actions);
+            game.passCash(localPlayer);
         });
 
         HBox helperButtons = new HBox(8);
@@ -823,16 +859,27 @@ public final class GameBoardController implements GameListener, HumanUi {
             String disabledReason = standaloneDisabledReason(helper, context, remaining, actions);
             helperBtn.setDisable(disabledReason != null);
             helperBtn.setOnAction(e2 -> {
-                if (helper.kind() == HelperKind.CROC_BROTHERS) {
+                CashInAction action;
+                if (helper.kind() == HelperKind.DOUG) {
+                    // 샛길의 더그: 선택한 보물(저주 제외)만 버리고 그만큼 드로우(규칙서 §3-3).
+                    List<Card> toDiscard = selected.stream()
+                            .filter(c -> !(c instanceof com.oop.payday.model.card.CursedCard))
+                            .toList();
+                    if (toDiscard.isEmpty()) {
+                        alert("샛길의 더그로 버릴 보물을 먼저 선택하세요(저주받은 그림 제외).");
+                        return;
+                    }
+                    action = new CashInAction.UseHelper(helper, null, toDiscard);
+                } else if (helper.kind() == HelperKind.CROC_BROTHERS) {
                     Optional<HelperCard> target = chooseCrocTarget(context, remaining, actions);
                     if (target.isEmpty()) {
                         return;
                     }
-                    actions.add(new CashInAction.UseHelper(helper, target.get()));
+                    action = new CashInAction.UseHelper(helper, target.get());
                 } else {
-                    actions.add(new CashInAction.UseHelper(helper));
+                    action = new CashInAction.UseHelper(helper);
                 }
-                renderCashInPanel(player, team, context, remaining, actions);
+                submitCashAction(action); // 큐에 넣고 패널은 onCashTurn 으로 재렌더
             });
             helperButtons.getChildren().add(helperBtn);
         }
@@ -910,9 +957,9 @@ public final class GameBoardController implements GameListener, HumanUi {
             if (!HelperRules.isCashReaction(helper.kind()) || helper.isUsed() || isHelperQueued(actions, helper)) {
                 continue;
             }
-            HelperSummary summary = helperSummary(helper.kind());
-            ToggleButton toggle = new ToggleButton(summary.description());
-            toggle.getStyleClass().add("cash-helper-toggle");
+            // 일반 도우미 버튼과 같은 모양·이름으로 표시(색 차이로 인한 혼란 방지). 켜짐 상태만 구분.
+            ToggleButton toggle = new ToggleButton(helper.displayName());
+            toggle.getStyleClass().add("helper-action-button");
             boolean usable = selectedSet.isPresent() && canAttachToCash(helper, selectedSet.get(), actions);
             toggle.setDisable(!usable);
             if (!usable) {
@@ -1019,9 +1066,16 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     private String holdLimitText(Player player, List<Card> remaining, List<CashInAction> actions) {
-        String suffix = isTuskerQueued(actions)
-                ? " · 완력의 투스커 예약됨"
-                : projectedRemainingCount(remaining, actions) > player.holdLimit() ? " · 턴 종료 불가" : "";
+        String suffix;
+        if (isTuskerQueued(actions)) {
+            suffix = " · 완력의 투스커 예약됨";
+        } else if (player.isHoldLimitSuspended()) {
+            suffix = " · 보유 한도 무시";
+        } else if (projectedRemainingCount(remaining, actions) > player.holdLimit()) {
+            suffix = " · 턴 종료 불가";
+        } else {
+            suffix = "";
+        }
         return "보유 한도: " + projectedRemainingCount(remaining, actions) + " / " + player.holdLimit() + suffix;
     }
 
@@ -1038,6 +1092,22 @@ public final class GameBoardController implements GameListener, HumanUi {
 
     private boolean isTuskerQueued(List<CashInAction> actions) {
         return isHelperKindQueued(actions, HelperKind.TUSKER);
+    }
+
+    /**
+     * 이번 라운드 보유 한도가 무시되는 상태인지. 이번 배치에 투스커를 예약했거나,
+     * (이전 패스에서 이미 발동해) 플레이어에 한도무시가 걸려 있으면 true.
+     */
+    private boolean limitSuspended(Player player, List<CashInAction> actions) {
+        return player.isHoldLimitSuspended() || isTuskerQueued(actions);
+    }
+
+    /**
+     * 중앙 발동 오버레이를 띄울 도우미인지. 조건부 보너스(쿠쿠·레오·럭키)는 코인 플로팅 +
+     * 사이드바 카드 공개로 충분하므로 생략하고, 판을 바꾸는 행동 도우미와 즉승(알파)만 오버레이를 쓴다.
+     */
+    private boolean usesEffectOverlay(HelperKind kind) {
+        return kind != HelperKind.CUCKOO && kind != HelperKind.LEO && kind != HelperKind.LUCKY;
     }
 
     private boolean isHelperKindQueued(List<CashInAction> actions, HelperKind kind) {
@@ -1140,247 +1210,6 @@ public final class GameBoardController implements GameListener, HumanUi {
         return root;
     }
 
-    // ===== 게임 시작 간부 애니메이션 =====
-
-    private void playOfficerSetupAnimation(List<Player> players) {
-        final double CW = 124, CH = 176;
-
-        VBox panel = new VBox(20);
-        panel.setAlignment(Pos.CENTER);
-        panel.setPadding(new Insets(32, 44, 32, 44));
-        panel.setMaxWidth(480);
-
-        Label title = new Label("간부 배정");
-        title.getStyleClass().add("waiting-label");
-
-        Label sub = new Label("각 플레이어에게 간부가 배정되었습니다");
-        sub.setStyle("-fx-text-fill: #8aa0a8; -fx-font-size: 13px;");
-
-        VBox cardsCol = new VBox(12);
-        cardsCol.setAlignment(Pos.CENTER_LEFT);
-        cardsCol.setMaxWidth(Double.MAX_VALUE);
-
-        List<StackPane> containers = new ArrayList<>();
-        List<Node> fronts = new ArrayList<>();
-
-        List<Player> ordered = players.stream()
-                .sorted(java.util.Comparator.comparingInt(p -> isLocalActor(p) ? 1 : 0))
-                .toList();
-        for (Player p : ordered) {
-            boolean local = isLocalActor(p);
-
-            StackPane container = new StackPane(buildOfficerCardBack(CW, CH));
-            container.setPrefSize(CW, CH);
-            container.setMinSize(CW, CH);
-            container.setMaxSize(CW, CH);
-
-            Label nameLabel = new Label(p.name());
-            nameLabel.setStyle("-fx-text-fill: " + (local ? "#f2d36b" : "#b9c8c2")
-                + "; -fx-font-size: 14px; -fx-font-weight: bold;");
-            HBox.setHgrow(nameLabel, Priority.ALWAYS);
-
-            Label badge = new Label(local ? "나" : "상대");
-            badge.setStyle("-fx-text-fill: " + (local ? "#101a1e" : "#8aa0a8")
-                + "; -fx-background-color: " + (local ? "#f2d36b" : "rgba(180,200,210,0.25)")
-                + "; -fx-background-radius: 4; -fx-font-size: 11px;"
-                + " -fx-font-weight: bold; -fx-padding: 1 6 1 6;");
-
-            HBox nameRow = new HBox(8, badge, nameLabel);
-            nameRow.setAlignment(Pos.CENTER_LEFT);
-
-            VBox nameCol = new VBox(4, nameRow);
-            nameCol.setAlignment(Pos.CENTER_LEFT);
-            HBox.setHgrow(nameCol, Priority.ALWAYS);
-
-            HBox row = new HBox(18, nameCol, container);
-            row.setAlignment(Pos.CENTER_LEFT);
-            row.setPadding(new Insets(12, 16, 12, 16));
-            row.setStyle("-fx-background-color: "
-                + (local ? "rgba(242,211,107,0.07)" : "rgba(255,255,255,0.04)")
-                + "; -fx-background-radius: 10; -fx-border-color: "
-                + (local ? "rgba(242,211,107,0.25)" : "rgba(255,255,255,0.08)")
-                + "; -fx-border-radius: 10; -fx-border-width: 1;");
-            row.setMaxWidth(Double.MAX_VALUE);
-
-            cardsCol.getChildren().add(row);
-            containers.add(container);
-            fronts.add(buildOfficerCardFront(p, CW, CH));
-        }
-
-        panel.getChildren().addAll(title, sub, cardsCol);
-        StackPane.setAlignment(panel, Pos.CENTER);
-        setCenter(panel);
-
-        SequentialTransition seq = new SequentialTransition();
-        seq.getChildren().add(new PauseTransition(Duration.millis(500)));
-        for (int i = 0; i < containers.size(); i++) {
-            seq.getChildren().add(buildCardFlip(containers.get(i), fronts.get(i)));
-            long afterPause = (i < containers.size() - 1) ? 1000 : 300;
-            seq.getChildren().add(new PauseTransition(Duration.millis(afterPause)));
-        }
-        seq.getChildren().add(new PauseTransition(Duration.millis(2000)));
-        seq.setOnFinished(e -> { clearCenter(); playNextOverlay(); });
-        seq.play();
-    }
-
-    private Node buildOfficerCardBack(double w, double h) {
-        StackPane card = new StackPane();
-        card.setPrefSize(w, h);
-        card.setMaxSize(w, h);
-        card.setStyle(
-            "-fx-background-color: #0d1518, linear-gradient(to bottom, #1e3040, #0e1e2a);"
-            + " -fx-background-insets: 0, 3; -fx-background-radius: 10, 7;"
-            + " -fx-border-color: rgba(242,211,107,0.45); -fx-border-radius: 10; -fx-border-width: 1.5;"
-            + " -fx-effect: dropshadow(gaussian,rgba(0,0,0,0.5),8,0.2,0,3);");
-        Label q = new Label("?");
-        q.setStyle("-fx-text-fill: rgba(242,211,107,0.5); -fx-font-size: 40px; -fx-font-weight: bold;");
-        card.getChildren().add(q);
-        return card;
-    }
-
-    private Node buildOfficerCardFront(Player player, double w, double h) {
-        boolean hasOfficer = player.officer() != null;
-        String officerName   = hasOfficer ? player.officer().korean()     : "없음";
-        String officerEffect = hasOfficer ? player.officer().effectText() : "";
-
-        StackPane card = new StackPane();
-        card.setPrefSize(w, h);
-        card.setMaxSize(w, h);
-        card.setStyle(
-            "-fx-background-color: #0d1518, linear-gradient(to bottom, #1a2f40, #0e1e2c);"
-            + " -fx-background-insets: 0, 3; -fx-background-radius: 10, 7;"
-            + " -fx-border-color: rgba(242,211,107,0.85); -fx-border-radius: 10; -fx-border-width: 1.5;"
-            + " -fx-effect: dropshadow(gaussian,rgba(242,211,107,0.25),14,0.2,0,0);");
-
-        Label icon = new Label("★");
-        icon.setStyle("-fx-text-fill: rgba(242,211,107,0.45); -fx-font-size: 26px;");
-
-        Label nameLbl = new Label(officerName);
-        nameLbl.setStyle("-fx-text-fill: #f2d36b; -fx-font-size: 18px; -fx-font-weight: bold;"
-            + " -fx-alignment: center; -fx-text-alignment: center;");
-        nameLbl.setWrapText(true);
-        nameLbl.setMaxWidth(w - 18);
-
-        Label effectLbl = new Label(officerEffect);
-        effectLbl.setStyle("-fx-text-fill: #91dfc0; -fx-font-size: 11px;"
-            + " -fx-alignment: center; -fx-text-alignment: center;");
-        effectLbl.setWrapText(true);
-        effectLbl.setMaxWidth(w - 18);
-
-        VBox content = new VBox(6, icon, nameLbl, effectLbl);
-        content.setAlignment(Pos.CENTER);
-        content.setMaxWidth(w - 18);
-        card.getChildren().add(content);
-        return card;
-    }
-
-    private SequentialTransition buildCardFlip(StackPane container, Node front) {
-        ScaleTransition shrink = new ScaleTransition(Duration.millis(180), container);
-        shrink.setToX(0);
-        PauseTransition swap = new PauseTransition(Duration.millis(10));
-        swap.setOnFinished(e -> container.getChildren().setAll(front));
-        ScaleTransition grow = new ScaleTransition(Duration.millis(200), container);
-        grow.setFromX(0);
-        grow.setToX(1);
-        return new SequentialTransition(shrink, swap, grow);
-    }
-
-    // ===== 슬쩍하기 애니메이션 =====
-
-    private void playStealAnimation(Player player, Card drawnCard) {
-        VBox panel = new VBox(16);
-        panel.setAlignment(Pos.CENTER);
-        panel.setPadding(new Insets(28, 44, 28, 44));
-        panel.getStyleClass().add("waiting-panel");
-        panel.setMaxWidth(460);
-
-        Label title = new Label("↪  슬쩍하기!");
-        title.setStyle("-fx-text-fill: #c97a52; -fx-font-size: 26px; -fx-font-weight: bold;"
-            + " -fx-font-family: 'Book Antiqua','Malgun Gothic',serif;");
-
-        Label whoLabel = new Label(player.name() + "  —  카드 더미 리셔플");
-        whoLabel.setStyle("-fx-text-fill: #8aa0a8; -fx-font-size: 12px;");
-
-        // 카드 더미 시각화: 3장 겹쳐서 뒷면
-        StackPane pile = new StackPane();
-        for (int i = 2; i >= 0; i--) {
-            CardView cv = new CardView(new com.oop.payday.model.card.WildCard(-1), false, true);
-            cv.setTranslateX((i - 1) * 7.0);
-            cv.setTranslateY((i - 1) * -4.0);
-            cv.setRotate((i - 1) * 6.0);
-            pile.getChildren().add(cv);
-        }
-        pile.setPrefSize(CardView.PANEL_WIDTH + 24, CardView.PANEL_HEIGHT + 18);
-
-        // 획득 카드 영역 (처음에는 뒷면 + 투명)
-        StackPane drawnSlot = new StackPane();
-        drawnSlot.setPrefSize(CardView.PANEL_WIDTH, CardView.PANEL_HEIGHT);
-        drawnSlot.setMinSize(CardView.PANEL_WIDTH, CardView.PANEL_HEIGHT);
-        drawnSlot.setOpacity(0);
-        if (drawnCard != null) {
-            drawnSlot.getChildren().add(new CardView(drawnCard, false, true));
-        }
-
-        Label drawnLabel = new Label("획득 카드");
-        drawnLabel.setStyle("-fx-text-fill: #91dfc0; -fx-font-size: 11px; -fx-font-weight: bold;");
-        drawnLabel.setOpacity(0);
-
-        VBox drawnCol = new VBox(6, drawnLabel, drawnSlot);
-        drawnCol.setAlignment(Pos.CENTER);
-
-        HBox deckRow = new HBox(32, pile, drawnCol);
-        deckRow.setAlignment(Pos.CENTER);
-
-        panel.getChildren().addAll(title, whoLabel, deckRow);
-        setCenter(panel);
-
-        // 더미 흔들기 → 획득 카드 공개 순서로 애니메이션
-        double[][] moves = {{-7,-5},{9,3},{-5,-3},{7,5},{-4,-2},{3,2},{0,0}};
-        SequentialTransition jitter = new SequentialTransition(pile);
-        for (double[] m : moves) {
-            TranslateTransition tt = new TranslateTransition(Duration.millis(75), pile);
-            tt.setToX(m[0]);  tt.setToY(m[1]);
-            jitter.getChildren().add(tt);
-        }
-
-        jitter.setOnFinished(e -> {
-            // 획득 카드 레이블 페이드인
-            FadeTransition showLbl = new FadeTransition(Duration.millis(160), drawnLabel);
-            showLbl.setToValue(1);
-            showLbl.play();
-
-            // 뒷면 카드 표시 후 뒤집기
-            drawnSlot.setOpacity(1);
-            PauseTransition prePause = new PauseTransition(Duration.millis(280));
-            prePause.setOnFinished(pe -> {
-                ScaleTransition shrink = new ScaleTransition(Duration.millis(150), drawnSlot);
-                shrink.setToX(0);
-                shrink.setOnFinished(se -> {
-                    drawnSlot.getChildren().clear();
-                    if (drawnCard != null) {
-                        drawnSlot.getChildren().add(new CardView(drawnCard, true, true));
-                    } else {
-                        Label empty = new Label("없음");
-                        empty.setStyle("-fx-text-fill: #7d918d; -fx-font-size: 13px;");
-                        drawnSlot.getChildren().add(empty);
-                    }
-                    ScaleTransition grow = new ScaleTransition(Duration.millis(190), drawnSlot);
-                    grow.setFromX(0);
-                    grow.setToX(1);
-                    grow.setOnFinished(ge -> {
-                        PauseTransition hold = new PauseTransition(Duration.millis(1500));
-                        hold.setOnFinished(he -> { clearCenter(); playNextOverlay(); });
-                        hold.play();
-                    });
-                    grow.play();
-                });
-                shrink.play();
-            });
-            prePause.play();
-        });
-
-        jitter.play();
-    }
 
     private Node waitingPanel(String text) {
         Label label = new Label(text);
@@ -1396,7 +1225,6 @@ public final class GameBoardController implements GameListener, HumanUi {
     }
 
     private void setWaiting(String text) {
-        opponentWaitingVisible = true;
         setCenterAnimated(waitingPanel(text), true);
     }
 
@@ -1410,79 +1238,45 @@ public final class GameBoardController implements GameListener, HumanUi {
         if (phaseToken != phaseRevision) {
             return;
         }
-        opponentWaitingVisible = true;
         setCenterAnimated(buildWaitingChoicePanel(bundles), true);
     }
 
+    // ===== BoardAnimator 위임 (기존 호출부를 유지) =====
+
     private void clearCenterIfOpponentWaiting() {
-        if (opponentWaitingVisible) {
-            clearCenter();
-        }
+        animator.clearCenterIfOpponentWaiting();
     }
 
     private void clearCenter() {
-        setCenter(new StackPane());
+        animator.clearCenter();
     }
 
     private void setCenter(Node node) {
-        opponentWaitingVisible = false;
-        centerRevision++;
-        stopActiveCenterTransition();
-        node.setOpacity(1);
-        contentArea.getChildren().setAll(node);
+        animator.setCenter(node);
     }
 
     private void setCenterAnimated(Node node) {
-        setCenterAnimated(node, false);
+        animator.setCenterAnimated(node);
     }
 
     private void setCenterAnimated(Node node, boolean opponentWaiting) {
-        opponentWaitingVisible = opponentWaiting;
-        int revision = ++centerRevision;
-        stopActiveCenterTransition();
-        if (contentArea.getChildren().isEmpty()) {
-            node.setOpacity(0);
-            contentArea.getChildren().setAll(node);
-            playCenterFadeIn(node, revision);
-            return;
-        }
-        Node old = contentArea.getChildren().get(0);
-        FadeTransition out = fade(old, old.getOpacity(), 0, 220);
-        activeCenterTransition = out;
-        out.setOnFinished(e -> {
-            if (revision != centerRevision) {
-                return;
-            }
-            node.setOpacity(0);
-            contentArea.getChildren().setAll(node);
-            playCenterFadeIn(node, revision);
-        });
-        out.play();
-    }
-
-    private void playCenterFadeIn(Node node, int revision) {
-        FadeTransition in = fade(node, 0, 1, 280);
-        activeCenterTransition = in;
-        in.setOnFinished(e -> {
-            if (revision == centerRevision) {
-                activeCenterTransition = null;
-            }
-        });
-        in.play();
-    }
-
-    private void stopActiveCenterTransition() {
-        if (activeCenterTransition != null) {
-            activeCenterTransition.stop();
-            activeCenterTransition = null;
-        }
+        animator.setCenterAnimated(node, opponentWaiting);
     }
 
     private FadeTransition fade(Node node, double from, double to, int millis) {
-        FadeTransition transition = new FadeTransition(Duration.millis(millis), node);
-        transition.setFromValue(from);
-        transition.setToValue(to);
-        return transition;
+        return animator.fade(node, from, to, millis);
+    }
+
+    private void enqueueOverlay(Runnable animation) {
+        animator.enqueueOverlay(animation);
+    }
+
+    private void playNextOverlay() {
+        animator.playNextOverlay();
+    }
+
+    private void runAfterOverlay(Runnable action) {
+        animator.runAfterOverlay(action);
     }
 
     private void playDistributionTransition(int chosenIndex, Team chooseTeam, Team splitTeam, Runnable afterFinished) {
@@ -1532,38 +1326,6 @@ public final class GameBoardController implements GameListener, HumanUi {
         node.setOpacity(1);
     }
 
-    private void enqueueOverlay(Runnable animation) {
-        overlayQueue.add(animation);
-        if (!overlayPlaying) {
-            playNextOverlay();
-        }
-    }
-
-    private void playNextOverlay() {
-        Runnable next = overlayQueue.poll();
-        if (next == null) {
-            overlayPlaying = false;
-            flushAfterOverlayQueue();
-            return;
-        }
-        overlayPlaying = true;
-        next.run();
-    }
-
-    private void runAfterOverlay(Runnable action) {
-        if (overlayPlaying || !overlayQueue.isEmpty()) {
-            afterOverlayQueue.add(action);
-            return;
-        }
-        action.run();
-    }
-
-    private void flushAfterOverlayQueue() {
-        while (!afterOverlayQueue.isEmpty()) {
-            afterOverlayQueue.poll().run();
-        }
-    }
-
     private void setMessage(String message) {
         messageLabel.setText(message);
     }
@@ -1576,8 +1338,8 @@ public final class GameBoardController implements GameListener, HumanUi {
         if (distributionFieldUpdatePending) {
             return;
         }
-        fieldACountLabel.setVisible(!introPhase);
-        fieldBCountLabel.setVisible(!introPhase);
+        fieldACountLabel.setVisible(!introPhase && !gameOver);
+        fieldBCountLabel.setVisible(!introPhase && !gameOver);
         renderField(fieldATitleLabel, fieldAOfficerLabel, fieldAOfficerEffectLabel, fieldACoinsLabel,
                 fieldACountLabel, fieldAFlow, fieldAHelperFlow, teamA, "내 필드");
         renderField(fieldBTitleLabel, fieldBOfficerLabel, fieldBOfficerEffectLabel, fieldBCoinsLabel,
@@ -1606,11 +1368,12 @@ public final class GameBoardController implements GameListener, HumanUi {
             officerEffectLabel.setText("");
         }
         coinsLabel.setText(displayedCoins(team) + " 코인");
-        countLabel.setText(introPhase ? "" : "보유 " + player.holdingCount() + " / " + player.holdLimit());
+        boolean hideDetails = introPhase || gameOver; // 인트로·게임 종료 화면에선 보유 수/빈 필드 안내를 숨긴다
+        countLabel.setText(hideDetails ? "" : "보유 " + player.holdingCount() + " / " + player.holdLimit());
         renderSidebarHelpers(helpers, player);
         field.getChildren().clear();
         if (player.holdings().isEmpty()) {
-            if (!introPhase) {
+            if (!hideDetails) {
                 Label empty = new Label("보물 없음");
                 empty.getStyleClass().add("field-empty");
                 field.getChildren().add(empty);
@@ -1670,23 +1433,6 @@ public final class GameBoardController implements GameListener, HumanUi {
         }
 
         return card;
-    }
-
-    private HelperSummary helperSummary(HelperKind kind) {
-        return switch (kind) {
-            case CUCKOO -> new HelperSummary("색 3+ 환금 +3");
-            case LEO -> new HelperSummary("숫자 3+ 환금 +3");
-            case LUCKY -> new HelperSummary("색 5장 환금 +7");
-            case ALPHA -> new HelperSummary("1 네 장 환금 승리");
-            case DOUG -> new HelperSummary("비저주 버리고 드로우");
-            case TUSKER -> new HelperSummary("1장 드로우, 한도 무시");
-            case VIPER -> new HelperSummary("저주 제거 후 +코인");
-            case JUNK_DEALER -> new HelperSummary("와일드 회수, 환금 금지");
-            case CROC_BROTHERS -> new HelperSummary("사용된 도우미 복사");
-        };
-    }
-
-    private record HelperSummary(String description) {
     }
 
     private Team teamFor(Player player) {

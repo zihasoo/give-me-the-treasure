@@ -2,7 +2,6 @@ package com.oop.payday.player;
 
 import java.util.List;
 
-import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
@@ -21,6 +20,4 @@ public interface HumanUi {
     void requestChoice(HumanPlayer player, ChoiceView view);
 
     void requestHelperSelection(HumanPlayer player, List<HelperCard> options, int chooseCount);
-
-    void requestCashIn(HumanPlayer player, CashInContext context);
 }

@@ -109,19 +109,29 @@ public final class HelperCards {
 
             @Override
             protected void apply(HelperUseContext context) {
-                List<Card> targets = context.player().holdings().stream()
-                        .filter(c -> !(c instanceof CursedCard))
-                        .toList();
-                int count = targets.size();
-                for (Card card : targets) {
-                    context.discard(card);
-                }
-                for (int i = 0; i < count; i++) {
-                    context.draw();
-                }
+                int count = applyDoug(context);
                 context.setMessage(displayName() + " — " + count + "장 교체");
             }
         };
+    }
+
+    /**
+     * 더그 효과: 고른 카드(없으면 저주 아닌 보관 카드 전부)를 처분하고 같은 장수만큼 드로우.
+     * 규칙서 §3-3 — "저주가 아닌 카드를 원하는 만큼 처분한 뒤 그만큼 드로우". 처분/드로우한 장수를 돌려준다.
+     */
+    private static int applyDoug(HelperUseContext context) {
+        List<Card> selected = context.selectedCards();
+        List<Card> targets = context.player().holdings().stream()
+                .filter(c -> !(c instanceof CursedCard))
+                .filter(c -> selected.isEmpty() || selected.contains(c))
+                .toList();
+        for (Card card : targets) {
+            context.discard(card);
+        }
+        for (int i = 0; i < targets.size(); i++) {
+            context.draw();
+        }
+        return targets.size();
     }
 
     private static HelperCard tusker(int id) {
@@ -214,17 +224,7 @@ public final class HelperCards {
             case CUCKOO, LEO -> context.addCoins(3);
             case LUCKY -> context.addCoins(7);
             case ALPHA -> context.setInstantWinner(context.team());
-            case DOUG -> {
-                List<Card> targets = context.player().holdings().stream()
-                        .filter(c -> !(c instanceof CursedCard))
-                        .toList();
-                for (Card card : targets) {
-                    context.discard(card);
-                }
-                for (int i = 0; i < targets.size(); i++) {
-                    context.draw();
-                }
-            }
+            case DOUG -> applyDoug(context);
             case TUSKER -> {
                 context.draw();
                 context.suspendHoldLimitForRound();

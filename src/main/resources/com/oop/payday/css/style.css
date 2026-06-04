@@ -190,13 +190,13 @@
     -fx-border-color: rgba(242, 211, 107, 0.28);
     -fx-border-radius: 10;
     -fx-border-width: 1;
-    -fx-padding: 8 12;
+    -fx-padding: 10 12;
     -fx-alignment: center;
 }
 
 .officer-name {
     -fx-text-fill: #f2d36b;
-    -fx-font-size: 15px;
+    -fx-font-size: 16px;
     -fx-font-weight: bold;
     -fx-alignment: center;
     -fx-text-alignment: center;
@@ -204,20 +204,20 @@
 
 .officer-effect {
     -fx-text-fill: #91dfc0;
-    -fx-font-size: 11px;
+    -fx-font-size: 12px;
     -fx-alignment: center;
     -fx-text-alignment: center;
 }
 
 .sidebar-helper-flow {
-    -fx-padding: 2 0 2 0;
+    -fx-padding: 3 0 3 0;
 }
 
 .sidebar-helper-card {
-    -fx-min-height: 88;
-    -fx-pref-height: 88;
-    -fx-max-height: 88;
-    -fx-padding: 9 12 17 12;
+    -fx-min-height: 80;
+    -fx-pref-height: 80;
+    -fx-max-height: 80;
+    -fx-padding: 7 12 14 12;
     -fx-background-radius: 8;
     -fx-border-radius: 8;
     -fx-border-width: 1;
@@ -526,8 +526,29 @@
     -fx-padding: 14;
 }
 
+.helper-button-name {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #f2d36b;
+    -fx-text-alignment: center;
+    -fx-alignment: center;
+}
+
+.helper-button-desc {
+    -fx-font-size: 12px;
+    -fx-font-weight: 500;
+    -fx-text-fill: #e8f1ed;
+    -fx-text-alignment: center;
+    -fx-alignment: center;
+}
+
 .helper-button:selected {
     -fx-background-color: #f2d36b;
+    -fx-text-fill: #172024;
+}
+
+.helper-button:selected .helper-button-name,
+.helper-button:selected .helper-button-desc {
     -fx-text-fill: #172024;
 }
 
@@ -541,6 +562,15 @@
 
 .helper-action-button:hover {
     -fx-background-color: #3eb5aa;
+}
+
+/* 콤보형 도우미 토글의 켜짐 상태: 같은 색 계열 유지, 밝기·테두리로만 구분(혼란 방지). */
+.helper-action-button:selected {
+    -fx-background-color: #45c4b8;
+    -fx-text-fill: #0d1c1a;
+    -fx-border-color: #d8f5ee;
+    -fx-border-width: 2;
+    -fx-border-radius: 8;
 }
 
 .cash-helper-toggle {

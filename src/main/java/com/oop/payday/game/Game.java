@@ -10,8 +10,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import com.oop.payday.decision.BundleView;
 import com.oop.payday.decision.CashInAction;
@@ -41,6 +44,9 @@ import com.oop.payday.player.Player;
  */
 public final class Game {
 
+    private static final int MAX_CASH_ACTIONS = 400;   // 무한루프 방지용 환금 행동 총량 상한.
+    private static final long CASH_IDLE_POLL_MILLIS = 120; // 사람이 있을 때 인박스 폴링 간격(응답성).
+
     private final GameConfig config;
     private final Deck deck;
     private final GameListener listener;
@@ -48,6 +54,13 @@ public final class Game {
     private final List<HelperCard> usedHelpers = new ArrayList<>();
     private final Map<Team, Integer> cashCountsThisRound = new HashMap<>();
     private final Set<Team> cashBlockedThisRound = new HashSet<>();
+
+    // 환금 이벤트 루프(액터 모델): 사람·봇·(미래)네트워크가 행동을 큐에 넣고, 게임 스레드가 하나씩 처리한다.
+    private final BlockingQueue<Submission> cashInbox = new LinkedBlockingQueue<>();
+    private final Map<Player, TreasureSet> lastCashedSet = new HashMap<>();
+
+    /** 환금 큐 제출 한 건. {@code action == null} 이면 "턴 종료(pass)". */
+    private record Submission(Player who, CashInAction action) {}
 
     private Team splitTeam;
     private Team chooseTeam;
@@ -177,13 +190,22 @@ public final class Game {
 
     // --- 6-3 환금 (모든 플레이어) ---
 
+    /**
+     * 환금 단계를 액터 모델 이벤트 루프로 진행한다(규칙서 §6-3, "모든 플레이어 동시 진행").
+     *
+     * <p>사람·봇·(미래)네트워크는 각자 원하는 타이밍에 {@link #cashInbox} 로 행동을 제출하고,
+     * 게임 스레드(여기)가 <b>하나씩 꺼내 적용 → 연출이 끝날 때까지 대기(lockstep) → 최신 스냅샷을
+     * 모두에게 방송</b>한다. 상태는 이 스레드만 바꾸므로 락이 필요 없다. 사람이 봇의 도우미 발동을 보고
+     * 크록으로 따라가는 식의 교차 플레이가 자연히 나온다. 모든 플레이어가 "턴 종료"하면 단계가 끝난다.
+     */
     private void cashInPhase() {
         listener.onPhaseChanged(Phase.CASH_IN, round, splitTeam);
         listener.awaitAnimations();
         cashCountsThisRound.clear();
         cashBlockedThisRound.clear();
+        cashInbox.clear();
+        lastCashedSet.clear();
 
-        // 순서 목록 + 팀 매핑
         List<Player> players = new ArrayList<>();
         Map<Player, Team> playerTeam = new HashMap<>();
         for (Team team : List.of(splitTeam, chooseTeam)) {
@@ -193,81 +215,146 @@ public final class Game {
             }
         }
 
-        // 스냅샷 생성 (게임 스레드, 순차)
-        List<CashInContext> contexts = players.stream()
-                .map(p -> new CashInContext(
-                        p.holdings(), p.helpers(), usedHelpers,
-                        deck.discardView(), playerTeam.get(p).coins(), p.holdLimit()))
-                .toList();
+        Set<Player> passed = new HashSet<>();
+        broadcastCashTurn(players, passed);        // 사람들에게 패널을 띄운다(초기 스냅샷).
 
-        // 의사결정 수집 (동시, 가상 스레드)
-        @SuppressWarnings("unchecked")
-        List<CashInAction>[] decisions = new List[players.size()];
-        List<Runnable> tasks = new ArrayList<>();
-        for (int i = 0; i < players.size(); i++) {
-            int idx = i;
-            Player p = players.get(i);
-            CashInContext ctx = contexts.get(i);
-            tasks.add(() -> decisions[idx] = p.decideCashIn(ctx));
-        }
-        runConcurrently(tasks);
+        boolean anyHuman = players.stream().anyMatch(p -> !p.isBot());
+        int botCursor = 0;
+        // 사람전이면 봇 첫 수에 약간의 텀을 둬 사람이 자기 패를 파악할 시간을 준다(헤드리스는 0 → 빠르게).
+        long nextBotAt = System.currentTimeMillis() + (anyHuman ? 900L : 0L);
+        int guard = 0;
 
-        // 적용 (게임 스레드, 순차) — revealPaceMillis 텀으로 단계 공개
-        for (int i = 0; i < players.size(); i++) {
-            applyPlayerCashIn(players.get(i), playerTeam.get(players.get(i)), decisions[i]);
+        while (passed.size() < players.size() && instantWinner == null && guard++ < MAX_CASH_ACTIONS) {
+            Submission sub = takeSubmission(players, passed, anyHuman);
+            if (sub == null) {
+                // 인박스가 비었음 → 시간이 됐으면 봇 하나가 한 수 둔다(게임 스레드에서 결정 → 경쟁 없음).
+                if (System.currentTimeMillis() < nextBotAt) {
+                    continue;
+                }
+                Player bot = nextActiveBot(players, passed, botCursor);
+                if (bot == null) {
+                    continue; // 활동 중인 봇 없음(사람만 남음) → 계속 폴링하며 사람을 기다린다.
+                }
+                botCursor = players.indexOf(bot) + 1;
+                sub = decideBotSubmission(bot, playerTeam.get(bot));
+                nextBotAt = System.currentTimeMillis() + bot.nextCashPaceMillis();
+            }
+
+            Player who = sub.who();
+            Team team = playerTeam.get(who);
+            if (who == null || passed.contains(who)) {
+                continue;
+            }
+            if (sub.action() == null) {              // 턴 종료
+                passed.add(who);
+                listener.onCashDone(who);
+                continue;
+            }
+            applyCashSingle(who, team, sub.action());
             if (instantWinner != null) {
                 return;
             }
+            if (cashBlockedThisRound.contains(team)) { // 고물상: 이번 라운드 환금 불가 → 자동 종료.
+                passed.add(who);
+                listener.onCashDone(who);
+            }
+            listener.awaitAnimations();              // lockstep: 연출이 끝난 뒤 다음 행동을 처리.
+            broadcastCashTurn(players, passed);      // 모든 사람의 패널을 최신 상태로 갱신.
         }
         applyEndOfCashLeaderEffects();
     }
 
-    private void applyPlayerCashIn(Player player, Team team, List<CashInAction> actions) {
-        TreasureSet lastCashedSet = null;
-        for (CashInAction action : actions) {
-            switch (action) {
-                case CashInAction.Cash cash -> {
-                    TreasureSet set = applyCash(player, team, cash.cards());
-                    if (set != null) {
-                        lastCashedSet = set;
-                    }
-                }
-                case CashInAction.CashWithHelpers cash -> {
-                    TreasureSet set = applyCash(player, team, cash.cards());
-                    if (set != null) {
-                        lastCashedSet = set;
-                        for (HelperCard helper : cash.helpers()) {
-                            if (!HelperRules.isCashReaction(helper.kind())) {
-                                listener.onMessage(player.name() + ": " + helper.displayName()
-                                        + "은(는) 환금 보너스로 사용할 수 없음");
-                                continue;
-                            }
-                            applyHelper(player, team, helper, set, null);
-                            if (instantWinner != null) {
-                                return;
-                            }
-                        }
-                    }
-                }
-                case CashInAction.Discard discard -> applyDiscard(player, team, discard.card());
-                case CashInAction.UseHelper use -> applyHelper(player, team, use.helper(), lastCashedSet, use.copyTarget());
-            }
-            if (instantWinner != null) {
-                return;
-            }
-            sleepRevealPace(player);
+    /** 사람이 있으면 짧게 폴링(응답성), 없으면 즉시 반환(헤드리스 속도). 큐가 비면 {@code null}. */
+    private Submission takeSubmission(List<Player> players, Set<Player> passed, boolean anyHuman) {
+        try {
+            boolean humanActive = anyHuman && players.stream().anyMatch(p -> !p.isBot() && !passed.contains(p));
+            return humanActive
+                    ? cashInbox.poll(CASH_IDLE_POLL_MILLIS, TimeUnit.MILLISECONDS)
+                    : cashInbox.poll();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
         }
     }
 
-    private void sleepRevealPace(Player player) {
-        int millis = player.revealPaceMillis();
-        if (millis <= 0) return;
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+    /** 라운드로 순회하며 아직 안 끝낸 봇을 하나 고른다(다인전에서 봇끼리도 교대). */
+    private Player nextActiveBot(List<Player> players, Set<Player> passed, int cursor) {
+        for (int i = 0; i < players.size(); i++) {
+            Player p = players.get((cursor + i) % players.size());
+            if (p.isBot() && !passed.contains(p)) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    /** 봇이 최신 스냅샷을 보고 다음 한 수를 정한다(빈 계획이면 턴 종료). 게임 스레드에서 호출. */
+    private Submission decideBotSubmission(Player bot, Team team) {
+        List<CashInAction> plan = bot.decideCashIn(snapshotFor(bot, team));
+        return new Submission(bot, plan.isEmpty() ? null : plan.get(0));
+    }
+
+    /** 아직 안 끝낸 사람들에게 최신 스냅샷을 방송해 패널을 (재)렌더링시킨다. */
+    private void broadcastCashTurn(List<Player> players, Set<Player> passed) {
+        for (Player p : players) {
+            if (!p.isBot() && !passed.contains(p)) {
+                listener.onCashTurn(p, snapshotFor(p, teamOf(p)));
+            }
         }
     }
+
+    private Team teamOf(Player player) {
+        return splitTeam.members().contains(player) ? splitTeam : chooseTeam;
+    }
+
+    /** 큐에서 꺼낸 행동 하나를 적용한다. */
+    private void applyCashSingle(Player player, Team team, CashInAction action) {
+        switch (action) {
+            case CashInAction.Cash cash -> {
+                TreasureSet set = applyCash(player, team, cash.cards());
+                if (set != null) {
+                    lastCashedSet.put(player, set);
+                }
+            }
+            case CashInAction.CashWithHelpers cash -> {
+                TreasureSet set = applyCash(player, team, cash.cards());
+                if (set != null) {
+                    lastCashedSet.put(player, set);
+                    for (HelperCard helper : cash.helpers()) {
+                        if (!HelperRules.isCashReaction(helper.kind())) {
+                            listener.onMessage(player.name() + ": " + helper.displayName()
+                                    + "은(는) 환금 보너스로 사용할 수 없음");
+                            continue;
+                        }
+                        applyHelper(player, team, helper, set, null, List.of());
+                        if (instantWinner != null) {
+                            return;
+                        }
+                    }
+                }
+            }
+            case CashInAction.Discard discard -> applyDiscard(player, team, discard.card());
+            case CashInAction.UseHelper use ->
+                applyHelper(player, team, use.helper(), lastCashedSet.get(player), use.copyTarget(), use.selectedCards());
+        }
+    }
+
+    /** 사람 UI(FX 스레드)가 행동을 제출한다. {@code action == null} 이면 턴 종료. */
+    public void submitCash(Player who, CashInAction action) {
+        cashInbox.offer(new Submission(who, action));
+    }
+
+    /** 사람 UI(FX 스레드)가 턴 종료를 제출한다. */
+    public void passCash(Player who) {
+        cashInbox.offer(new Submission(who, null));
+    }
+
+    private CashInContext snapshotFor(Player player, Team team) {
+        int limit = player.isHoldLimitSuspended() ? Integer.MAX_VALUE : player.holdLimit();
+        return new CashInContext(player.holdings(), player.helpers(), usedHelpers,
+                deck.discardView(), team.coins(), limit);
+    }
+
 
     private TreasureSet applyCash(Player player, Team team, List<Card> cards) {
         if (cashBlockedThisRound.contains(team)) {
@@ -312,19 +399,21 @@ public final class Game {
         }
     }
 
-    private void applyHelper(Player player, Team team, HelperCard helper, TreasureSet lastCashedSet, HelperCard copyTarget) {
+    /** 도우미 효과를 적용하고, 효과로 손패가 늘었는지(드로우 발생 여부)를 돌려준다. */
+    private boolean applyHelper(Player player, Team team, HelperCard helper, TreasureSet lastCashedSet,
+            HelperCard copyTarget, List<Card> selectedCards) {
         if (!player.ownsHelper(helper) || helper.isUsed()) {
             listener.onMessage(player.name() + ": 사용할 수 없는 도우미");
-            return;
+            return false;
         }
         int beforeCoins = team.coins();
         Set<Card> holdingsBefore = new HashSet<>(player.holdings());
         HelperUseContext context = new HelperUseContext(
-                player, team, opponentOf(team), deck, lastCashedSet, usedHelpers, copyTarget);
+                player, team, opponentOf(team), deck, lastCashedSet, usedHelpers, copyTarget, selectedCards);
         if (!helper.canUse(context)) {
             listener.onMessage(player.name() + ": " + helper.displayName() + " "
                     + HelperRules.availability(helper, context).reason());
-            return;
+            return false;
         }
         helper.use(context);
         usedHelpers.add(helper);
@@ -337,18 +426,24 @@ public final class Game {
         if (context.instantWinner() != null) {
             instantWinner = context.instantWinner();
         }
+        // 효과로 손패에 더해지거나(드로우) 빠진(처분) 카드를 가려내 연출용 정보로 넘긴다.
+        Set<Card> holdingsAfter = new HashSet<>(player.holdings());
+        List<Card> drawn = player.holdings().stream()
+                .filter(c -> !holdingsBefore.contains(c))
+                .toList();
+        List<Card> discarded = holdingsBefore.stream()
+                .filter(c -> !holdingsAfter.contains(c))
+                .toList();
         String message = context.message() == null ? helper.displayName() + " 사용" : context.message();
-        listener.onHelperUsed(player, helper, message);
+        listener.onHelperUsed(player, helper, message, drawn, discarded);
         listener.onMessage(player.name() + " 도움 요청: " + message);
         int delta = team.coins() - beforeCoins;
         if (delta != 0) {
             listener.onCoinsChanged(team, delta);
         }
         // 도우미 효과로 새로 드로우한 카드 중 슬쩍하기가 있으면 즉시 처리.
-        List<Card> newCards = player.holdings().stream()
-                .filter(c -> !holdingsBefore.contains(c))
-                .toList();
-        handleSteal(player, newCards);
+        handleSteal(player, drawn);
+        return !drawn.isEmpty();
     }
 
     // --- 6-4 종료 ---

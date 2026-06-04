@@ -39,10 +39,27 @@ public interface GameListener {
     default void onCashIn(Player player, TreasureSet set) {
     }
 
+    /**
+     * 환금 이벤트 루프가 이 사람 플레이어의 입력을 기다린다. 매 행동(자신·상대 무관)이 적용된 뒤
+     * 최신 스냅샷과 함께 호출되므로, 뷰는 이 사람의 환금 패널을 (재)렌더링한다.
+     * 사람은 {@code Game.submitCash}/{@code passCash} 로 행동을 큐에 넣는다.
+     */
+    default void onCashTurn(Player player, com.oop.payday.decision.CashInContext snapshot) {
+    }
+
+    /** 이 사람 플레이어가 환금을 마쳤다(턴 종료) 또는 환금 페이즈가 끝났다 → 패널을 닫는다. */
+    default void onCashDone(Player player) {
+    }
+
     default void onDiscard(Player player, Card card) {
     }
 
-    default void onHelperUsed(Player player, HelperCard helper, String message) {
+    /**
+     * 도우미 발동. {@code drawn}/{@code discarded} 는 효과로 손패에 더해지거나 빠진 카드로,
+     * 뷰가 "발동되는" 연출(드로우/처분 애니메이션)을 합성하는 데 쓴다(둘 다 비어 있을 수 있음).
+     */
+    default void onHelperUsed(Player player, HelperCard helper, String message,
+            List<Card> drawn, List<Card> discarded) {
     }
 
     /** 종료 단계의 보유 한도 초과로 강제 처분됨. */

@@ -22,7 +22,6 @@ public final class HumanPlayer extends Player {
     private final SynchronousQueue<SplitDecision> splitChannel = new SynchronousQueue<>();
     private final SynchronousQueue<Integer> choiceChannel = new SynchronousQueue<>();
     private final SynchronousQueue<List<HelperCard>> helperChannel = new SynchronousQueue<>();
-    private final SynchronousQueue<List<CashInAction>> cashInChannel = new SynchronousQueue<>();
 
     private HumanUi ui;
 
@@ -61,10 +60,8 @@ public final class HumanPlayer extends Player {
 
     @Override
     public List<CashInAction> decideCashIn(CashInContext context) {
-        if (ui != null) {
-            ui.requestCashIn(this, context);
-        }
-        return take(cashInChannel);
+        // 사람 환금은 풀(pull)이 아니라 이벤트 루프로 처리한다(Game.submitCash/passCash). 호출되지 않음.
+        throw new UnsupportedOperationException("사람 환금은 이벤트 루프(submitCash)로 처리합니다.");
     }
 
     @Override
@@ -84,10 +81,6 @@ public final class HumanPlayer extends Player {
 
     public void provideHelpers(List<HelperCard> helpers) {
         put(helperChannel, helpers);
-    }
-
-    public void provideCashIn(List<CashInAction> actions) {
-        put(cashInChannel, actions);
     }
 
     private static <T> T take(SynchronousQueue<T> channel) {

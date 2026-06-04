@@ -1,8 +1,10 @@
 package com.oop.payday.game;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Random;
@@ -69,6 +71,34 @@ final class HelperActionModelTest {
         croc.use(context);
 
         assertEquals(true, context.holdLimitSuspended());
+    }
+
+    @Test
+    void dougDiscardsOnlySelectedNonCursedCards() {
+        HelperCard doug = helper(HelperKind.DOUG);
+        Player player = BotPlayer.test(new HeuristicBotStrategy());
+        TreasureCard keep1 = new TreasureCard(200, CardColor.BLUE, 3);
+        TreasureCard drop1 = new TreasureCard(201, CardColor.RED, 4);
+        TreasureCard drop2 = new TreasureCard(202, CardColor.YELLOW, 5);
+        TreasureCard keep2 = new TreasureCard(203, CardColor.TEAL, 6);
+        player.receive(keep1);
+        player.receive(drop1);
+        player.receive(drop2);
+        player.receive(keep2);
+        player.receiveHelpers(List.of(doug));
+
+        Team team = new Team("팀", List.of(player));
+        Team opponent = new Team("상대", List.of(BotPlayer.test(new HeuristicBotStrategy())));
+        HelperUseContext context = new HelperUseContext(
+                player, team, opponent, new Deck(new Random(5)), null, List.of(), null, List.of(drop1, drop2));
+
+        doug.use(context);
+
+        assertEquals(4, player.holdingCount(), "버린 만큼 다시 뽑으므로 장수는 유지된다.");
+        assertTrue(player.holdings().contains(keep1) && player.holdings().contains(keep2),
+                "선택하지 않은 카드는 그대로 남는다.");
+        assertFalse(player.holdings().contains(drop1) || player.holdings().contains(drop2),
+                "선택한 카드만 버려진다.");
     }
 
     private static HelperCard helper(HelperKind kind) {

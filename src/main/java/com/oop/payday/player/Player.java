@@ -136,6 +136,9 @@ public abstract class Player {
     /** 환금 행동을 한 단계씩 공개할 때 행동 사이 대기 시간(ms). 0이면 즉시. */
     public int revealPaceMillis() { return 0; }
 
+    /** 환금 이벤트 루프에서 이 플레이어의 행동 사이 생각/페이스(ms). 0이면 즉시. 봇 페이싱용. */
+    public int nextCashPaceMillis() { return 0; }
+
     @Override
     public String toString() {
         return name;

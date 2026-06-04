@@ -26,27 +26,38 @@ public final class BotPlayer extends Player {
     private final int thinkMin;
     private final int thinkMax;
     private final int pace;
+    private final int cashPaceMin;
+    private final int cashPaceMax;
 
-    private BotPlayer(String name, BotStrategy strategy, int thinkMin, int thinkMax, int pace) {
+    private BotPlayer(String name, BotStrategy strategy, int thinkMin, int thinkMax, int pace,
+            int cashPaceMin, int cashPaceMax) {
         super(name);
         this.strategy = strategy;
         this.thinkMin = thinkMin;
         this.thinkMax = thinkMax;
         this.pace = pace;
+        this.cashPaceMin = cashPaceMin;
+        this.cashPaceMax = cashPaceMax;
     }
 
     /** 딜레이 없는 테스트 봇. */
     public static BotPlayer test(BotStrategy strategy) {
-        return new BotPlayer("봇", strategy, 0, 0, 0);
+        return new BotPlayer("봇", strategy, 0, 0, 0, 0, 0);
     }
 
-    /** 생각 시간 + 환금 단계 공개 텀이 있는 플레이용 봇. */
+    /** 생각 시간 + 환금 이벤트 루프에서 행동 사이 사람 같은 텀이 있는 플레이용 봇. */
     public static BotPlayer play(BotStrategy strategy) {
-        return new BotPlayer("봇", strategy, 2000, 4000, 850);
+        return new BotPlayer("봇", strategy, 2000, 4000, 850, 600, 1400);
     }
 
     @Override
     public int revealPaceMillis() { return pace; }
+
+    @Override
+    public int nextCashPaceMillis() {
+        if (cashPaceMax <= 0) return 0;
+        return ThreadLocalRandom.current().nextInt(cashPaceMin, cashPaceMax + 1);
+    }
 
     @Override
     public SplitDecision decideSplit(List<Card> hand) {
@@ -68,7 +79,7 @@ public final class BotPlayer extends Player {
 
     @Override
     public List<CashInAction> decideCashIn(CashInContext context) {
-        think();
+        // 환금은 이벤트 루프가 행동마다 호출하므로 페이스는 nextCashPaceMillis 로 따로 준다(여기선 즉시 결정).
         return strategy.decideCashIn(context);
     }
 

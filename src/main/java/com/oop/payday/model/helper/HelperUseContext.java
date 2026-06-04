@@ -20,6 +20,7 @@ public final class HelperUseContext {
     private final TreasureSet lastCashedSet;
     private final List<HelperCard> usedHelpers;
     private final HelperCard copyTarget;
+    private final List<Card> selectedCards;
 
     private String message;
     private Team instantWinner;
@@ -28,11 +29,17 @@ public final class HelperUseContext {
 
     public HelperUseContext(Player player, Team team, Team opponent, Deck deck,
             TreasureSet lastCashedSet, List<HelperCard> usedHelpers) {
-        this(player, team, opponent, deck, lastCashedSet, usedHelpers, null);
+        this(player, team, opponent, deck, lastCashedSet, usedHelpers, null, List.of());
     }
 
     public HelperUseContext(Player player, Team team, Team opponent, Deck deck,
             TreasureSet lastCashedSet, List<HelperCard> usedHelpers, HelperCard copyTarget) {
+        this(player, team, opponent, deck, lastCashedSet, usedHelpers, copyTarget, List.of());
+    }
+
+    public HelperUseContext(Player player, Team team, Team opponent, Deck deck,
+            TreasureSet lastCashedSet, List<HelperCard> usedHelpers, HelperCard copyTarget,
+            List<Card> selectedCards) {
         this.player = player;
         this.team = team;
         this.opponent = opponent;
@@ -40,6 +47,7 @@ public final class HelperUseContext {
         this.lastCashedSet = lastCashedSet;
         this.usedHelpers = usedHelpers;
         this.copyTarget = copyTarget;
+        this.selectedCards = List.copyOf(selectedCards);
     }
 
     public Player player() {
@@ -68,6 +76,11 @@ public final class HelperUseContext {
 
     public HelperCard copyTarget() {
         return copyTarget;
+    }
+
+    /** 카드 선택이 필요한 도우미(샛길의 더그)가 버릴 카드. 그 외엔 빈 목록. */
+    public List<Card> selectedCards() {
+        return selectedCards;
     }
 
     public void addCoins(int amount) {
