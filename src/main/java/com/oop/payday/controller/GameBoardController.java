@@ -59,6 +59,7 @@ import javafx.scene.control.ToggleButton;
 import javafx.geometry.Bounds;
 import javafx.scene.image.WritableImage;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.Region;
 
 import java.util.concurrent.CountDownLatch;
 import javafx.scene.input.ClipboardContent;
@@ -68,7 +69,6 @@ import javafx.scene.input.TransferMode;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
@@ -113,7 +113,6 @@ public final class GameBoardController implements GameListener, HumanUi, Initial
     private final Set<HelperCard> cashSelectedHelpers = new LinkedHashSet<>(); // 콤보 도우미 토글 상태
     // 환금 패널 증분 업데이트 참조 (cashCardsPane != null 이면 패널이 활성 중임)
     private FlowPane cashCardsPane;
-    private VBox cashPanelRoot;
     private Label cashPreviewLabel;
     private Label cashHoldLimitLabel;
     private HBox cashHelperTogglesBox;
@@ -616,12 +615,6 @@ public final class GameBoardController implements GameListener, HumanUi, Initial
                 bundles.visible1(), bundles.faceDown1());
     }
 
-    private Node buildWaitingChoicePanel(List<Card> bundleA, List<Card> bundleB, Card faceDown) {
-        return buildWaitingChoicePanel(
-                visibleCards(bundleA, faceDown), bundleA.contains(faceDown),
-                visibleCards(bundleB, faceDown), bundleB.contains(faceDown));
-    }
-
     private Node buildWaitingChoicePanel(List<Card> visible0, boolean faceDown0,
             List<Card> visible1, boolean faceDown1) {
         VBox root = panelRoot("상대의 선택을 기다리는 중입니다.");
@@ -653,12 +646,6 @@ public final class GameBoardController implements GameListener, HumanUi, Initial
         row.setAlignment(Pos.CENTER);
         root.getChildren().add(row);
         setCenter(root);
-    }
-
-    private List<Card> visibleCards(List<Card> cards, Card faceDown) {
-        List<Card> visible = new ArrayList<>(cards);
-        visible.remove(faceDown);
-        return visible;
     }
 
     private VBox bundleBox(String title, List<Card> visibleCards, boolean hasFaceDown, Node... controls) {
@@ -764,7 +751,6 @@ public final class GameBoardController implements GameListener, HumanUi, Initial
 
     /** 환금 패널 증분 업데이트 참조를 초기화한다. 페이즈 전환·완료 시 호출. */
     private void resetCashPanel() {
-        cashPanelRoot = null;
         cashCardsPane = null;
         cashPreviewLabel = null;
         cashHoldLimitLabel = null;
@@ -802,7 +788,6 @@ public final class GameBoardController implements GameListener, HumanUi, Initial
         root.setSpacing(10);
         root.setPadding(new Insets(16));
         root.setMaxHeight(Double.MAX_VALUE);
-        cashPanelRoot = root;
 
         cashHoldLimitLabel = new Label(holdLimitText(player, remaining));
         applyHoldLimitStyle(cashHoldLimitLabel, player, remaining);

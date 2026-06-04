@@ -62,8 +62,6 @@
                         <StackPane fx:id="fieldBStage" styleClass="center-field-stage opponent-field-stage"
                                    minHeight="168.0" prefHeight="168.0" maxHeight="168.0" maxWidth="Infinity">
                             <children>
-                                <Region styleClass="center-field-frame opponent-field-frame"
-                                        mouseTransparent="true" maxWidth="Infinity" maxHeight="Infinity" />
                                 <FlowPane fx:id="fieldBFlow" alignment="CENTER" hgap="8.0" vgap="8.0" maxWidth="Infinity" />
                                 <Label fx:id="fieldBCountLabel" styleClass="field-count-label" StackPane.alignment="TOP_RIGHT">
                                     <StackPane.margin>
@@ -83,8 +81,6 @@
                         <StackPane fx:id="fieldAStage" styleClass="center-field-stage mine-field-stage"
                                    minHeight="168.0" prefHeight="168.0" maxHeight="168.0" maxWidth="Infinity">
                             <children>
-                                <Region styleClass="center-field-frame mine-field-frame"
-                                        mouseTransparent="true" maxWidth="Infinity" maxHeight="Infinity" />
                                 <FlowPane fx:id="fieldAFlow" alignment="CENTER" hgap="8.0" vgap="8.0" maxWidth="Infinity" />
                                 <Label fx:id="fieldACountLabel" styleClass="field-count-label" StackPane.alignment="TOP_RIGHT">
                                     <StackPane.margin>
