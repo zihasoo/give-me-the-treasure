@@ -60,9 +60,11 @@
                 <VBox styleClass="board-center" spacing="8.0">
                     <children>
                         <StackPane fx:id="fieldBStage" styleClass="center-field-stage opponent-field-stage"
-                                   minHeight="168.0" prefHeight="168.0" maxHeight="168.0">
+                                   minHeight="168.0" prefHeight="168.0" maxHeight="168.0" maxWidth="Infinity">
                             <children>
-                                <FlowPane fx:id="fieldBFlow" alignment="CENTER" hgap="8.0" vgap="8.0" />
+                                <Region styleClass="center-field-frame opponent-field-frame"
+                                        mouseTransparent="true" maxWidth="Infinity" maxHeight="Infinity" />
+                                <FlowPane fx:id="fieldBFlow" alignment="CENTER" hgap="8.0" vgap="8.0" maxWidth="Infinity" />
                                 <Label fx:id="fieldBCountLabel" styleClass="field-count-label" StackPane.alignment="TOP_RIGHT">
                                     <StackPane.margin>
                                         <Insets top="6.0" right="10.0" />
@@ -73,15 +75,17 @@
 
                         <StackPane fx:id="centerArea" VBox.vgrow="ALWAYS" minHeight="0.0" styleClass="center-area">
                             <children>
-                                <StackPane fx:id="contentArea" minHeight="0.0" alignment="TOP_CENTER" />
+                                <StackPane fx:id="contentArea" minHeight="0.0" alignment="CENTER" />
                                 <StackPane fx:id="overlayArea" minHeight="0.0" mouseTransparent="true" />
                             </children>
                         </StackPane>
 
                         <StackPane fx:id="fieldAStage" styleClass="center-field-stage mine-field-stage"
-                                   minHeight="168.0" prefHeight="168.0" maxHeight="168.0">
+                                   minHeight="168.0" prefHeight="168.0" maxHeight="168.0" maxWidth="Infinity">
                             <children>
-                                <FlowPane fx:id="fieldAFlow" alignment="CENTER" hgap="8.0" vgap="8.0" />
+                                <Region styleClass="center-field-frame mine-field-frame"
+                                        mouseTransparent="true" maxWidth="Infinity" maxHeight="Infinity" />
+                                <FlowPane fx:id="fieldAFlow" alignment="CENTER" hgap="8.0" vgap="8.0" maxWidth="Infinity" />
                                 <Label fx:id="fieldACountLabel" styleClass="field-count-label" StackPane.alignment="TOP_RIGHT">
                                     <StackPane.margin>
                                         <Insets top="6.0" right="10.0" />
@@ -102,6 +106,7 @@
             </center>
         </BorderPane>
 
+        <StackPane fx:id="screenOverlay" mouseTransparent="true" pickOnBounds="false" />
         <Pane fx:id="globalOverlay" mouseTransparent="true" pickOnBounds="false" />
     </children>
 </StackPane>

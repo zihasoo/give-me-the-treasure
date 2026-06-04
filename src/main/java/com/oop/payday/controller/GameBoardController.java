@@ -43,6 +43,7 @@ import javafx.animation.PauseTransition;
 import javafx.animation.TranslateTransition;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.Point2D;
@@ -78,7 +79,7 @@ import javafx.util.Duration;
  *
  * <p>게임 로직은 별도 스레드에서 돌고, 모든 UI 변경은 {@link Platform#runLater} 로 처리한다.
  */
-public final class GameBoardController implements GameListener, HumanUi {
+public final class GameBoardController implements GameListener, HumanUi, Initializable {
 
     @FXML private Label fieldATitleLabel;
     @FXML private Label fieldAOfficerLabel;
@@ -100,6 +101,7 @@ public final class GameBoardController implements GameListener, HumanUi {
     @FXML private StackPane centerArea;
     @FXML private StackPane contentArea;
     @FXML private StackPane overlayArea;
+    @FXML private StackPane screenOverlay;
     @FXML private Label turnLabel;
     @FXML private Label messageLabel;
 
@@ -108,6 +110,16 @@ public final class GameBoardController implements GameListener, HumanUi {
     private HumanPlayer localPlayer;
     private Game game;
     private final Set<Card> cashSelection = new LinkedHashSet<>(); // 환금 패널 카드 선택(재렌더 사이 보존)
+    private final Set<HelperCard> cashSelectedHelpers = new LinkedHashSet<>(); // 콤보 도우미 토글 상태
+    // 환금 패널 증분 업데이트 참조 (cashCardsPane != null 이면 패널이 활성 중임)
+    private FlowPane cashCardsPane;
+    private VBox cashPanelRoot;
+    private Label cashPreviewLabel;
+    private Label cashHoldLimitLabel;
+    private HBox cashHelperTogglesBox;
+    private HBox cashHelperButtonsBox;
+    private List<Card> cashRemaining;
+    private CashInContext cashCashContext;
     private Team currentSplitTeam;
     private BoardAnimator animator; // 오버레이 큐·센터 전환·발동 연출 (startGame 에서 초기화)
     private boolean distributionFieldUpdatePending;
@@ -153,6 +165,22 @@ public final class GameBoardController implements GameListener, HumanUi {
         return 0;
     }
 
+    @Override
+    public void initialize(java.net.URL location, java.util.ResourceBundle resources) {
+        configureFieldStage(fieldAStage, fieldAFlow);
+        configureFieldStage(fieldBStage, fieldBFlow);
+    }
+
+    /**
+     * 필드 스테이지는 카드 수와 무관하게 항상 보드 가로폭을 채우도록 강제한다.
+     * 그렇지 않으면 VBox 안에서 자식 선호폭만큼만 줄어들어 외곽선이 카드 뒤에 묻힐 수 있다.
+     */
+    private void configureFieldStage(StackPane stage, FlowPane flow) {
+        stage.setMaxWidth(Double.MAX_VALUE);
+        flow.setMaxWidth(Double.MAX_VALUE);
+        flow.prefWrapLengthProperty().bind(stage.widthProperty().subtract(64));
+    }
+
     /**
      * 현재 진행 중인 오버레이 애니메이션이 모두 끝날 때까지 게임 스레드를 블록한다.
      * Platform.runLater로 예약된 이후 람다(환금 페이즈 배너 포함)까지 기다린 뒤 반환한다.
@@ -170,6 +198,12 @@ public final class GameBoardController implements GameListener, HumanUi {
 
     /** 메인 메뉴에서 호출. 플레이어/팀/게임을 구성하고 게임 스레드를 시작한다. */
     public void startGame(GameConfig config, boolean testBot) {
+        gameOver = false;
+        screenOverlay.getChildren().clear();
+        screenOverlay.getStyleClass().clear();
+        screenOverlay.setMouseTransparent(true);
+        screenOverlay.setPickOnBounds(false);
+
         HumanPlayer p1 = new HumanPlayer("플레이어 1");
         p1.setUi(this);
         localPlayer = p1;
@@ -306,7 +340,7 @@ public final class GameBoardController implements GameListener, HumanUi {
     public void onGameOver(Team winner) {
         Platform.runLater(() -> {
             gameOver = true;
-            setCenterAnimated(buildGameOverPanel(winner));
+            showScreenOverlay(buildGameOverPanel(winner));
             turnLabel.setText("게임 종료");
             updateBoardStatus();
         });
@@ -371,6 +405,7 @@ public final class GameBoardController implements GameListener, HumanUi {
         }
         Platform.runLater(() -> {
             cashSelection.clear();
+            resetCashPanel();
             runAfterOverlay(() -> setWaiting("환금 완료 — 상대를 기다리는 중"));
         });
     }
@@ -721,62 +756,69 @@ public final class GameBoardController implements GameListener, HumanUi {
         return root;
     }
 
-    /** 환금 행동 한 건을 큐에 제출한다. 선택을 비우고 패널을 닫으면, 엔진이 처리 후 onCashTurn 으로 재렌더한다. */
+    /** 환금 행동 한 건을 큐에 제출한다. onCashTurn 콜백이 패널을 증분 갱신한다. */
     private void submitCashAction(CashInAction action) {
         cashSelection.clear();
-        clearCenter();
         game.submitCash(localPlayer, action);
     }
 
-    /** 환금 패널을 최신 스냅샷으로 그린다. 이벤트 루프가 매 행동 후 onCashTurn 으로 재호출한다. */
+    /** 환금 패널 증분 업데이트 참조를 초기화한다. 페이즈 전환·완료 시 호출. */
+    private void resetCashPanel() {
+        cashPanelRoot = null;
+        cashCardsPane = null;
+        cashPreviewLabel = null;
+        cashHoldLimitLabel = null;
+        cashHelperTogglesBox = null;
+        cashHelperButtonsBox = null;
+        cashRemaining = null;
+        cashCashContext = null;
+        cashSelectedHelpers.clear();
+    }
+
+    /**
+     * 환금 패널을 표시하거나 갱신한다.
+     * 패널이 이미 활성 중이면 카드 목록·레이블·버튼만 갱신(전환 없음),
+     * 처음 표시할 때만 전체 구조를 빌드하고 fade-in 전환을 수행한다.
+     */
     private void renderCashInPanel(HumanPlayer player, Team team, CashInContext context, List<Card> remaining) {
+        boolean holdingsChanged = !sameCardSnapshot(cashRemaining, remaining);
+        cashRemaining = remaining;
+        cashCashContext = context;
+        cashSelection.retainAll(remaining);
+        cashSelectedHelpers.retainAll(context.helpers());
+        updateBoardStatus();
+
+        if (cashCardsPane != null) {
+            updateCashPanelContent(player, context, remaining, holdingsChanged);
+            return;
+        }
+        buildCashPanel(player, context, remaining);
+    }
+
+    /** 환금 패널 최초 빌드 (구조 전체 생성 + fade-in 전환). */
+    private void buildCashPanel(HumanPlayer player, CashInContext context, List<Card> remaining) {
         VBox root = panelRoot("세트를 선택해 환금하거나, 카드를 처분/도움 요청하세요. 끝나면 '턴 종료'.");
         root.getStyleClass().add("cash-panel");
         root.setSpacing(10);
         root.setPadding(new Insets(16));
         root.setMaxHeight(Double.MAX_VALUE);
-        updateBoardStatus();
+        cashPanelRoot = root;
 
-        Set<Card> selected = cashSelection;
-        selected.retainAll(remaining); // 더는 보유하지 않는 카드는 선택 해제(상대 행동 후 재렌더 대비)
-        Set<HelperCard> selectedCashHelpers = new LinkedHashSet<>();
-        Label preview = new Label("선택된 카드: 없음");
-        preview.getStyleClass().add("preview");
-
-        Label holdLimit = new Label(holdLimitText(player, remaining));
-        holdLimit.getStyleClass().add(remaining.size() > player.holdLimit() && !player.isHoldLimitSuspended()
-                ? "limit-warning" : "preview");
-
-        HBox infoRow = new HBox(holdLimit);
+        cashHoldLimitLabel = new Label(holdLimitText(player, remaining));
+        applyHoldLimitStyle(cashHoldLimitLabel, player, remaining);
+        HBox infoRow = new HBox(cashHoldLimitLabel);
         infoRow.setAlignment(Pos.CENTER_LEFT);
 
-        HBox cashHelperToggles = new HBox(6);
-        cashHelperToggles.setAlignment(Pos.CENTER_LEFT);
+        cashHelperTogglesBox = new HBox(6);
+        cashHelperTogglesBox.setAlignment(Pos.CENTER_LEFT);
 
-        FlowPane cardsPane = new FlowPane(10, 10);
-        cardsPane.setAlignment(Pos.CENTER);
-        List<Card> sortedRemaining = new ArrayList<>(remaining);
-        sortedRemaining.sort(CARD_ORDER);
-        for (Card card : sortedRemaining) {
-            CardView cv = new CardView(card, true, true);
-            if (selected.contains(card)) {
-                cv.setSelected(true); // 재렌더 시 이전 선택 복원
-            }
-            cv.setOnMouseClicked(e -> {
-                cv.toggleSelected();
-                if (cv.isSelected()) {
-                    selected.add(card);
-                } else {
-                    selected.remove(card);
-                }
-                updateCashInPreview(preview, selected);
-                refreshCashHelperToggles(cashHelperToggles, selectedCashHelpers, context.helpers(), selected);
-            });
-            cardsPane.getChildren().add(cv);
-        }
-        updateCashInPreview(preview, selected);
-        refreshCashHelperToggles(cashHelperToggles, selectedCashHelpers, context.helpers(), selected);
-        StackPane cardStage = new StackPane(cardsPane);
+        cashCardsPane = new FlowPane(10, 10);
+        cashCardsPane.setAlignment(Pos.CENTER);
+        populateCashCards(remaining);
+        updateCashInPreview(cashSelection, context.helpers());
+        refreshCashHelperToggles(context.helpers());
+
+        StackPane cardStage = new StackPane(cashCardsPane);
         cardStage.getStyleClass().add("cash-card-stage");
         cardStage.setAlignment(Pos.CENTER);
         ScrollPane cardScroller = new ScrollPane(cardStage);
@@ -788,34 +830,37 @@ public final class GameBoardController implements GameListener, HumanUi {
         cardScroller.setMaxHeight((int) (CardView.PANEL_HEIGHT + 44));
         cardStage.minHeightProperty().bind(cardScroller.heightProperty().subtract(4));
 
+        cashPreviewLabel = new Label("선택된 카드: 없음");
+        cashPreviewLabel.getStyleClass().add("preview");
+        updateCashInPreview(cashSelection, context.helpers());
+
         Button cashBtn = new Button("환금");
         cashBtn.getStyleClass().add("menu-button");
         cashBtn.setOnAction(e -> {
-            List<Card> chosen = new ArrayList<>(selected);
+            List<Card> chosen = new ArrayList<>(cashSelection);
             Optional<CashInEvaluator.Result> evaluation = CashInEvaluator.evaluate(chosen);
             if (evaluation.isEmpty()) {
                 alert("선택한 카드는 유효한 세트가 아닙니다. 저주받은 그림은 같은 숫자 보물이 포함된 세트와 함께만 무료 처분할 수 있습니다.");
                 return;
             }
-            List<HelperCard> cashHelpers = selectedCashHelpers.stream()
+            List<HelperCard> cashHelpers = cashSelectedHelpers.stream()
                     .filter(helper -> canAttachToCash(helper, evaluation.get().set()))
                     .toList();
             CashInAction action = cashHelpers.isEmpty()
                     ? new CashInAction.Cash(chosen)
                     : new CashInAction.CashWithHelpers(chosen, cashHelpers);
-            submitCashAction(action); // 큐에 넣고 패널은 onCashTurn 으로 재렌더
+            submitCashAction(action);
         });
 
         Button discardBtn = new Button("처분");
         discardBtn.getStyleClass().add("menu-button");
         discardBtn.setOnAction(e -> {
-            if (selected.isEmpty()) {
+            if (cashSelection.isEmpty()) {
                 alert("처분할 카드를 선택하세요.");
                 return;
             }
-            List<Card> toDiscard = new ArrayList<>(selected);
+            List<Card> toDiscard = new ArrayList<>(cashSelection);
             cashSelection.clear();
-            clearCenter();
             for (Card c : toDiscard) {
                 game.submitCash(localPlayer, new CashInAction.Discard(c));
             }
@@ -824,33 +869,146 @@ public final class GameBoardController implements GameListener, HumanUi {
         Button doneBtn = new Button("턴 종료");
         doneBtn.getStyleClass().add("menu-button");
         doneBtn.setOnAction(e -> {
-            if (!player.isHoldLimitSuspended() && remaining.size() > player.holdLimit()) {
+            if (!player.isHoldLimitSuspended() && cashRemaining.size() > player.holdLimit()) {
                 alert("보유 한도를 초과해서 턴을 종료할 수 없습니다. 현재 "
-                        + remaining.size() + "장 / 한도 " + player.holdLimit()
+                        + cashRemaining.size() + "장 / 한도 " + player.holdLimit()
                         + "장입니다. 환금하거나 처분해 한도 이하로 맞춰주세요.");
                 return;
             }
             cashSelection.clear();
-            clearCenter();
             game.passCash(localPlayer);
         });
 
-        HBox helperButtons = new HBox(8);
-        helperButtons.setAlignment(Pos.CENTER_LEFT);
+        cashHelperButtonsBox = new HBox(8);
+        cashHelperButtonsBox.setAlignment(Pos.CENTER_LEFT);
+        refreshCashHelperButtons(context, remaining);
+
+        Region btnSpacer = new Region();
+        HBox.setHgrow(btnSpacer, Priority.ALWAYS);
+        HBox bottomBar = new HBox(8, cashHelperTogglesBox, cashHelperButtonsBox, btnSpacer, cashBtn, discardBtn, doneBtn);
+        bottomBar.setAlignment(Pos.CENTER_LEFT);
+        bottomBar.getStyleClass().add("cash-bottom-bar");
+
+        root.getChildren().addAll(infoRow, cardScroller, cashPreviewLabel, bottomBar);
+        setCenterAnimated(root);
+    }
+
+    /** 패널이 이미 화면에 있을 때 변화하는 부분만 갱신 (전환 없음). */
+    private void updateCashPanelContent(HumanPlayer player, CashInContext context, List<Card> remaining,
+            boolean holdingsChanged) {
+        cashHoldLimitLabel.setText(holdLimitText(player, remaining));
+        applyHoldLimitStyle(cashHoldLimitLabel, player, remaining);
+        if (holdingsChanged) {
+            populateCashCards(remaining);
+        }
+        updateCashInPreview(cashSelection, context.helpers());
+        refreshCashHelperToggles(context.helpers());
+        refreshCashHelperButtons(context, remaining);
+        if (holdingsChanged) {
+            playCashCardsRefreshTransition();
+        }
+    }
+
+    /** 환금 패널 증분 갱신 시 카드 필드 리빌드 구간에만 짧은 전환을 준다. */
+    private void playCashCardsRefreshTransition() {
+        if (cashCardsPane == null) {
+            return;
+        }
+        cashCardsPane.setOpacity(0.76);
+        cashCardsPane.setTranslateY(6);
+
+        FadeTransition fadeIn = fade(cashCardsPane, 0.76, 1, 180);
+        TranslateTransition rise = new TranslateTransition(Duration.millis(180), cashCardsPane);
+        rise.setFromY(6);
+        rise.setToY(0);
+        new ParallelTransition(fadeIn, rise).play();
+    }
+
+    /** cashCardsPane 을 remaining 에 맞게 재구성한다 (선택 상태 보존). */
+    private void populateCashCards(List<Card> remaining) {
+        cashCardsPane.getChildren().clear();
+        List<Card> sorted = new ArrayList<>(remaining);
+        sorted.sort(CARD_ORDER);
+        for (Card card : sorted) {
+            CardView cv = new CardView(card, true, true);
+            if (cashSelection.contains(card)) {
+                cv.setSelected(true);
+            }
+            cv.setOnMouseClicked(e -> {
+                cv.toggleSelected();
+                if (cv.isSelected()) {
+                    cashSelection.add(card);
+                } else {
+                    cashSelection.remove(card);
+                }
+                updateCashInPreview(cashSelection, cashCashContext.helpers());
+                refreshCashHelperToggles(cashCashContext.helpers());
+            });
+            cashCardsPane.getChildren().add(cv);
+        }
+    }
+
+    private void applyHoldLimitStyle(Label label, Player player, List<Card> remaining) {
+        label.getStyleClass().removeAll("limit-warning", "preview");
+        label.getStyleClass().add(
+                remaining.size() > player.holdLimit() && !player.isHoldLimitSuspended()
+                        ? "limit-warning" : "preview");
+    }
+
+    private boolean sameCardSnapshot(List<Card> previous, List<Card> current) {
+        if (previous == null || current == null) {
+            return false;
+        }
+        if (previous.size() != current.size()) {
+            return false;
+        }
+        return previous.containsAll(current) && current.containsAll(previous);
+    }
+
+    /** 콤보형 도우미 토글 버튼(cashHelperTogglesBox)을 재구성한다. */
+    private void refreshCashHelperToggles(List<HelperCard> helpers) {
+        cashHelperTogglesBox.getChildren().clear();
+        Optional<TreasureSet> selectedSet = CashInEvaluator.evaluate(new ArrayList<>(cashSelection))
+                .map(CashInEvaluator.Result::set);
+        for (HelperCard helper : helpers) {
+            if (!HelperRules.isCashReaction(helper.kind()) || helper.isUsed()) {
+                continue;
+            }
+            ToggleButton toggle = new ToggleButton(helper.displayName());
+            toggle.getStyleClass().add("helper-action-button");
+            boolean usable = selectedSet.isPresent() && canAttachToCash(helper, selectedSet.get());
+            toggle.setDisable(!usable);
+            if (!usable) {
+                cashSelectedHelpers.remove(helper);
+            }
+            toggle.setSelected(usable && cashSelectedHelpers.contains(helper));
+            toggle.setOnAction(e -> {
+                if (toggle.isSelected()) {
+                    cashSelectedHelpers.add(helper);
+                } else {
+                    cashSelectedHelpers.remove(helper);
+                }
+            });
+            cashHelperTogglesBox.getChildren().add(toggle);
+        }
+    }
+
+    /** 독립 사용 도우미 버튼(cashHelperButtonsBox)을 재구성한다. */
+    private void refreshCashHelperButtons(CashInContext context, List<Card> remaining) {
+        cashHelperButtonsBox.getChildren().clear();
         for (HelperCard helper : context.helpers()) {
             if (HelperRules.isCashReaction(helper.kind())) {
                 continue;
             }
             Button helperBtn = new Button(helper.displayName());
             helperBtn.getStyleClass().add("helper-action-button");
-            String disabledReason = standaloneDisabledReason(helper, context, remaining);
-            helperBtn.setDisable(disabledReason != null);
-            helperBtn.setOnAction(e2 -> {
+            helperBtn.setDisable(standaloneDisabledReason(helper, context, remaining) != null);
+            helperBtn.setOnAction(e -> {
                 CashInAction action;
                 if (helper.kind() == HelperKind.DOUG) {
                     // 샛길의 더그: 선택한 보물(저주 제외)만 버리고 그만큼 드로우(규칙서 §3-3).
-                    List<Card> toDiscard = selected.stream()
-                            .filter(c -> !(c instanceof com.oop.payday.model.card.CursedCard))
+                    List<Card> toDiscard = cashSelection.stream()
+                            .filter(c -> !(c instanceof CursedCard))
                             .toList();
                     if (toDiscard.isEmpty()) {
                         alert("샛길의 더그로 버릴 보물을 먼저 선택하세요(저주받은 그림 제외).");
@@ -858,7 +1016,7 @@ public final class GameBoardController implements GameListener, HumanUi {
                     }
                     action = new CashInAction.UseHelper(helper, null, toDiscard);
                 } else if (helper.kind() == HelperKind.CROC_BROTHERS) {
-                    Optional<HelperCard> target = chooseCrocTarget(context, remaining);
+                    Optional<HelperCard> target = chooseCrocTarget(cashCashContext, cashRemaining);
                     if (target.isEmpty()) {
                         return;
                     }
@@ -866,47 +1024,9 @@ public final class GameBoardController implements GameListener, HumanUi {
                 } else {
                     action = new CashInAction.UseHelper(helper);
                 }
-                submitCashAction(action); // 큐에 넣고 패널은 onCashTurn 으로 재렌더
+                submitCashAction(action);
             });
-            helperButtons.getChildren().add(helperBtn);
-        }
-
-        Region btnSpacer = new Region();
-        HBox.setHgrow(btnSpacer, Priority.ALWAYS);
-        HBox bottomBar = new HBox(8, cashHelperToggles, helperButtons, btnSpacer, cashBtn, discardBtn, doneBtn);
-        bottomBar.setAlignment(Pos.CENTER_LEFT);
-        bottomBar.getStyleClass().add("cash-bottom-bar");
-
-        root.getChildren().addAll(infoRow, cardScroller, preview, bottomBar);
-        setCenter(root);
-    }
-
-    private void refreshCashHelperToggles(HBox target, Set<HelperCard> selectedCashHelpers,
-            List<HelperCard> helpers, Set<Card> selected) {
-        target.getChildren().clear();
-        Optional<TreasureSet> selectedSet = CashInEvaluator.evaluate(new ArrayList<>(selected))
-                .map(CashInEvaluator.Result::set);
-        for (HelperCard helper : helpers) {
-            if (!HelperRules.isCashReaction(helper.kind()) || helper.isUsed()) {
-                continue;
-            }
-            // 일반 도우미 버튼과 같은 모양·이름으로 표시(색 차이로 인한 혼란 방지). 켜짐 상태만 구분.
-            ToggleButton toggle = new ToggleButton(helper.displayName());
-            toggle.getStyleClass().add("helper-action-button");
-            boolean usable = selectedSet.isPresent() && canAttachToCash(helper, selectedSet.get());
-            toggle.setDisable(!usable);
-            if (!usable) {
-                selectedCashHelpers.remove(helper);
-            }
-            toggle.setSelected(usable && selectedCashHelpers.contains(helper));
-            toggle.setOnAction(e -> {
-                if (toggle.isSelected()) {
-                    selectedCashHelpers.add(helper);
-                } else {
-                    selectedCashHelpers.remove(helper);
-                }
-            });
-            target.getChildren().add(toggle);
+            cashHelperButtonsBox.getChildren().add(helperBtn);
         }
     }
 
@@ -998,9 +1118,12 @@ public final class GameBoardController implements GameListener, HumanUi {
         return kind != HelperKind.CUCKOO && kind != HelperKind.LEO && kind != HelperKind.LUCKY;
     }
 
-    private void updateCashInPreview(Label preview, Set<Card> selected) {
+    private void updateCashInPreview(Set<Card> selected, List<HelperCard> helpers) {
+        if (cashPreviewLabel == null) {
+            return;
+        }
         if (selected.isEmpty()) {
-            preview.setText("선택된 카드: 없음");
+            cashPreviewLabel.setText("선택된 카드: 없음");
             return;
         }
         Optional<CashInEvaluator.Result> evaluation = CashInEvaluator.evaluate(new ArrayList<>(selected));
@@ -1009,10 +1132,16 @@ public final class GameBoardController implements GameListener, HumanUi {
             String cursed = evaluation.get().hasFreeCursedCards()
                     ? " · 저주 " + evaluation.get().freeCursedCards().size() + "장 무료 처분"
                     : "";
-            preview.setText("환금 가능: " + set.type().korean() + " " + set.size()
-                    + "장 → " + set.coin() + "코인" + cursed);
+            List<String> usableHelpers = helpers.stream()
+                    .filter(h -> !h.isUsed() && HelperRules.isCashReaction(h.kind()) && canAttachToCash(h, set))
+                    .map(HelperCard::displayName)
+                    .toList();
+            String helperSuffix = usableHelpers.isEmpty() ? ""
+                    : "  +" + String.join(", ", usableHelpers) + " 사용 가능";
+            cashPreviewLabel.setText("환금 가능: " + set.type().korean() + " " + set.size()
+                    + "장 → " + set.coin() + "코인" + cursed + helperSuffix);
         } else {
-            preview.setText("선택 " + selected.size() + "장 — 유효한 세트 아님");
+            cashPreviewLabel.setText("선택 " + selected.size() + "장 — 유효한 세트 아님");
         }
     }
 
@@ -1040,6 +1169,16 @@ public final class GameBoardController implements GameListener, HumanUi {
 
         root.getChildren().addAll(scoreColumn, mainMenu);
         return root;
+    }
+
+    private void showScreenOverlay(Node node) {
+        screenOverlay.getStyleClass().setAll("screen-overlay");
+        screenOverlay.setMouseTransparent(false);
+        screenOverlay.setPickOnBounds(true);
+        StackPane.setAlignment(node, Pos.CENTER);
+        node.setOpacity(0);
+        screenOverlay.getChildren().setAll(node);
+        fade(node, 0, 1, 220).play();
     }
 
     private VBox buildScoreCard(Team team, boolean win, boolean isBottom) {
@@ -1242,12 +1381,7 @@ public final class GameBoardController implements GameListener, HumanUi {
         countLabel.setText(hideDetails ? "" : "보유 " + player.holdingCount() + " / " + player.holdLimit());
         renderSidebarHelpers(helpers, player);
         field.getChildren().clear();
-        if (player.holdings().isEmpty()) {
-            if (!hideDetails) {
-                Label empty = new Label("보물 없음");
-                empty.getStyleClass().add("field-empty");
-                field.getChildren().add(empty);
-            }
+        if (hideDetails || player.holdings().isEmpty()) {
             return;
         }
         List<Card> holdings = new ArrayList<>(player.holdings());
