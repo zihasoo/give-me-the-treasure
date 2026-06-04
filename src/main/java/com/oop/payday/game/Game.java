@@ -672,4 +672,9 @@ public final class Game {
     public Team chooseTeam() {
         return chooseTeam;
     }
+
+    /** 현재 버림 더미의 읽기 전용 뷰 (네트워크 브로드캐스터용). */
+    public java.util.List<com.oop.payday.model.card.Card> discardView() {
+        return deck.discardView();
+    }
 }

@@ -3,7 +3,7 @@ package com.oop.payday.game;
 /**
  * 한 판의 규칙 설정값. 연습 룰/정식 룰, 봇 상대 여부 등을 담는다.
  */
-public final class GameConfig {
+public final class GameConfig implements java.io.Serializable {
 
     /** 정식 룰 승리 코인. */
     public static final int STANDARD_WIN = 30;

@@ -11,6 +11,14 @@ import java.util.Set;
 
 import com.oop.payday.bot.HeuristicBotStrategy;
 import com.oop.payday.app.GameApp;
+import com.oop.payday.net.FanOutGameListener;
+import com.oop.payday.net.NetworkBroadcaster;
+import com.oop.payday.net.PublicBoardState;
+import com.oop.payday.net.WireCodec;
+import com.oop.payday.net.GameServer;
+import com.oop.payday.net.GameClient;
+import com.oop.payday.net.ClientMirror;
+import com.oop.payday.player.NetworkPlayer;
 import com.oop.payday.decision.BundleView;
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
@@ -22,7 +30,6 @@ import com.oop.payday.game.GameListener;
 import com.oop.payday.game.Phase;
 import com.oop.payday.game.Team;
 import com.oop.payday.model.card.Card;
-import com.oop.payday.model.card.CardColor;
 import com.oop.payday.model.card.CursedCard;
 import com.oop.payday.model.card.StealCard;
 import com.oop.payday.model.card.TreasureCard;
@@ -108,7 +115,8 @@ public final class GameBoardController implements GameListener, Initializable {
 
     private Team teamA;
     private Team teamB;
-    private HumanPlayer localPlayer;
+    private Player localPlayer;
+    private InputGateway inputGateway;
     private final Set<Card> cashSelection = new LinkedHashSet<>(); // 환금 패널 카드 선택(재렌더 사이 보존)
     private final Set<HelperCard> cashSelectedHelpers = new LinkedHashSet<>(); // 콤보 도우미 토글 상태
     // 환금 패널 증분 업데이트 참조. 카드 선택 UI는 중앙 패널이 아니라 내 필드에 붙인다.
@@ -198,16 +206,12 @@ public final class GameBoardController implements GameListener, Initializable {
         }
     }
 
-    /** 메인 메뉴에서 호출. 플레이어/팀/게임을 구성하고 게임 스레드를 시작한다. */
+    /** 메인 메뉴에서 호출. 플레이어/팀/게임을 구성하고 게임 스레드를 시작한다 (오프라인). */
     public void startGame(GameConfig config, boolean testBot) {
-        gameOver = false;
-        screenOverlay.getChildren().clear();
-        screenOverlay.getStyleClass().clear();
-        screenOverlay.setMouseTransparent(true);
-        screenOverlay.setPickOnBounds(false);
-
+        resetBoard();
         HumanPlayer p1 = new HumanPlayer("플레이어 1");
         localPlayer = p1;
+        inputGateway = new LocalInputGateway(p1);
 
         HeuristicBotStrategy strategy = new HeuristicBotStrategy();
         Player p2 = testBot ? BotPlayer.test(strategy) : BotPlayer.play(strategy);
@@ -221,6 +225,76 @@ public final class GameBoardController implements GameListener, Initializable {
         Thread loop = new Thread(game::play, "game-loop");
         loop.setDaemon(true);
         loop.start();
+    }
+
+    /** 호스트 모드: 권위 Game 을 로컬에서 실행하고 NetworkPlayer 로 원격 클라이언트와 대전. */
+    public void startHostGame(GameConfig config, GameServer server, NetworkPlayer networkPlayer) {
+        resetBoard();
+        HumanPlayer p1 = new HumanPlayer("플레이어 1");
+        localPlayer = p1;
+        inputGateway = new LocalInputGateway(p1);
+
+        teamA = new Team(p1.name(), List.of(p1));
+        teamB = new Team(networkPlayer.name(), List.of(networkPlayer));
+        animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER);
+        updateBoardStatus();
+
+        List<Player> allPlayers = List.of(p1, networkPlayer);
+        NetworkBroadcaster broadcaster = new NetworkBroadcaster(
+                networkPlayer, teamA, teamB, null, allPlayers, server.outputStream());
+        FanOutGameListener fanOut = new FanOutGameListener(this, broadcaster);
+        Game game = new Game(config, teamA, teamB, fanOut);
+        broadcaster.setGame(game);
+
+        PublicBoardState initState = WireCodec.buildState(teamA, teamB, game, 1, allPlayers);
+        try {
+            server.sendHandshake(config, 1, initState);
+        } catch (java.io.IOException e) {
+            setMessage("핸드셰이크 전송 실패: " + e.getMessage());
+            return;
+        }
+
+        server.startReaderLoop(networkPlayer, allPlayers,
+                () -> Platform.runLater(() -> showDisconnected("상대 연결이 끊어졌습니다.")));
+
+        Thread loop = new Thread(game::play, "game-loop");
+        loop.setDaemon(true);
+        loop.start();
+    }
+
+    /** 클라이언트 모드: Game 없이 미러 상태만 추종하며 원격에서 온 이벤트를 렌더링한다. */
+    public void startClientGame(ClientMirror mirror, GameClient client) {
+        resetBoard();
+        localPlayer = mirror.myPlayer();
+        inputGateway = new NetworkInputGateway(client);
+
+        teamA = mirror.myTeam();
+        teamB = mirror.opponentTeam();
+        animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER);
+        updateBoardStatus();
+
+        client.startReaderLoop(mirror, this, () -> showDisconnected("호스트 연결이 끊어졌습니다."));
+    }
+
+    private void resetBoard() {
+        gameOver = false;
+        introPhase = true;
+        phaseRevision = 0;
+        distributionFieldUpdatePending = false;
+        resetCashPanel();
+        screenOverlay.getChildren().clear();
+        screenOverlay.getStyleClass().clear();
+        screenOverlay.setMouseTransparent(true);
+        screenOverlay.setPickOnBounds(false);
+    }
+
+    private void showDisconnected(String msg) {
+        if (!gameOver) {
+            setMessage(msg);
+            Label label = new Label(msg);
+            label.getStyleClass().add("preview");
+            showScreenOverlay(label);
+        }
     }
 
     // ===== GameListener (게임 스레드 → UI) =====
@@ -352,41 +426,29 @@ public final class GameBoardController implements GameListener, Initializable {
 
     @Override
     public void onRequestSplit(Player player, List<Card> hand) {
-        if (!(player instanceof HumanPlayer human) || !isLocalActor(human)) {
-            return;
-        }
-        Platform.runLater(() -> {
-            runAfterOverlay(() -> {
-                updateBoardStatus();
-                setCenterAnimated(buildSplitPanel(human, hand));
-            });
-        });
+        if (!isLocalActor(player)) return;
+        Platform.runLater(() -> runAfterOverlay(() -> {
+            updateBoardStatus();
+            setCenterAnimated(buildSplitPanel(hand));
+        }));
     }
 
     @Override
     public void onRequestChoice(Player player, ChoiceView view) {
-        if (!(player instanceof HumanPlayer human) || !isLocalActor(human)) {
-            return;
-        }
-        Platform.runLater(() -> {
-            runAfterOverlay(() -> {
-                updateBoardStatus();
-                setCenterAnimated(buildChoicePanel(human, view));
-            });
-        });
+        if (!isLocalActor(player)) return;
+        Platform.runLater(() -> runAfterOverlay(() -> {
+            updateBoardStatus();
+            setCenterAnimated(buildChoicePanel(view));
+        }));
     }
 
     @Override
     public void onRequestHelpers(Player player, List<HelperCard> options, int chooseCount) {
-        if (!(player instanceof HumanPlayer human) || !isLocalActor(human)) {
-            return;
-        }
-        Platform.runLater(() -> {
-            runAfterOverlay(() -> {
-                updateBoardStatus();
-                setCenterAnimated(buildHelperSelectionPanel(human, options, chooseCount));
-            });
-        });
+        if (!isLocalActor(player)) return;
+        Platform.runLater(() -> runAfterOverlay(() -> {
+            updateBoardStatus();
+            setCenterAnimated(buildHelperSelectionPanel(options, chooseCount));
+        }));
     }
 
     @Override
@@ -414,7 +476,7 @@ public final class GameBoardController implements GameListener, Initializable {
 
     // ===== 패널 빌더 =====
 
-    private Node buildSplitPanel(HumanPlayer player, List<Card> hand) {
+    private Node buildSplitPanel(List<Card> hand) {
         VBox root = panelRoot("카드를 드래그해 두 묶음으로 나누세요. 우클릭하면 비공개 카드가 됩니다.");
 
         Map<Card, Integer> bundleOf = new HashMap<>();
@@ -473,7 +535,7 @@ public final class GameBoardController implements GameListener, Initializable {
                 return;
             }
             clearCenter();
-            player.provideSplit(decision);
+            inputGateway.provideSplit(decision);
         });
 
         root.getChildren().addAll(bundlesRow, done);
@@ -593,7 +655,7 @@ public final class GameBoardController implements GameListener, Initializable {
         return nodes;
     }
 
-    private Node buildChoicePanel(HumanPlayer player, ChoiceView view) {
+    private Node buildChoicePanel(ChoiceView view) {
         VBox root = panelRoot("두 묶음 중 하나를 선택하세요. (뒷면 카드는 가려져 있습니다)");
 
         HBox bundlesRow = new HBox(40);
@@ -615,7 +677,7 @@ public final class GameBoardController implements GameListener, Initializable {
                 disableBundleButtons();
                 PauseTransition delay = new PauseTransition(Duration.millis(1100));
                 delay.setOnFinished(done -> {
-                    player.provideChoice(index);
+                    inputGateway.provideChoice(index);
                 });
                 delay.play();
             });
@@ -708,7 +770,7 @@ public final class GameBoardController implements GameListener, Initializable {
         }
     }
 
-    private Node buildHelperSelectionPanel(HumanPlayer player, List<HelperCard> options, int chooseCount) {
+    private Node buildHelperSelectionPanel(List<HelperCard> options, int chooseCount) {
         VBox root = panelRoot("도우미 후보 3장 중 " + chooseCount + "장을 선택하세요.");
 
         List<ToggleButton> toggles = new ArrayList<>();
@@ -753,7 +815,7 @@ public final class GameBoardController implements GameListener, Initializable {
                 return;
             }
             clearCenter();
-            player.provideHelpers(selected);
+            inputGateway.provideHelpers(selected);
         });
 
         root.getChildren().addAll(row, done);
@@ -763,7 +825,7 @@ public final class GameBoardController implements GameListener, Initializable {
     /** 환금 행동 한 건을 큐에 제출한다. onCashTurn 콜백이 패널을 증분 갱신한다. */
     private void submitCashAction(CashInAction action) {
         cashSelection.clear();
-        localPlayer.submitCash(action);
+        inputGateway.submitCash(action);
     }
 
     /** 환금 패널 증분 업데이트 참조를 초기화한다. 페이즈 전환·완료 시 호출. */
@@ -783,7 +845,7 @@ public final class GameBoardController implements GameListener, Initializable {
      * 패널이 이미 활성 중이면 레이블·버튼만 갱신(전환 없음),
      * 처음 표시할 때만 전체 구조를 빌드하고 fade-in 전환을 수행한다.
      */
-    private void renderCashInPanel(HumanPlayer player, Team team, CashInContext context, List<Card> remaining) {
+    private void renderCashInPanel(Player player, Team team, CashInContext context, List<Card> remaining) {
         boolean alreadyActive = cashPhaseActive;
         cashPhaseActive = true;
         cashRemaining = remaining;
@@ -800,7 +862,7 @@ public final class GameBoardController implements GameListener, Initializable {
     }
 
     /** 환금 컨트롤 최초 빌드 (구조 전체 생성 + fade-in 전환). */
-    private void buildCashPanel(HumanPlayer player, CashInContext context, List<Card> remaining) {
+    private void buildCashPanel(Player player, CashInContext context, List<Card> remaining) {
         VBox root = panelRoot("내 필드에서 카드를 선택해 환금하거나, 카드를 처분/도움 요청하세요. 끝나면 '턴 종료'.");
         root.getStyleClass().add("cash-panel");
         root.setSpacing(10);
@@ -851,7 +913,7 @@ public final class GameBoardController implements GameListener, Initializable {
             List<Card> toDiscard = new ArrayList<>(cashSelection);
             cashSelection.clear();
             for (Card c : toDiscard) {
-                localPlayer.submitCash(new CashInAction.Discard(c));
+                inputGateway.submitCash(new CashInAction.Discard(c));
             }
         });
 
@@ -865,7 +927,7 @@ public final class GameBoardController implements GameListener, Initializable {
                 return;
             }
             cashSelection.clear();
-            localPlayer.passCash();
+            inputGateway.passCash();
         });
 
         cashHelperButtonsBox = new HBox(8);
@@ -889,7 +951,7 @@ public final class GameBoardController implements GameListener, Initializable {
     }
 
     /** 패널이 이미 화면에 있을 때 변화하는 부분만 갱신 (전환 없음). */
-    private void updateCashPanelContent(HumanPlayer player, CashInContext context, List<Card> remaining) {
+    private void updateCashPanelContent(Player player, CashInContext context, List<Card> remaining) {
         cashHoldLimitLabel.setText(holdLimitText(player, remaining));
         applyHoldLimitStyle(cashHoldLimitLabel, player, remaining);
         updateCashInPreview(cashSelection, context.helpers());

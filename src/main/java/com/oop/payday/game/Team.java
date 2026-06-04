@@ -45,6 +45,10 @@ public final class Team {
         coins += amount;
     }
 
+    public void setCoins(int coins) {
+        this.coins = coins;
+    }
+
     /** 코인을 차감한다(저주받은 그림 처분 등). 음수가 되지 않도록 0 에서 멈춘다. */
     public void spendCoins(int amount) {
         coins = Math.max(0, coins - amount);

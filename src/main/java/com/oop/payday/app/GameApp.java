@@ -6,6 +6,10 @@ import java.util.Objects;
 
 import com.oop.payday.controller.GameBoardController;
 import com.oop.payday.game.GameConfig;
+import com.oop.payday.net.ClientMirror;
+import com.oop.payday.net.GameClient;
+import com.oop.payday.net.GameServer;
+import com.oop.payday.player.NetworkPlayer;
 
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
@@ -61,12 +65,29 @@ public class GameApp extends Application {
         applyScene(load(fxmlFile).getRoot());
     }
 
-    /** 게임 보드 화면으로 전환하고 게임을 시작한다. */
+    /** 게임 보드 화면으로 전환하고 게임을 시작한다 (오프라인). */
     public void showGameBoard(GameConfig config, boolean testBot) throws IOException {
         FXMLLoader loader = load("game_board.fxml");
         applyScene(loader.getRoot());
         GameBoardController controller = loader.getController();
         controller.startGame(config, testBot);
+    }
+
+    /** 게임 보드 화면으로 전환하고 호스트 모드 게임을 시작한다. */
+    public void showHostGame(GameConfig config, GameServer server, NetworkPlayer networkPlayer)
+            throws IOException {
+        FXMLLoader loader = load("game_board.fxml");
+        applyScene(loader.getRoot());
+        GameBoardController controller = loader.getController();
+        controller.startHostGame(config, server, networkPlayer);
+    }
+
+    /** 게임 보드 화면으로 전환하고 클라이언트 모드 게임을 시작한다. */
+    public void showClientGame(ClientMirror mirror, GameClient client) throws IOException {
+        FXMLLoader loader = load("game_board.fxml");
+        applyScene(loader.getRoot());
+        GameBoardController controller = loader.getController();
+        controller.startClientGame(mirror, client);
     }
 
     private FXMLLoader load(String fxmlFile) throws IOException {

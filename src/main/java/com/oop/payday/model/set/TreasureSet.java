@@ -14,7 +14,7 @@ public final class TreasureSet {
     private final SetType type;
     private final int coin;
 
-    TreasureSet(List<Card> cards, SetType type, int coin) {
+    public TreasureSet(List<Card> cards, SetType type, int coin) {
         this.cards = List.copyOf(cards);
         this.type = type;
         this.coin = coin;
