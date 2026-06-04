@@ -70,7 +70,7 @@ final class HelperActionModelTest {
 
         croc.use(context);
 
-        assertEquals(true, context.holdLimitSuspended());
+        assertTrue(context.holdLimitSuspended());
     }
 
     @Test

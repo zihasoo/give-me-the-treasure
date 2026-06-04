@@ -34,8 +34,18 @@ dependencies {
 }
 
 test {
-    useJUnitPlatform()
-    testLogging {
-        showStandardStreams = true
+    useJUnitPlatform {
+        excludeTags 'integration'
     }
+}
+
+tasks.register('integrationTest', Test) {
+    description = 'Runs slower integration-style tests.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'integration'
+    }
+    shouldRunAfter test
 }

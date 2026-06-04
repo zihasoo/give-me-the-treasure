@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.oop.payday.bot.HeuristicBotStrategy;
@@ -16,8 +17,9 @@ import com.oop.payday.player.Player;
 
 final class HeadlessBotGameTest {
 
+    @Tag("integration")
     @Test
-    void testBotsCanFinishPracticeGameWithoutUi() {
+    void botsCanFinishPracticeGameWithoutUi() {
         AtomicReference<Team> winnerRef = new AtomicReference<>();
 
         Team alpha = team("테스트 봇 A");
@@ -33,7 +35,6 @@ final class HeadlessBotGameTest {
 
         Team winner = winnerRef.get();
         assertNotNull(winner, "헤드리스 봇 대전은 승자를 내고 종료해야 한다.");
-        System.out.println("헤드리스 테스트 봇 대전 승자: " + winner.name() + " (" + winner.coins() + "코인)");
         assertTrue(winner == alpha || winner == beta, "승자는 참가 팀 중 하나여야 한다.");
         assertTrue(winner.coins() >= GameConfig.PRACTICE_WIN,
                 "승자는 연습 룰 승리 코인 이상을 보유해야 한다.");

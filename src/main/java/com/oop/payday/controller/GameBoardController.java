@@ -119,6 +119,8 @@ public final class GameBoardController implements GameListener, Initializable {
     private CashInContext cashCashContext;
     private Team currentSplitTeam;
     private BoardAnimator animator; // 오버레이 큐·센터 전환·발동 연출 (startGame 에서 초기화)
+    private int activeFieldACoinFloats;
+    private int activeFieldBCoinFloats;
     private boolean distributionFieldUpdatePending;
     private boolean introPhase = true;
     private boolean gameOver = false;
@@ -1508,6 +1510,7 @@ public final class GameBoardController implements GameListener, Initializable {
         if (coinsLabel == null || delta == 0 || globalOverlay == null) {
             return;
         }
+        int lane = nextCoinFloatLane(team);
         Label floating = new Label((delta > 0 ? "+" : "") + delta);
         floating.getStyleClass().add("coin-float");
         floating.getStyleClass().add(delta > 0 ? "coin-float-gain" : "coin-float-loss");
@@ -1517,7 +1520,7 @@ public final class GameBoardController implements GameListener, Initializable {
         Bounds bounds = coinsLabel.localToScene(coinsLabel.getBoundsInLocal());
         Point2D anchor = globalOverlay.sceneToLocal(bounds.getMaxX() + 8, bounds.getMinY() - 6);
         floating.setLayoutX(anchor.getX());
-        floating.setLayoutY(anchor.getY());
+        floating.setLayoutY(anchor.getY() + lane * 34);
         globalOverlay.getChildren().add(floating);
 
         FadeTransition fadeIn = fade(floating, 0, 1, 120);
@@ -1527,8 +1530,29 @@ public final class GameBoardController implements GameListener, Initializable {
         FadeTransition fadeOut = fade(floating, 1, 0, 1100);
         ParallelTransition floatOut = new ParallelTransition(rise, fadeOut);
         fadeIn.setOnFinished(e -> floatOut.play());
-        floatOut.setOnFinished(e -> globalOverlay.getChildren().remove(floating));
+        floatOut.setOnFinished(e -> {
+            globalOverlay.getChildren().remove(floating);
+            releaseCoinFloatLane(team);
+        });
         fadeIn.play();
+    }
+
+    private int nextCoinFloatLane(Team team) {
+        if (team == teamA) {
+            return activeFieldACoinFloats++;
+        }
+        if (team == teamB) {
+            return activeFieldBCoinFloats++;
+        }
+        return 0;
+    }
+
+    private void releaseCoinFloatLane(Team team) {
+        if (team == teamA && activeFieldACoinFloats > 0) {
+            activeFieldACoinFloats--;
+        } else if (team == teamB && activeFieldBCoinFloats > 0) {
+            activeFieldBCoinFloats--;
+        }
     }
 
     private void alert(String message) {

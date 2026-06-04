@@ -49,11 +49,6 @@ public final class CardView extends StackPane {
         setPrefSize(w, h);
         setMinSize(w, h);
         setMaxSize(w, h);
-        double arc = 14 * w / WIDTH;
-        Rectangle clip = new Rectangle(w, h);
-        clip.setArcWidth(arc);
-        clip.setArcHeight(arc);
-        setClip(clip);
         getStyleClass().add("card");
         if (faceUp) {
             renderFront();
