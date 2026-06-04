@@ -44,7 +44,6 @@ import com.oop.payday.player.Player;
  */
 public final class Game {
 
-    private static final int MAX_CASH_ACTIONS = 400;   // 무한루프 방지용 환금 행동 총량 상한.
     private static final long CASH_IDLE_POLL_MILLIS = 120; // 사람이 있을 때 인박스 폴링 간격(응답성).
 
     private final GameConfig config;
@@ -222,9 +221,9 @@ public final class Game {
         int botCursor = 0;
         // 사람전이면 봇 첫 수에 약간의 텀을 둬 사람이 자기 패를 파악할 시간을 준다(헤드리스는 0 → 빠르게).
         long nextBotAt = System.currentTimeMillis() + (anyHuman ? 900L : 0L);
-        int guard = 0;
 
-        while (passed.size() < players.size() && instantWinner == null && guard++ < MAX_CASH_ACTIONS) {
+        while (passed.size() < players.size() && instantWinner == null) {
+            boolean fromBot = false;
             Submission sub = takeSubmission(players, passed, anyHuman);
             if (sub == null) {
                 // 인박스가 비었음 → 시간이 됐으면 봇 하나가 한 수 둔다(게임 스레드에서 결정 → 경쟁 없음).
@@ -238,6 +237,7 @@ public final class Game {
                 botCursor = players.indexOf(bot) + 1;
                 sub = decideBotSubmission(bot, playerTeam.get(bot));
                 nextBotAt = System.currentTimeMillis() + bot.nextCashPaceMillis();
+                fromBot = true;
             }
 
             Player who = sub.who();
@@ -250,11 +250,15 @@ public final class Game {
                 listener.onCashDone(who);
                 continue;
             }
+            CashProgress before = cashProgress(who, team);
             applyCashSingle(who, team, sub.action());
             if (instantWinner != null) {
                 return;
             }
-            if (cashBlockedThisRound.contains(team)) { // 고물상: 이번 라운드 환금 불가 → 자동 종료.
+            // 봇이 진전 없는 행동(전략↔규칙 불일치로 매번 거부되는 도우미 등)을 무한 반복하면
+            // 상태가 그대로라 루프가 멈추지 않는다 → 그 봇을 강제 종료해 끊는다(사람은 대상 아님).
+            boolean botStuck = fromBot && cashProgress(who, team).equals(before);
+            if (cashBlockedThisRound.contains(team) || botStuck) { // 고물상: 환금 불가 → 자동 종료.
                 passed.add(who);
                 listener.onCashDone(who);
             }
@@ -353,6 +357,13 @@ public final class Game {
         int limit = player.isHoldLimitSuspended() ? Integer.MAX_VALUE : player.holdLimit();
         return new CashInContext(player.holdings(), player.helpers(), usedHelpers,
                 deck.discardView(), team.coins(), limit);
+    }
+
+    /** 환금 행동이 실제로 상태를 바꿨는지 비교할 지문(보유 카드·팀 코인·사용 도우미 수). */
+    private record CashProgress(List<Card> holdings, int coins, int usedHelperCount) {}
+
+    private CashProgress cashProgress(Player player, Team team) {
+        return new CashProgress(new ArrayList<>(player.holdings()), team.coins(), usedHelpers.size());
     }
 
 
