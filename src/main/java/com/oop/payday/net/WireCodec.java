@@ -62,6 +62,7 @@ public final class WireCodec {
                 player.officer(),
                 player.isLeader(),
                 player.holdLimit(),
+                player.isHoldLimitSuspended(),
                 player.holdingCount(),
                 toDtos(player.holdings()),
                 helperDtos);

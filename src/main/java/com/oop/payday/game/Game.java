@@ -52,12 +52,18 @@ public final class Game {
     private final Map<Team, Integer> cashCountsThisRound = new HashMap<>();
     private final Set<Team> cashBlockedThisRound = new HashSet<>();
 
-    // 환금 이벤트 루프(액터 모델): 사람·봇·(미래)네트워크가 행동을 큐에 넣고, 게임 스레드가 하나씩 처리한다.
+    // 환금 이벤트 루프(액터 모델): 사람·봇·네트워크가 행동을 큐에 넣고, 게임 스레드가 하나씩 처리한다.
     private final BlockingQueue<Submission> cashInbox = new LinkedBlockingQueue<>();
     private final Map<Player, TreasureSet> lastCashedSet = new HashMap<>();
 
     /** 환금 큐 제출 한 건. {@code action == null} 이면 "턴 종료(pass)". */
     private record Submission(Player who, CashInAction action) {}
+
+    /** 환금 인박스를 깨우는 abort 표식(연결 해제 시 {@link #abort}가 넣음). */
+    private static final Submission ABORT_SUBMISSION = new Submission(null, null);
+
+    /** 네트워크 연결 해제로 게임을 중단해야 함을 표시(다른 스레드가 set). */
+    private volatile boolean aborted;
 
     private Team splitTeam;
     private Team chooseTeam;
@@ -79,29 +85,42 @@ public final class Game {
 
     /** 게임을 끝까지 진행한다(승자가 나올 때까지). 블로킹 호출. */
     public void play() {
-        listener.onGameSetup(allPlayers());
-        listener.awaitAnimations();
-        setupHelpers();
-        announceSetup();
-        listener.onMessage("게임 시작! 목표: " + config.winningCoins() + "코인");
-        round = 0;
-        while (true) {
-            round++;
-            listener.onMessage("─── 라운드 " + round + " (분할: " + splitTeam.name() + ") ───");
+        try {
+            listener.onGameSetup(allPlayers());
+            listener.awaitAnimations();
+            setupHelpers();
+            announceSetup();
+            listener.onMessage("게임 시작! 목표: " + config.winningCoins() + "코인");
+            round = 0;
+            while (true) {
+                round++;
+                listener.onMessage("─── 라운드 " + round + " (분할: " + splitTeam.name() + ") ───");
 
-            schemePhase();
-            distributePhase();
-            cashInPhase();
-            Team winner = endPhase();
+                schemePhase();
+                distributePhase();
+                cashInPhase();
+                Team winner = endPhase();
 
-            listener.onRoundEnd(round);
-            if (winner != null) {
-                listener.onMessage("게임 종료 — 승리: " + winner.name());
-                listener.onGameOver(winner);
-                return;
+                listener.onRoundEnd(round);
+                if (winner != null) {
+                    listener.onMessage("게임 종료 — 승리: " + winner.name());
+                    listener.onGameOver(winner);
+                    return;
+                }
+                swapRoles();
             }
-            swapRoles();
+        } catch (NetworkDisconnectedException e) {
+            // 상대 연결이 끊겨 게임 스레드를 조용히 종료한다. 연결 해제 안내는 컨트롤러가 표시한다.
         }
+    }
+
+    /**
+     * 네트워크 연결 해제 시 다른 스레드에서 호출해 게임 루프를 깨워 종료시킨다.
+     * 환금 인박스 대기를 abort 표식으로 풀고, 의사결정 대기는 {@code NetworkPlayer.abort()} 가 푼다.
+     */
+    public void abort() {
+        aborted = true;
+        cashInbox.offer(ABORT_SUBMISSION);
     }
 
     // --- 6-1 꾀부리기 ---
@@ -226,6 +245,9 @@ public final class Game {
 
         while (passed.size() < players.size() && instantWinner == null) {
             Submission sub = takeSubmission();
+            if (aborted) {
+                throw new NetworkDisconnectedException();
+            }
             if (sub == null) {
                 continue;
             }

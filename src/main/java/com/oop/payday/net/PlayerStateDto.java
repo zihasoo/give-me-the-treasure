@@ -12,6 +12,7 @@ public record PlayerStateDto(
         OfficerTile officer,
         boolean leader,
         int holdLimit,
+        boolean holdLimitSuspended,
         int holdingCount,
         List<CardDto> holdings,
         List<HelperDto> helpers) implements Serializable {}

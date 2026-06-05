@@ -36,8 +36,8 @@ public sealed interface GameEvent extends Serializable
 
     record CashIn(int playerId, TreasureSetDto set) implements GameEvent {}
 
-    /** 환금 패널 갱신 요청 — 해당 사람 플레이어에게만 전달. */
-    record CashTurn(int playerId, CashInContextDto context) implements GameEvent {}
+    /** 환금 패널 갱신 요청 — 해당 사람 플레이어에게만 전달. requestId 는 응답 상관관계용. */
+    record CashTurn(int playerId, long requestId, CashInContextDto context) implements GameEvent {}
 
     record CashDone(int playerId) implements GameEvent {}
 
@@ -59,13 +59,14 @@ public sealed interface GameEvent extends Serializable
     /** 슬쩍하기 발동 — drawnCardId == -1 이면 드로우 실패. */
     record StealActivated(int playerId, CardDto drawnCard) implements GameEvent {}
 
-    /** 꾀부리기 요청 — 분할자(클라이언트)에게만 전달. */
-    record RequestSplit(List<CardDto> hand) implements GameEvent {}
+    /** 꾀부리기 요청 — 분할자(클라이언트)에게만 전달. requestId 는 응답 상관관계용. */
+    record RequestSplit(long requestId, List<CardDto> hand) implements GameEvent {}
 
-    /** 분배 선택 요청 — 선택자(클라이언트)에게만 전달. */
-    record RequestChoice(List<CardDto> visible0, boolean faceDown0,
+    /** 분배 선택 요청 — 선택자(클라이언트)에게만 전달. requestId 는 응답 상관관계용. */
+    record RequestChoice(long requestId,
+                         List<CardDto> visible0, boolean faceDown0,
                          List<CardDto> visible1, boolean faceDown1) implements GameEvent {}
 
-    /** 도우미 선택 요청 — 해당 플레이어(클라이언트)에게만 전달. */
-    record RequestHelpers(int playerId, List<HelperDto> options, int chooseCount) implements GameEvent {}
+    /** 도우미 선택 요청 — 해당 플레이어(클라이언트)에게만 전달. requestId 는 응답 상관관계용. */
+    record RequestHelpers(long requestId, int playerId, List<HelperDto> options, int chooseCount) implements GameEvent {}
 }

@@ -254,8 +254,17 @@ public final class GameBoardController implements GameListener, Initializable {
             return;
         }
 
-        server.startReaderLoop(networkPlayer, allPlayers,
-                () -> Platform.runLater(() -> showDisconnected("상대 연결이 끊어졌습니다.")));
+        server.startReaderLoop(networkPlayer, allPlayers, () -> {
+            // 리더 스레드에서 호출: 대기 중인 게임 스레드를 깨워 판을 정상 종료시킨다.
+            networkPlayer.abort();   // decideSplit/Choice/Helpers 대기 해제
+            game.abort();            // 환금 인박스 대기 해제
+            try {
+                server.close();      // 죽은 소켓·스트림 정리
+            } catch (java.io.IOException ignored) {
+                // 이미 끊긴 연결 — 무시
+            }
+            Platform.runLater(() -> showDisconnected("상대 연결이 끊어졌습니다."));
+        });
 
         Thread loop = new Thread(game::play, "game-loop");
         loop.setDaemon(true);

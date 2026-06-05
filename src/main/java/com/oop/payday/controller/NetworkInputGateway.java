@@ -22,6 +22,7 @@ public final class NetworkInputGateway implements InputGateway {
     @Override
     public void provideSplit(SplitDecision decision) {
         send(new NetMessage.SplitDecision(
+                requestId(),
                 ids(decision.bundleA()),
                 ids(decision.bundleB()),
                 decision.faceDownCard().id()));
@@ -29,27 +30,28 @@ public final class NetworkInputGateway implements InputGateway {
 
     @Override
     public void provideChoice(int index) {
-        send(new NetMessage.ChoiceDecision(index));
+        send(new NetMessage.ChoiceDecision(requestId(), index));
     }
 
     @Override
     public void provideHelpers(List<HelperCard> helpers) {
-        send(new NetMessage.HelpersDecision(helpers.stream().map(HelperCard::id).toList()));
+        send(new NetMessage.HelpersDecision(requestId(), helpers.stream().map(HelperCard::id).toList()));
     }
 
     @Override
     public void submitCash(CashInAction action) {
+        long requestId = requestId();
         NetMessage msg = switch (action) {
             case CashInAction.Cash c ->
-                new NetMessage.CashAction("CASH", ids(c.cards()), null, null, List.of());
+                new NetMessage.CashAction(requestId, "CASH", ids(c.cards()), null, null, List.of());
             case CashInAction.CashWithHelpers c ->
-                new NetMessage.CashAction("CASH_WITH_HELPERS", ids(c.cards()),
+                new NetMessage.CashAction(requestId, "CASH_WITH_HELPERS", ids(c.cards()),
                         null, null,
                         c.helpers().stream().map(HelperCard::id).toList());
             case CashInAction.Discard d ->
-                new NetMessage.CashAction("DISCARD", List.of(d.card().id()), null, null, List.of());
+                new NetMessage.CashAction(requestId, "DISCARD", List.of(d.card().id()), null, null, List.of());
             case CashInAction.UseHelper u ->
-                new NetMessage.CashAction("USE_HELPER", List.of(),
+                new NetMessage.CashAction(requestId, "USE_HELPER", List.of(),
                         u.helper().id(),
                         u.copyTarget() != null ? u.copyTarget().id() : null,
                         ids(u.selectedCards()));
@@ -59,7 +61,11 @@ public final class NetworkInputGateway implements InputGateway {
 
     @Override
     public void passCash() {
-        send(new NetMessage.CashPass());
+        send(new NetMessage.CashPass(requestId()));
+    }
+
+    private long requestId() {
+        return client.currentRequestId();
     }
 
     private static List<Integer> ids(List<? extends Card> cards) {

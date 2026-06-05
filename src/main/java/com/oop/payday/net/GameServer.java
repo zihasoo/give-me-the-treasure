@@ -94,21 +94,32 @@ public final class GameServer implements Closeable {
     private void route(NetMessage msg) {
         switch (msg) {
             case NetMessage.SplitDecision m -> {
+                if (!networkPlayer.consumeRequest(m.requestId())) return; // stale·중복
                 var bundleA = resolveCards(m.bundleAIds());
                 var bundleB = resolveCards(m.bundleBIds());
                 Card fd = resolveCard(m.faceDownId(), networkPlayer.currentHand);
                 networkPlayer.provideSplit(new SplitDecision(bundleA, bundleB, fd));
             }
-            case NetMessage.ChoiceDecision m -> networkPlayer.provideChoice(m.index());
+            case NetMessage.ChoiceDecision m -> {
+                if (!networkPlayer.consumeRequest(m.requestId())) return;
+                networkPlayer.provideChoice(m.index());
+            }
             case NetMessage.HelpersDecision m -> {
+                if (!networkPlayer.consumeRequest(m.requestId())) return;
                 var options = networkPlayer.currentHelperOptions;
                 var selected = m.helperIds().stream()
                         .map(id -> WireCodec.resolveHelper(id, options))
                         .toList();
                 networkPlayer.provideHelpers(selected);
             }
-            case NetMessage.CashAction m -> routeCashAction(m);
-            case NetMessage.CashPass _ -> networkPlayer.passCash();
+            case NetMessage.CashAction m -> {
+                if (!networkPlayer.consumeRequest(m.requestId())) return;
+                routeCashAction(m);
+            }
+            case NetMessage.CashPass m -> {
+                if (!networkPlayer.consumeRequest(m.requestId())) return;
+                networkPlayer.passCash();
+            }
             default -> {} // 핸드셰이크 등 무시
         }
     }

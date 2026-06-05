@@ -28,15 +28,18 @@ public sealed interface NetMessage extends Serializable
     record Envelope(GameEvent event, PublicBoardState state) implements NetMessage {}
 
     // --- 클라이언트→호스트 결정 메시지 ---
+    // 각 응답은 자신이 답하는 요청의 식별자(requestId)를 echo 한다. 호스트는 현재 대기 중인
+    // 요청과 일치하는 응답만 처리하고 stale·중복 응답은 버린다(NetworkPlayer.consumeRequest).
 
     record SplitDecision(
+            long requestId,
             List<Integer> bundleAIds,
             List<Integer> bundleBIds,
             int faceDownId) implements NetMessage {}
 
-    record ChoiceDecision(int index) implements NetMessage {}
+    record ChoiceDecision(long requestId, int index) implements NetMessage {}
 
-    record HelpersDecision(List<Integer> helperIds) implements NetMessage {}
+    record HelpersDecision(long requestId, List<Integer> helperIds) implements NetMessage {}
 
     /**
      * 환금 행동.
@@ -45,11 +48,12 @@ public sealed interface NetMessage extends Serializable
      * helperId / copyTargetId / selectedCardIds: USE_HELPER 에서만 사용.
      */
     record CashAction(
+            long requestId,
             String type,
             List<Integer> cardIds,
             Integer helperId,
             Integer copyTargetId,
             List<Integer> selectedCardIds) implements NetMessage {}
 
-    record CashPass() implements NetMessage {}
+    record CashPass(long requestId) implements NetMessage {}
 }

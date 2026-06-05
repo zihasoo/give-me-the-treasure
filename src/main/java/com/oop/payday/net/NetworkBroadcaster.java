@@ -153,7 +153,7 @@ public final class NetworkBroadcaster implements GameListener {
     @Override
     public void onRequestSplit(Player player, List<Card> hand) {
         if (!isClientPlayer(player)) return;
-        send(new GameEvent.RequestSplit(WireCodec.toDtos(hand)));
+        send(new GameEvent.RequestSplit(networkPlayer.nextRequestId(), WireCodec.toDtos(hand)));
     }
 
     @Override
@@ -162,6 +162,7 @@ public final class NetworkBroadcaster implements GameListener {
         var b0 = view.bundle(0);
         var b1 = view.bundle(1);
         send(new GameEvent.RequestChoice(
+                networkPlayer.nextRequestId(),
                 WireCodec.toDtos(b0.visibleCards()), b0.hasFaceDown(),
                 WireCodec.toDtos(b1.visibleCards()), b1.hasFaceDown()));
     }
@@ -170,7 +171,7 @@ public final class NetworkBroadcaster implements GameListener {
     public void onRequestHelpers(Player player, List<HelperCard> options, int chooseCount) {
         if (!isClientPlayer(player)) return;
         List<HelperDto> dtos = options.stream().map(h -> WireCodec.toDto(h, false)).toList();
-        send(new GameEvent.RequestHelpers(playerId(player), dtos, chooseCount));
+        send(new GameEvent.RequestHelpers(networkPlayer.nextRequestId(), playerId(player), dtos, chooseCount));
     }
 
     @Override
@@ -183,7 +184,7 @@ public final class NetworkBroadcaster implements GameListener {
                 WireCodec.toDtos(snapshot.discardPile()),
                 snapshot.teamCoins(),
                 snapshot.holdLimit());
-        send(new GameEvent.CashTurn(playerId(player), ctx));
+        send(new GameEvent.CashTurn(playerId(player), networkPlayer.nextRequestId(), ctx));
     }
 
     // ── 내부 헬퍼 ────────────────────────────────────────────────────

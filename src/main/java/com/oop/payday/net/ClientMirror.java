@@ -73,6 +73,13 @@ public final class ClientMirror {
         player.setOfficer(dto.officer());
         player.setLeader(dto.leader());
         player.setHoldLimit(dto.holdLimit());
+        // 보유 한도 무시(도우미 효과) 상태를 서버와 동기화한다.
+        // 클라이언트 환금 UI 의 "턴 종료" 가능 판정이 이 값을 본다.
+        if (dto.holdLimitSuspended()) {
+            player.suspendHoldLimit();
+        } else {
+            player.clearHoldLimitSuspension();
+        }
 
         // holdings 갱신
         player.removeAll(new ArrayList<>(player.holdings()));

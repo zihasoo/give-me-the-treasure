@@ -1,13 +1,14 @@
 package com.oop.payday.player;
 
 import java.util.List;
-import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
+import com.oop.payday.game.NetworkDisconnectedException;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
 
@@ -18,12 +19,19 @@ import com.oop.payday.model.helper.HelperCard;
  * <p>게임 스레드는 {@code decideXxx} 에서 블록한다.
  * {@link com.oop.payday.net.GameServer} 리더 스레드가 클라이언트 메시지를 파싱한 뒤
  * {@code provideXxx} 로 결정을 전달해 게임을 진행시킨다.
+ *
+ * <p><b>요청-응답 상관관계:</b> 호스트가 보내는 입력 요청마다 {@link #nextRequestId} 로 id 를 매기고,
+ * 클라이언트 응답이 echo 한 id 가 현재 대기 중인 요청과 일치할 때만({@link #consumeRequest})
+ * 처리해 stale·중복 응답을 버린다.
+ *
+ * <p><b>연결 해제:</b> {@link #abort} 가 대기 중인 결정 채널을 풀어 {@link NetworkDisconnectedException}
+ * 으로 게임 스레드를 깨운다. 환금 인박스 대기는 {@code Game.abort()} 가 별도로 푼다.
  */
 public final class NetworkPlayer extends Player {
 
-    private final SynchronousQueue<SplitDecision> splitChannel = new SynchronousQueue<>();
-    private final SynchronousQueue<Integer> choiceChannel = new SynchronousQueue<>();
-    private final SynchronousQueue<List<HelperCard>> helperChannel = new SynchronousQueue<>();
+    private final DecisionChannel<SplitDecision> splitChannel = new DecisionChannel<>();
+    private final DecisionChannel<Integer> choiceChannel = new DecisionChannel<>();
+    private final DecisionChannel<List<HelperCard>> helperChannel = new DecisionChannel<>();
 
     /** 환금 제출 창구. beginCashIn 에서 저장, 네트워크 리더가 submitCash/passCash 로 사용. */
     private volatile CashSink cashSink;
@@ -33,6 +41,10 @@ public final class NetworkPlayer extends Player {
     /** id 복원용 — decideHelpers 에서 저장. */
     public volatile List<HelperCard> currentHelperOptions;
 
+    // 요청-응답 상관관계용 식별자.
+    private final AtomicLong requestCounter = new AtomicLong();
+    private final AtomicLong activeRequestId = new AtomicLong(-1);
+
     public NetworkPlayer(String name) {
         super(name);
     }
@@ -40,18 +52,18 @@ public final class NetworkPlayer extends Player {
     @Override
     public SplitDecision decideSplit(List<Card> hand) {
         this.currentHand = hand;
-        return take(splitChannel);
+        return splitChannel.take();
     }
 
     @Override
     public int decideChoice(ChoiceView view) {
-        return take(choiceChannel);
+        return choiceChannel.take();
     }
 
     @Override
     public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount) {
         this.currentHelperOptions = options;
-        return take(helperChannel);
+        return helperChannel.take();
     }
 
     @Override
@@ -64,43 +76,108 @@ public final class NetworkPlayer extends Player {
         return false;
     }
 
+    // --- 요청-응답 상관관계 (호스트 브로드캐스터/리더 스레드가 호출) ---
+
+    /** 새 입력 요청 id 를 발급하고 현재 대기 요청으로 등록한다. */
+    public long nextRequestId() {
+        long id = requestCounter.incrementAndGet();
+        activeRequestId.set(id);
+        return id;
+    }
+
+    /**
+     * 응답 id 가 현재 대기 중인 요청과 일치하면 소거하고 {@code true}, 아니면(stale·중복) {@code false}.
+     * CAS 로 정확히 한 번만 통과해 같은 요청에 대한 중복 응답을 막는다.
+     */
+    public boolean consumeRequest(long requestId) {
+        return activeRequestId.compareAndSet(requestId, -1);
+    }
+
     // --- 네트워크 리더 스레드가 호출 ---
 
     public void provideSplit(SplitDecision decision) {
-        put(splitChannel, decision);
+        splitChannel.put(decision);
     }
 
     public void provideChoice(int index) {
-        put(choiceChannel, index);
+        choiceChannel.put(index);
     }
 
     public void provideHelpers(List<HelperCard> helpers) {
-        put(helperChannel, helpers);
+        helperChannel.put(helpers);
     }
 
     public void submitCash(CashInAction action) {
-        cashSink.submit(action);
-    }
-
-    public void passCash() {
-        cashSink.pass();
-    }
-
-    private static <T> T take(SynchronousQueue<T> channel) {
-        try {
-            return channel.take();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("NetworkPlayer 대기 중 인터럽트됨", e);
+        CashSink sink = cashSink;
+        if (sink != null) {
+            sink.submit(action);
         }
     }
 
-    private static <T> void put(SynchronousQueue<T> channel, T value) {
-        try {
-            channel.put(value);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("NetworkPlayer 전달 중 인터럽트됨", e);
+    public void passCash() {
+        CashSink sink = cashSink;
+        if (sink != null) {
+            sink.pass();
+        }
+    }
+
+    /**
+     * 연결 해제 시 호출: 대기 중인 결정 채널을 모두 풀어 게임 스레드를 깨운다.
+     * 깨어난 {@code take()} 는 {@link NetworkDisconnectedException} 을 던진다.
+     * 한번 abort 된 채널은 이후 {@code take()} 도 즉시 예외를 던지므로 중복 호출에도 안전하다.
+     */
+    public void abort() {
+        splitChannel.abort();
+        choiceChannel.abort();
+        helperChannel.abort();
+    }
+
+    /**
+     * 결정 한 건을 주고받는 1슬롯 메일박스.
+     * <ul>
+     *   <li>{@code put} 은 절대 블록하지 않는다 → stale·중복 응답을 흘려도 리더 스레드가 멈추지 않는다.
+     *   <li>{@code abort} 는 대기 중인 {@code take} 를 즉시 깨워 {@link NetworkDisconnectedException} 을 던진다.
+     * </ul>
+     */
+    private static final class DecisionChannel<T> {
+        private final Object lock = new Object();
+        private T value;
+        private boolean hasValue;
+        private boolean aborted;
+
+        T take() {
+            synchronized (lock) {
+                while (!hasValue && !aborted) {
+                    try {
+                        lock.wait();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new NetworkDisconnectedException();
+                    }
+                }
+                if (aborted) {
+                    throw new NetworkDisconnectedException();
+                }
+                hasValue = false;
+                T v = value;
+                value = null;
+                return v;
+            }
+        }
+
+        void put(T v) {
+            synchronized (lock) {
+                value = v;
+                hasValue = true;
+                lock.notifyAll();
+            }
+        }
+
+        void abort() {
+            synchronized (lock) {
+                aborted = true;
+                lock.notifyAll();
+            }
         }
     }
 }
