@@ -776,3 +776,27 @@
     -fx-text-fill: #3d5555;
     -fx-padding: 0 4;
 }
+
+.sort-toggle-button {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(10, 19, 24, 0.70);
+    -fx-text-fill: #8aa0a8;
+    -fx-background-radius: 5;
+    -fx-border-color: rgba(242, 211, 107, 0.25);
+    -fx-border-radius: 5;
+    -fx-border-width: 1;
+    -fx-padding: 2 8;
+    -fx-cursor: hand;
+}
+
+.sort-toggle-button:hover {
+    -fx-background-color: rgba(242, 211, 107, 0.08);
+    -fx-text-fill: #c4d4cd;
+}
+
+.sort-toggle-button:selected {
+    -fx-background-color: rgba(242, 211, 107, 0.18);
+    -fx-text-fill: #f2d36b;
+    -fx-border-color: rgba(242, 211, 107, 0.60);
+}

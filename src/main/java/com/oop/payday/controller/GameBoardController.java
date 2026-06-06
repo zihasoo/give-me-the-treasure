@@ -65,6 +65,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
 import javafx.geometry.Bounds;
 import javafx.scene.image.WritableImage;
 import javafx.scene.SnapshotParameters;
@@ -116,6 +117,9 @@ public final class GameBoardController implements GameListener, Initializable {
     @FXML private Label turnLabel;
     @FXML private Label messageLabel;
 
+    private HBox fieldASortBox;
+    private HBox fieldBSortBox;
+
     private Team teamA;
     private Team teamB;
     private Player localPlayer;
@@ -142,11 +146,18 @@ public final class GameBoardController implements GameListener, Initializable {
     private VBox activeBundle1;
     private int phaseRevision;
 
-    /** 카드 표시 순서: 보물(색→숫자) → 굉장한 보물 → 저주받은 그림(숫자) → 기타. */
-    private static final Comparator<Card> CARD_ORDER =
+    private static final Comparator<Card> CARD_ORDER_BY_COLOR =
             Comparator.<Card>comparingInt(GameBoardController::cardRank)
                     .thenComparingInt(GameBoardController::cardColorRank)
                     .thenComparingInt(GameBoardController::cardNumberRank);
+
+    private static final Comparator<Card> CARD_ORDER_BY_NUMBER =
+            Comparator.<Card>comparingInt(GameBoardController::cardRank)
+                    .thenComparingInt(GameBoardController::cardNumberRank)
+                    .thenComparingInt(GameBoardController::cardColorRank);
+
+    private Comparator<Card> sortModeA = CARD_ORDER_BY_COLOR;
+    private Comparator<Card> sortModeB = CARD_ORDER_BY_COLOR;
 
     private static int cardRank(Card card) {
         if (card instanceof TreasureCard) {
@@ -182,6 +193,8 @@ public final class GameBoardController implements GameListener, Initializable {
     public void initialize(java.net.URL location, java.util.ResourceBundle resources) {
         configureFieldStage(fieldAStage, fieldAFlow);
         configureFieldStage(fieldBStage, fieldBFlow);
+        fieldASortBox = addSortButtons(fieldAStage, true);
+        fieldBSortBox = addSortButtons(fieldBStage, false);
     }
 
     /**
@@ -192,6 +205,35 @@ public final class GameBoardController implements GameListener, Initializable {
         stage.setMaxWidth(Double.MAX_VALUE);
         flow.setMaxWidth(Double.MAX_VALUE);
         flow.prefWrapLengthProperty().bind(stage.widthProperty().subtract(64));
+    }
+
+    private HBox addSortButtons(StackPane stage, boolean isFieldA) {
+        ToggleGroup group = new ToggleGroup();
+        ToggleButton byColor  = new ToggleButton("색 기준");
+        ToggleButton byNumber = new ToggleButton("숫자 기준");
+        byColor.setToggleGroup(group);
+        byNumber.setToggleGroup(group);
+        byColor.getStyleClass().add("sort-toggle-button");
+        byNumber.getStyleClass().add("sort-toggle-button");
+        byColor.setSelected(true);
+
+        group.selectedToggleProperty().addListener((obs, old, newToggle) -> {
+            if (newToggle == null) {
+                old.setSelected(true);
+                return;
+            }
+            Comparator<Card> chosen = newToggle == byColor ? CARD_ORDER_BY_COLOR : CARD_ORDER_BY_NUMBER;
+            if (isFieldA) sortModeA = chosen;
+            else          sortModeB = chosen;
+            updateBoardStatus();
+        });
+
+        HBox sortBox = new HBox(4, byColor, byNumber);
+        sortBox.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+        StackPane.setAlignment(sortBox, Pos.TOP_LEFT);
+        StackPane.setMargin(sortBox, new Insets(6, 0, 0, 10));
+        stage.getChildren().add(sortBox);
+        return sortBox;
     }
 
     /**
@@ -221,7 +263,7 @@ public final class GameBoardController implements GameListener, Initializable {
 
         teamA = new Team(p1.name(), List.of(p1));
         teamB = new Team(p2.name(), List.of(p2));
-        animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER);
+        animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER_BY_COLOR);
         updateBoardStatus();
 
         Game game = new Game(config, teamA, teamB, this);
@@ -239,7 +281,7 @@ public final class GameBoardController implements GameListener, Initializable {
 
         teamA = new Team(p1.name(), List.of(p1));
         teamB = new Team(networkPlayer.name(), List.of(networkPlayer));
-        animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER);
+        animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER_BY_COLOR);
         updateBoardStatus();
 
         List<Player> allPlayers = List.of(p1, networkPlayer);
@@ -282,7 +324,7 @@ public final class GameBoardController implements GameListener, Initializable {
 
         teamA = mirror.myTeam();
         teamB = mirror.opponentTeam();
-        animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER);
+        animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER_BY_COLOR);
         updateBoardStatus();
 
         client.startReaderLoop(mirror, this, () -> showDisconnected("호스트 연결이 끊어졌습니다."));
@@ -1405,17 +1447,20 @@ public final class GameBoardController implements GameListener, Initializable {
         if (distributionFieldUpdatePending) {
             return;
         }
-        fieldACountLabel.setVisible(!introPhase && !gameOver);
-        fieldBCountLabel.setVisible(!introPhase && !gameOver);
+        boolean showFieldUI = !introPhase && !gameOver;
+        fieldACountLabel.setVisible(showFieldUI);
+        fieldBCountLabel.setVisible(showFieldUI);
+        if (fieldASortBox != null) fieldASortBox.setVisible(showFieldUI);
+        if (fieldBSortBox != null) fieldBSortBox.setVisible(showFieldUI);
         renderField(fieldATitleLabel, fieldAOfficerLabel, fieldAOfficerEffectLabel, fieldACoinsLabel,
-                fieldACountLabel, fieldAStage, fieldAFlow, fieldAHelperFlow, teamA, "내 필드");
+                fieldACountLabel, fieldAStage, fieldAFlow, fieldAHelperFlow, teamA, "내 필드", sortModeA);
         renderField(fieldBTitleLabel, fieldBOfficerLabel, fieldBOfficerEffectLabel, fieldBCoinsLabel,
-                fieldBCountLabel, fieldBStage, fieldBFlow, fieldBHelperFlow, teamB, "상대 필드");
+                fieldBCountLabel, fieldBStage, fieldBFlow, fieldBHelperFlow, teamB, "상대 필드", sortModeB);
     }
 
     private void renderField(Label titleLabel, Label officerLabel, Label officerEffectLabel,
             Label coinsLabel, Label countLabel, StackPane stage, FlowPane field, VBox helpers, Team team,
-            String fallback) {
+            String fallback, Comparator<Card> sortOrder) {
         if (team == null) {
             titleLabel.setText(fallback);
             officerLabel.setText("간부 없음");
@@ -1451,7 +1496,7 @@ public final class GameBoardController implements GameListener, Initializable {
             }
             return;
         }
-        cards.sort(CARD_ORDER);
+        cards.sort(sortOrder);
         Map<Card, CardView> currentViews = new HashMap<>();
         for (Card card : cards) {
             CardView cardView = new CardView(card, true);
