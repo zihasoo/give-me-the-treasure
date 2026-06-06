@@ -20,6 +20,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
 /**
@@ -27,7 +28,6 @@ import javafx.scene.layout.VBox;
  */
 public class MainMenuController {
 
-    @FXML private Label statusLabel;
     @FXML private StackPane menuOverlay;
 
     private Node cachedScoreTablePanel;
@@ -71,8 +71,7 @@ public class MainMenuController {
         GameConfig config = testBot ? GameConfig.practice(true) : GameConfig.standard(true);
         try {
             GameApp.get().showGameBoard(config, testBot);
-        } catch (IOException e) {
-            statusLabel.setText("게임 화면을 여는 데 실패했습니다: " + e.getMessage());
+        } catch (IOException ignored) {
         }
     }
 
@@ -90,7 +89,9 @@ public class MainMenuController {
         joinBtn.setMaxWidth(Double.MAX_VALUE);
         joinBtn.setOnAction(e -> showJoinInput());
 
-        panel.getChildren().addAll(new Label("네트워크 대전"), hostBtn, joinBtn, cancelButton());
+        Label title1 = new Label("네트워크 대전");
+        title1.getStyleClass().add("lobby-title");
+        panel.getChildren().addAll(title1, hostBtn, joinBtn, cancelButton());
         showOverlayPanel(panel);
     }
 
@@ -99,7 +100,6 @@ public class MainMenuController {
         try {
             server = new GameServer();
         } catch (IOException e) {
-            statusLabel.setText("서버 소켓 열기 실패: " + e.getMessage());
             hideOverlay();
             return;
         }
@@ -126,7 +126,9 @@ public class MainMenuController {
         });
 
         VBox panel = lobbyPanel();
-        panel.getChildren().addAll(new Label("호스트 대기"), info, waiting, cancelBtn);
+        Label title2 = new Label("호스트 대기");
+        title2.getStyleClass().add("lobby-title");
+        panel.getChildren().addAll(title2, info, waiting, cancelBtn);
         showOverlayPanel(panel);
 
         GameConfig config = GameConfig.standard(false);
@@ -135,18 +137,14 @@ public class MainMenuController {
             try {
                 server.acceptClient();
             } catch (IOException e) {
-                Platform.runLater(() -> {
-                    hideOverlay();
-                    statusLabel.setText("클라이언트 연결 실패: " + e.getMessage());
-                });
+                Platform.runLater(this::hideOverlay);
                 return;
             }
             NetworkPlayer networkPlayer = new NetworkPlayer("플레이어 2");
             Platform.runLater(() -> {
                 try {
                     GameApp.get().showHostGame(config, server, networkPlayer);
-                } catch (IOException e) {
-                    statusLabel.setText("게임 화면 전환 실패: " + e.getMessage());
+                } catch (IOException ignored) {
                 }
             });
         }, "host-accept");
@@ -169,8 +167,12 @@ public class MainMenuController {
         connectBtn.getStyleClass().add("menu-button");
         connectBtn.setOnAction(e -> doConnect(ipField.getText().trim(), connectStatus));
 
-        panel.getChildren().addAll(new Label("네트워크 접속"), hint, ipField, connectBtn,
-                connectStatus, cancelButton());
+        HBox btnRow = new HBox(12, cancelButton(), connectBtn);
+        btnRow.setAlignment(Pos.CENTER);
+
+        Label title3 = new Label("네트워크 접속");
+        title3.getStyleClass().add("lobby-title");
+        panel.getChildren().addAll(title3, hint, ipField, connectStatus, btnRow);
         showOverlayPanel(panel);
     }
 

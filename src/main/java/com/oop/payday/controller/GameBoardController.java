@@ -67,6 +67,8 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
 import javafx.geometry.Bounds;
 import javafx.scene.image.WritableImage;
+import javafx.scene.SnapshotParameters;
+import javafx.scene.paint.Color;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 
@@ -596,7 +598,9 @@ public final class GameBoardController implements GameListener, Initializable {
             ClipboardContent content = new ClipboardContent();
             content.putString(String.valueOf(card.id()));
             dragboard.setContent(content);
-            WritableImage dragImage = wrapper.snapshot(null, null);
+            SnapshotParameters params = new SnapshotParameters();
+            params.setFill(Color.TRANSPARENT);
+            WritableImage dragImage = wrapper.snapshot(params, null);
             dragboard.setDragView(dragImage, dragImage.getWidth() / 2, dragImage.getHeight() / 2);
             e.consume();
         });

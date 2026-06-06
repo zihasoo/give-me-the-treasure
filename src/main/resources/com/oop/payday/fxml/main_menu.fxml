@@ -38,7 +38,6 @@
                 <Region styleClass="menu-divider" maxWidth="Infinity" />
 
                 <Button styleClass="score-table-button" text="조합표 보기" onAction="#onScoreTable" maxWidth="Infinity" />
-                <Label fx:id="statusLabel" styleClass="status" />
             </children>
         </VBox>
 
