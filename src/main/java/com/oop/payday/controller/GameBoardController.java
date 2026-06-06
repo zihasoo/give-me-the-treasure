@@ -823,7 +823,7 @@ public final class GameBoardController implements GameListener, Initializable {
                 alert(chooseCount + "장을 선택하세요.");
                 return;
             }
-            clearCenter();
+            setWaiting("상대가 도우미를 선택 중입니다");
             inputGateway.provideHelpers(selected);
         });
 

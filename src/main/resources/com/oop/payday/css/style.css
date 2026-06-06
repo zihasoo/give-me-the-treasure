@@ -18,6 +18,11 @@
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.45), 32, 0.2, 0, 12);
 }
 
+.network-lobby-card {
+    -fx-background-color: rgba(10, 19, 24, 0.92);
+    -fx-border-color: rgba(242, 211, 107, 0.38);
+}
+
 .menu-emblem {
     -fx-font-size: 38px;
     -fx-text-fill: #f2d36b;
@@ -85,6 +90,7 @@
 .status {
     -fx-text-fill: #91dfc0;
     -fx-font-size: 14px;
+    -fx-font-weight: bold;
 }
 
 .check-box {
@@ -433,6 +439,7 @@
 .preview {
     -fx-text-fill: #91dfc0;
     -fx-font-size: 14px;
+    -fx-font-weight: bold;
 }
 
 .limit-warning {

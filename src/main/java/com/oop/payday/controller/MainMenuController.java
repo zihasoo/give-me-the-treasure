@@ -214,7 +214,7 @@ public class MainMenuController {
         panel.setAlignment(Pos.CENTER);
         panel.setMaxWidth(400);
         panel.setMaxHeight(VBox.USE_PREF_SIZE);
-        panel.getStyleClass().add("menu-card");
+        panel.getStyleClass().addAll("menu-card", "network-lobby-card");
         return panel;
     }
 
