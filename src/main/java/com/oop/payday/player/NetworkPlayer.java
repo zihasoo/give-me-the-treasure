@@ -2,6 +2,7 @@ package com.oop.payday.player;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
@@ -20,9 +21,9 @@ import com.oop.payday.model.helper.HelperCard;
  * {@link com.oop.payday.net.GameServer} 리더 스레드가 클라이언트 메시지를 파싱한 뒤
  * {@code provideXxx} 로 결정을 전달해 게임을 진행시킨다.
  *
- * <p><b>요청-응답 상관관계:</b> 호스트가 보내는 입력 요청마다 {@link #nextRequestId} 로 id 를 매기고,
- * 클라이언트 응답이 echo 한 id 가 현재 대기 중인 요청과 일치할 때만({@link #consumeRequest})
- * 처리해 stale·중복 응답을 버린다.
+ * <p><b>요청-응답 상관관계:</b> 호스트가 보내는 입력 요청마다 {@link #nextRequestId} 로 id 와 종류를 매기고,
+ * 클라이언트 응답이 echo 한 id 와 응답 종류가 현재 대기 중인 요청과 일치할 때만({@link #consumeRequest})
+ * 처리해 stale·중복·wrong-type 응답을 버린다.
  *
  * <p><b>연결 해제:</b> {@link #abort} 가 대기 중인 결정 채널을 풀어 {@link NetworkDisconnectedException}
  * 으로 게임 스레드를 깨운다. 환금 인박스 대기는 {@code Game.abort()} 가 별도로 푼다.
@@ -41,9 +42,18 @@ public final class NetworkPlayer extends Player {
     /** id 복원용 — decideHelpers 에서 저장. */
     public volatile List<HelperCard> currentHelperOptions;
 
+    public enum RequestKind {
+        SPLIT,
+        CHOICE,
+        HELPERS,
+        CASH
+    }
+
+    private record ActiveRequest(long id, RequestKind kind) {}
+
     // 요청-응답 상관관계용 식별자.
     private final AtomicLong requestCounter = new AtomicLong();
-    private final AtomicLong activeRequestId = new AtomicLong(-1);
+    private final AtomicReference<ActiveRequest> activeRequest = new AtomicReference<>();
 
     public NetworkPlayer(String name) {
         super(name);
@@ -79,18 +89,23 @@ public final class NetworkPlayer extends Player {
     // --- 요청-응답 상관관계 (호스트 브로드캐스터/리더 스레드가 호출) ---
 
     /** 새 입력 요청 id 를 발급하고 현재 대기 요청으로 등록한다. */
-    public long nextRequestId() {
+    public long nextRequestId(RequestKind kind) {
         long id = requestCounter.incrementAndGet();
-        activeRequestId.set(id);
+        activeRequest.set(new ActiveRequest(id, kind));
         return id;
     }
 
     /**
-     * 응답 id 가 현재 대기 중인 요청과 일치하면 소거하고 {@code true}, 아니면(stale·중복) {@code false}.
-     * CAS 로 정확히 한 번만 통과해 같은 요청에 대한 중복 응답을 막는다.
+     * 응답 id 와 종류가 현재 대기 중인 요청과 일치하면 소거하고 {@code true},
+     * 아니면(stale·중복·wrong-type) {@code false}.
+     * wrong-type 응답은 active request 를 소모하지 않아 뒤이어 오는 올바른 응답을 막지 않는다.
      */
-    public boolean consumeRequest(long requestId) {
-        return activeRequestId.compareAndSet(requestId, -1);
+    public boolean consumeRequest(long requestId, RequestKind kind) {
+        ActiveRequest current = activeRequest.get();
+        if (current == null || current.id() != requestId || current.kind() != kind) {
+            return false;
+        }
+        return activeRequest.compareAndSet(current, null);
     }
 
     // --- 네트워크 리더 스레드가 호출 ---

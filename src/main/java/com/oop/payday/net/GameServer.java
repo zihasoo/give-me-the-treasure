@@ -15,6 +15,7 @@ import com.oop.payday.game.GameConfig;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
 import com.oop.payday.player.NetworkPlayer;
+import com.oop.payday.player.NetworkPlayer.RequestKind;
 import com.oop.payday.player.Player;
 
 /**
@@ -94,18 +95,18 @@ public final class GameServer implements Closeable {
     private void route(NetMessage msg) {
         switch (msg) {
             case NetMessage.SplitDecision m -> {
-                if (!networkPlayer.consumeRequest(m.requestId())) return; // stale·중복
+                if (!networkPlayer.consumeRequest(m.requestId(), RequestKind.SPLIT)) return; // stale·중복·wrong-type
                 var bundleA = resolveCards(m.bundleAIds());
                 var bundleB = resolveCards(m.bundleBIds());
                 Card fd = resolveCard(m.faceDownId(), networkPlayer.currentHand);
                 networkPlayer.provideSplit(new SplitDecision(bundleA, bundleB, fd));
             }
             case NetMessage.ChoiceDecision m -> {
-                if (!networkPlayer.consumeRequest(m.requestId())) return;
+                if (!networkPlayer.consumeRequest(m.requestId(), RequestKind.CHOICE)) return;
                 networkPlayer.provideChoice(m.index());
             }
             case NetMessage.HelpersDecision m -> {
-                if (!networkPlayer.consumeRequest(m.requestId())) return;
+                if (!networkPlayer.consumeRequest(m.requestId(), RequestKind.HELPERS)) return;
                 var options = networkPlayer.currentHelperOptions;
                 var selected = m.helperIds().stream()
                         .map(id -> WireCodec.resolveHelper(id, options))
@@ -113,11 +114,11 @@ public final class GameServer implements Closeable {
                 networkPlayer.provideHelpers(selected);
             }
             case NetMessage.CashAction m -> {
-                if (!networkPlayer.consumeRequest(m.requestId())) return;
+                if (!networkPlayer.consumeRequest(m.requestId(), RequestKind.CASH)) return;
                 routeCashAction(m);
             }
             case NetMessage.CashPass m -> {
-                if (!networkPlayer.consumeRequest(m.requestId())) return;
+                if (!networkPlayer.consumeRequest(m.requestId(), RequestKind.CASH)) return;
                 networkPlayer.passCash();
             }
             default -> {} // 핸드셰이크 등 무시
@@ -168,12 +169,6 @@ public final class GameServer implements Closeable {
 
     private Card resolveCard(int id, java.util.Collection<? extends Card> candidates) {
         return WireCodec.resolveCard(id, candidates);
-    }
-
-    private List<HelperCard> resolveHelpers(List<Integer> ids) {
-        return ids.stream()
-                .map(id -> WireCodec.resolveHelper(id, networkPlayer.helpers()))
-                .toList();
     }
 
     private HelperCard findUsedHelper(int id) {
