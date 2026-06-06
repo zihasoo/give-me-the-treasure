@@ -12,10 +12,13 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 import com.oop.payday.bot.HeuristicBotStrategy;
+import com.oop.payday.bot.SmartBotStrategy;
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.card.CardColor;
+import com.oop.payday.model.card.CursedCard;
+import com.oop.payday.model.card.StealCard;
 import com.oop.payday.model.card.TreasureCard;
 import com.oop.payday.model.Deck;
 import com.oop.payday.model.helper.HelperCard;
@@ -26,6 +29,37 @@ import com.oop.payday.player.BotPlayer;
 import com.oop.payday.player.Player;
 
 final class HelperActionModelTest {
+
+    @Test
+    void smartBotPlansMultipleDisjointCashSets() {
+        List<Card> holdings = List.of(
+                new TreasureCard(300, CardColor.RED, 1),
+                new TreasureCard(301, CardColor.RED, 2),
+                new TreasureCard(302, CardColor.RED, 3),
+                new TreasureCard(303, CardColor.BLUE, 5),
+                new TreasureCard(304, CardColor.TEAL, 5));
+        CashInContext context = new CashInContext(holdings, List.of(), List.of(), List.of(), 0, 10);
+
+        List<CashInAction> actions = new SmartBotStrategy().planCashIn(context);
+
+        long cashActions = actions.stream()
+                .filter(action -> action instanceof CashInAction.Cash
+                        || action instanceof CashInAction.CashWithHelpers)
+                .count();
+        assertEquals(2, cashActions);
+    }
+
+    @Test
+    void smartBotDiscardsCursedCardBeforeLowPotentialSpecialCard() {
+        CursedCard cursed = new CursedCard(400, 2);
+        StealCard steal = new StealCard(401);
+        CashInContext context = new CashInContext(List.of(cursed, steal), List.of(), List.of(), List.of(), 0, 1);
+
+        List<CashInAction> actions = new SmartBotStrategy().planCashIn(context);
+
+        CashInAction.Discard discard = assertInstanceOf(CashInAction.Discard.class, actions.get(0));
+        assertSame(cursed, discard.card());
+    }
 
     @Test
     void botAttachesCashReactionHelperToCashAction() {

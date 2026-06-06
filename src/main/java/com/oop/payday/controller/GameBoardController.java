@@ -9,7 +9,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import com.oop.payday.bot.HeuristicBotStrategy;
+import com.oop.payday.bot.BotStrategy;
+import com.oop.payday.bot.SmartBotStrategy;
 import com.oop.payday.app.GameApp;
 import com.oop.payday.net.FanOutGameListener;
 import com.oop.payday.net.NetworkBroadcaster;
@@ -213,7 +214,7 @@ public final class GameBoardController implements GameListener, Initializable {
         localPlayer = p1;
         inputGateway = new LocalInputGateway(p1);
 
-        HeuristicBotStrategy strategy = new HeuristicBotStrategy();
+        BotStrategy strategy = new SmartBotStrategy();
         Player p2 = testBot ? BotPlayer.test(strategy) : BotPlayer.play(strategy);
 
         teamA = new Team(p1.name(), List.of(p1));
