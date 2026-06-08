@@ -601,6 +601,18 @@
     -fx-translate-y: -8;
 }
 
+.cash-done-badge {
+    -fx-text-fill: #f2d36b;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(10, 19, 24, 0.82);
+    -fx-border-color: rgba(242, 211, 107, 0.60);
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 4 12 4 12;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.4), 8, 0.3, 0, 0);
+}
+
 .coin-float {
     -fx-font-family: "Book Antiqua", "Malgun Gothic", serif;
     -fx-font-size: 28px;

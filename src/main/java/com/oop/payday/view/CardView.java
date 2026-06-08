@@ -8,6 +8,7 @@ import com.oop.payday.model.card.TreasureCard;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
@@ -33,6 +34,7 @@ public final class CardView extends StackPane {
     private boolean selected;
     private final double w;
     private final double h;
+    private Node newIndicator;
 
     public CardView(Card card, boolean faceUp) {
         this(card, faceUp, WIDTH, HEIGHT);
@@ -78,6 +80,25 @@ public final class CardView extends StackPane {
 
     public void toggleSelected() {
         setSelected(!selected);
+    }
+
+    public void setNewlyReceived(boolean isNew) {
+        if (isNew) {
+            if (newIndicator != null) return;
+            Label star = new Label("✦");
+            star.setStyle("-fx-text-fill: #ff9030; -fx-font-size: 13px;"
+                    + " -fx-effect: dropshadow(gaussian, rgba(255,140,30,0.65), 6, 0.35, 0, 0);");
+            star.setMouseTransparent(true);
+            StackPane.setAlignment(star, Pos.TOP_RIGHT);
+            StackPane.setMargin(star, new Insets(3, 4, 0, 0));
+            newIndicator = star;
+            getChildren().add(star);
+        } else {
+            if (newIndicator != null) {
+                getChildren().remove(newIndicator);
+                newIndicator = null;
+            }
+        }
     }
 
     private void renderFront() {

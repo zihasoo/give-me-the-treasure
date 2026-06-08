@@ -3,6 +3,7 @@ package com.oop.payday.controller;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -145,6 +146,10 @@ public final class GameBoardController implements GameListener, Initializable {
     private VBox activeBundle0;
     private VBox activeBundle1;
     private int phaseRevision;
+    private boolean opponentCashDone = false;
+    private Node opponentCashDoneBadge;
+    private final Set<Card> newlyReceivedCards = new HashSet<>();
+    private final Set<Card> newlyReceivedOpponentCards = new HashSet<>();
 
     private static final Comparator<Card> CARD_ORDER_BY_COLOR =
             Comparator.<Card>comparingInt(GameBoardController::cardRank)
@@ -369,6 +374,9 @@ public final class GameBoardController implements GameListener, Initializable {
             introPhase = false;
             int phaseToken = ++phaseRevision;
             currentSplitTeam = splitTeam;
+            clearOpponentCashDoneBadge();
+            newlyReceivedCards.clear();
+            newlyReceivedOpponentCards.clear();
             clearCenterIfOpponentWaiting();
             turnLabel.setText(phase.korean());
             updateBoardStatus();
@@ -406,11 +414,39 @@ public final class GameBoardController implements GameListener, Initializable {
             setMessage(chooseTeam.name() + "이(가) 묶음 " + (chosenIndex == 0 ? "①" : "②") + " 선택 · "
                     + chooseTeam.name() + " " + chooseCards + " / "
                     + splitTeam.name() + " " + splitCards);
+            List<Card> myCards;
+            List<Card> opponentCards;
+            if (isLocalActor(chooseTeam.leader())) {
+                myCards = chooseCards;
+                opponentCards = splitCards;
+            } else if (isLocalActor(splitTeam.leader())) {
+                myCards = splitCards;
+                opponentCards = chooseCards;
+            } else {
+                myCards = List.of();
+                opponentCards = List.of();
+            }
             ensureDistributionAnimationPanel(chosenIndex, chooseCards, splitCards);
             animator.clearOpponentWaiting();
             playDistributionTransition(chosenIndex, chooseTeam, splitTeam, () -> {
                 distributionFieldUpdatePending = false;
+                newlyReceivedCards.clear();
+                newlyReceivedCards.addAll(myCards);
+                newlyReceivedOpponentCards.clear();
+                newlyReceivedOpponentCards.addAll(opponentCards);
                 updateBoardStatus();
+                PauseTransition clearNew = new PauseTransition(Duration.seconds(4));
+                clearNew.setOnFinished(e -> {
+                    newlyReceivedCards.clear();
+                    newlyReceivedOpponentCards.clear();
+                    for (Node node : fieldAFlow.getChildren()) {
+                        if (node instanceof CardView cv) cv.setNewlyReceived(false);
+                    }
+                    for (Node node : fieldBFlow.getChildren()) {
+                        if (node instanceof CardView cv) cv.setNewlyReceived(false);
+                    }
+                });
+                clearNew.play();
             });
         });
     }
@@ -518,14 +554,35 @@ public final class GameBoardController implements GameListener, Initializable {
 
     @Override
     public void onCashDone(Player player) {
-        if (!isLocalActor(player)) {
-            return;
+        if (isLocalActor(player)) {
+            Platform.runLater(() -> {
+                cashSelection.clear();
+                resetCashPanel();
+                runAfterOverlay(() -> setWaiting("환금 완료 — 상대를 기다리는 중"));
+            });
+        } else {
+            Platform.runLater(() -> {
+                opponentCashDone = true;
+                showOpponentCashDoneBadge();
+            });
         }
-        Platform.runLater(() -> {
-            cashSelection.clear();
-            resetCashPanel();
-            runAfterOverlay(() -> setWaiting("환금 완료 — 상대를 기다리는 중"));
-        });
+    }
+
+    private void showOpponentCashDoneBadge() {
+        if (opponentCashDoneBadge != null) return;
+        Label badge = new Label("환금 완료 ✓");
+        badge.getStyleClass().add("cash-done-badge");
+        StackPane.setAlignment(badge, Pos.CENTER);
+        opponentCashDoneBadge = badge;
+        fieldBStage.getChildren().add(badge);
+    }
+
+    private void clearOpponentCashDoneBadge() {
+        if (opponentCashDoneBadge != null) {
+            fieldBStage.getChildren().remove(opponentCashDoneBadge);
+            opponentCashDoneBadge = null;
+        }
+        opponentCashDone = false;
     }
 
     // ===== 패널 빌더 =====
@@ -1503,6 +1560,9 @@ public final class GameBoardController implements GameListener, Initializable {
             if (cashSelection.contains(card)) {
                 cardView.setSelected(true);
             }
+            if (newlyReceivedCards.contains(card) || newlyReceivedOpponentCards.contains(card)) {
+                cardView.setNewlyReceived(true);
+            }
             if (cashSelectable) {
                 cardView.setOnMouseClicked(e -> toggleCashFieldSelection(cardView, card));
             }
@@ -1546,11 +1606,13 @@ public final class GameBoardController implements GameListener, Initializable {
             if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
                 continue;
             }
-            view.setTranslateX(dx);
-            view.setTranslateY(dy);
+            double cssX = view.getTranslateX();
+            double cssY = view.getTranslateY();
+            view.setTranslateX(cssX + dx);
+            view.setTranslateY(cssY + dy);
             TranslateTransition move = new TranslateTransition(Duration.millis(300), view);
-            move.setToX(0);
-            move.setToY(0);
+            move.setToX(cssX);
+            move.setToY(cssY);
             move.setInterpolator(Interpolator.EASE_BOTH);
             transition.getChildren().add(move);
         }
