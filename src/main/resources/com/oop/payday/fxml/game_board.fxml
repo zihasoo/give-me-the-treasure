@@ -104,7 +104,9 @@
             </center>
         </BorderPane>
 
-        <StackPane fx:id="screenOverlay" mouseTransparent="true" pickOnBounds="false" />
         <Pane fx:id="globalOverlay" mouseTransparent="true" pickOnBounds="false" />
+        <!-- screenOverlay(메뉴·게임오버·규칙서)는 globalOverlay(연출)보다 위에 둬, 연출 중에도 항상
+             메뉴가 위에 뜨고 클릭이 막히지 않게 한다. 평소엔 비어있고 mouseTransparent라 연출에 영향 없음. -->
+        <StackPane fx:id="screenOverlay" mouseTransparent="true" pickOnBounds="false" />
     </children>
 </StackPane>

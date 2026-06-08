@@ -318,11 +318,16 @@ final class BoardAnimator {
     // ===== 슬쩍하기 애니메이션 =====
 
     void playSteal(Player player, Card drawnCard) {
+        if (globalOverlay == null) { // 오버레이 레이어가 없으면 큐만 진행(교착 방지).
+            playNextOverlay();
+            return;
+        }
         VBox panel = new VBox(16);
         panel.setAlignment(Pos.CENTER);
         panel.setPadding(new Insets(28, 44, 28, 44));
         panel.getStyleClass().add("waiting-panel");
         panel.setMaxWidth(460);
+        panel.setMaxHeight(Region.USE_PREF_SIZE); // 오버레이(StackPane host)가 패널을 세로로 늘리지 않도록 고정
 
         Label title = new Label("↪  슬쩍하기!");
         title.setStyle("-fx-text-fill: #c97a52; -fx-font-size: 26px; -fx-font-weight: bold;"
@@ -362,7 +367,22 @@ final class BoardAnimator {
         deckRow.setAlignment(Pos.CENTER);
 
         panel.getChildren().addAll(title, whoLabel, deckRow);
-        setCenter(panel);
+
+        // 가운데 center 를 setCenter 로 갈아끼우면, center 에 있던 환금 패널이 떨어져 나가
+        // 이후 증분 갱신으로는 되살아나지 못한다(환금 UI 사라짐 버그). 그래서 필드보다 위인
+        // globalOverlay 에 겹쳐 올려, 환금 패널을 건드리지 않고 슬쩍하기 연출만 보여준다.
+        StackPane host = new StackPane(panel);
+        host.setStyle("-fx-background-color: rgba(6,11,15,0.58);");
+        host.setOpacity(0);
+        host.prefWidthProperty().bind(globalOverlay.widthProperty());
+        host.prefHeightProperty().bind(globalOverlay.heightProperty());
+        alignOverPlayField(host);
+        boolean wasMouseTransparent = globalOverlay.isMouseTransparent();
+        boolean wasPickOnBounds = globalOverlay.isPickOnBounds();
+        globalOverlay.setMouseTransparent(false);
+        globalOverlay.setPickOnBounds(true);
+        globalOverlay.getChildren().add(host);
+        fade(host, 0, 1, 160).play();
 
         // 더미 흔들기 → 획득 카드 공개 순서로 애니메이션
         double[][] moves = {{-7,-5},{9,3},{-5,-3},{7,5},{-4,-2},{3,2},{0,0}};
@@ -399,7 +419,16 @@ final class BoardAnimator {
                     grow.setToX(1);
                     grow.setOnFinished(ge -> {
                         PauseTransition hold = new PauseTransition(Duration.millis(1500));
-                        hold.setOnFinished(he -> { clearCenter(); playNextOverlay(); });
+                        hold.setOnFinished(he -> {
+                            FadeTransition out = fade(host, 1, 0, 220);
+                            out.setOnFinished(oe -> {
+                                globalOverlay.getChildren().remove(host);
+                                globalOverlay.setMouseTransparent(wasMouseTransparent);
+                                globalOverlay.setPickOnBounds(wasPickOnBounds);
+                                playNextOverlay();
+                            });
+                            out.play();
+                        });
                         hold.play();
                     });
                     grow.play();
