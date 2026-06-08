@@ -37,7 +37,8 @@
 
                 <Region styleClass="menu-divider" maxWidth="Infinity" />
 
-                <Button styleClass="score-table-button" text="조합표 보기" onAction="#onScoreTable" maxWidth="Infinity" />
+                <Button styleClass="score-table-button" text="조합표" onAction="#onScoreTable" maxWidth="Infinity" />
+                <Button styleClass="score-table-button" text="규칙서" onAction="#onRulebook" maxWidth="Infinity" />
             </children>
         </VBox>
 

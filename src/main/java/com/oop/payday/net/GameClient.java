@@ -6,6 +6,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
 import java.util.List;
+import java.util.function.Function;
 
 import com.oop.payday.decision.BundleView;
 import com.oop.payday.decision.CashInContext;
@@ -34,6 +35,14 @@ public final class GameClient implements Closeable {
      * reader 스레드(JavaFX)에서만 쓰고, 응답은 JavaFX 스레드에서 읽으므로 volatile 로 충분.
      */
     private volatile long currentRequestId;
+
+    /**
+     * 현재 따르는 미러. 재시작({@link NetMessage.Restart}) 시 새 미러로 교체되며,
+     * 이후 수신한 {@link NetMessage.Envelope} 는 교체된 미러에 적용된다.
+     * reader 스레드가 enqueue 한 runLater 들은 JavaFX 스레드에서 순서대로 실행되므로,
+     * 재시작 처리가 후속 Envelope 적용보다 먼저 끝난다.
+     */
+    private volatile ClientMirror mirror;
 
     /** connect 결과 핸드셰이크를 반환한다(블로킹). */
     public NetMessage.Handshake connect(String host, int port) throws IOException {
@@ -69,21 +78,30 @@ public final class GameClient implements Closeable {
      * 미러 모델(Team/Player/카드/도우미)을 만지는 주체를 JavaFX Application Thread 로 단일화해,
      * reader 스레드와 UI 스레드가 같은 객체를 동시에 건드리는 경쟁을 없앤다.
      *
-     * @param mirror       미러 상태 저장소
+     * @param mirror       초기 미러 상태 저장소
      * @param listener     컨트롤러 (GameListener)
      * @param onDisconnect 연결 종료 시 호출(Platform.runLater 로 감쌈)
+     * @param onRestart    {@link NetMessage.Restart} 수신 시 새 미러를 만들어 돌려주는 콜백
+     *                     (JavaFX 스레드에서 호출됨). 반환된 미러가 이후 Envelope 적용 대상이 된다.
      */
     public void startReaderLoop(ClientMirror mirror, GameListener listener,
-            Runnable onDisconnect) {
+            Runnable onDisconnect, Function<NetMessage.Restart, ClientMirror> onRestart) {
+        this.mirror = mirror;
         Thread t = new Thread(() -> {
             try {
                 while (true) {
-                    NetMessage.Envelope env = (NetMessage.Envelope) ois.readObject();
-                    // 상태 적용 → 이벤트 dispatch 를 같은 runLater 로 묶어 순서와 스레드를 보장한다.
-                    Platform.runLater(() -> {
-                        mirror.applyState(env.state());
-                        dispatchEvent(env.event(), mirror, listener);
-                    });
+                    NetMessage msg = (NetMessage) ois.readObject();
+                    if (msg instanceof NetMessage.Restart restart) {
+                        // 재시작: 컨트롤러가 새 미러를 만들고 보드를 리셋한다. 이후 Envelope 는 새 미러에 적용.
+                        Platform.runLater(() -> this.mirror = onRestart.apply(restart));
+                    } else if (msg instanceof NetMessage.Envelope env) {
+                        // 상태 적용 → 이벤트 dispatch 를 같은 runLater 로 묶어 순서와 스레드를 보장한다.
+                        Platform.runLater(() -> {
+                            ClientMirror current = this.mirror;
+                            current.applyState(env.state());
+                            dispatchEvent(env.event(), current, listener);
+                        });
+                    }
                 }
             } catch (IOException | ClassNotFoundException e) {
                 // 연결 종료

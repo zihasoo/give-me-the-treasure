@@ -10,6 +10,7 @@ import com.oop.payday.net.GameClient;
 import com.oop.payday.net.GameServer;
 import com.oop.payday.net.NetMessage;
 import com.oop.payday.player.NetworkPlayer;
+import com.oop.payday.view.RulebookBuilder;
 import com.oop.payday.view.ScoreTableBuilder;
 
 import javafx.application.Platform;
@@ -31,6 +32,7 @@ public class MainMenuController {
     @FXML private StackPane menuOverlay;
 
     private Node cachedScoreTablePanel;
+    private Node cachedRulebookPanel;
 
     @FXML
     private void onPlayerVsPlayBot() {
@@ -52,12 +54,15 @@ public class MainMenuController {
         if (cachedScoreTablePanel == null) {
             cachedScoreTablePanel = ScoreTableBuilder.build(this::hideOverlay);
         }
-        menuOverlay.getStyleClass().setAll("screen-overlay");
-        menuOverlay.setMouseTransparent(false);
-        menuOverlay.setPickOnBounds(true);
-        StackPane.setAlignment(cachedScoreTablePanel, Pos.CENTER);
-        cachedScoreTablePanel.setOpacity(1);
-        menuOverlay.getChildren().setAll(cachedScoreTablePanel);
+        showOverlayPanel(cachedScoreTablePanel);
+    }
+
+    @FXML
+    private void onRulebook() {
+        if (cachedRulebookPanel == null) {
+            cachedRulebookPanel = RulebookBuilder.build(this::hideOverlay);
+        }
+        showOverlayPanel(cachedRulebookPanel);
     }
 
     private void hideOverlay() {

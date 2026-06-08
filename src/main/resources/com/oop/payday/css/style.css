@@ -65,7 +65,7 @@
     -fx-font-size: 17px;
     -fx-font-weight: bold;
     -fx-text-fill: #f4ecd6;
-    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-background-color: rgb(30, 42, 47);
     -fx-background-radius: 12;
     -fx-border-color: rgba(242, 211, 107, 0.45);
     -fx-border-radius: 12;
@@ -657,8 +657,13 @@
     -fx-background-color: rgba(4, 10, 14, 0.56);
 }
 
+/* 일시정지(메뉴) 오버레이만 더 어둡게 (screen-overlay 위에 덧입힌다) */
+.pause-overlay {
+    -fx-background-color: rgba(2, 5, 8, 0.78);
+}
+
 .score-table-panel {
-    -fx-background-color: rgba(12, 20, 24, 0.94);
+    -fx-background-color: rgb(12, 20, 24);
     -fx-background-radius: 10;
     -fx-border-color: rgba(242, 211, 107, 0.30);
     -fx-border-radius: 10;
@@ -711,6 +716,81 @@
     -fx-border-color: rgba(242, 211, 107, 0.24);
     -fx-border-radius: 999;
     -fx-padding: 5 15;
+}
+
+/* ── 규칙서 (RulebookBuilder) ───────────────────────────────── */
+.rulebook-panel {
+    -fx-background-color: rgb(12, 20, 24);
+    -fx-background-radius: 10;
+    -fx-border-color: rgba(242, 211, 107, 0.30);
+    -fx-border-radius: 10;
+    -fx-border-width: 1.2;
+    -fx-padding: 22 26;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.45), 28, 0.20, 0, 10);
+}
+
+.rulebook-title {
+    -fx-font-family: "Malgun Gothic", "Book Antiqua", serif;
+    -fx-font-size: 24px;
+    -fx-font-weight: 900;
+    -fx-text-fill: #f2d36b;
+}
+
+.rulebook-scroll,
+.rulebook-scroll > .viewport {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-padding: 0;
+}
+
+.rulebook-section {
+    -fx-text-fill: #dbe8e2;
+}
+
+.rulebook-section > .title {
+    -fx-background-color: rgba(8, 14, 18, 0.72);
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(242, 211, 107, 0.20);
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-padding: 9 14;
+}
+
+.rulebook-section > .title > .text {
+    -fx-fill: #f2d36b;
+    -fx-font-size: 17.5px;
+    -fx-font-weight: bold;
+}
+
+.rulebook-section > .title > .arrow-button > .arrow {
+    -fx-background-color: #f2d36b;
+}
+
+.rulebook-section > .content {
+    -fx-background-color: rgba(255, 255, 255, 0.045);
+    -fx-background-radius: 0 0 8 8;
+    -fx-border-color: rgba(242, 211, 107, 0.12);
+    -fx-border-width: 0 1 1 1;
+    -fx-border-radius: 0 0 8 8;
+    -fx-padding: 14 16;
+}
+
+.rulebook-paragraph {
+    -fx-line-spacing: 2.5;
+}
+
+/* 본문 일반 텍스트(TextFlow 안의 Text 조각) */
+.rulebook-text {
+    -fx-fill: #d2ddd7;
+    -fx-font-size: 13.5px;
+    -fx-font-weight: 700;
+}
+
+/* **...** 로 표시한 핵심어 강조 — 한 단계 더 굵게 + 금빛 */
+.rulebook-strong {
+    -fx-fill: #f2d36b;
+    -fx-font-size: 13.5px;
+    -fx-font-weight: 800;
 }
 
 .score-table-row {

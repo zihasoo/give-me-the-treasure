@@ -14,6 +14,7 @@ import com.oop.payday.bot.BotStrategy;
 import com.oop.payday.bot.SmartBotStrategy;
 import com.oop.payday.app.GameApp;
 import com.oop.payday.net.FanOutGameListener;
+import com.oop.payday.net.NetMessage;
 import com.oop.payday.net.NetworkBroadcaster;
 import com.oop.payday.net.PublicBoardState;
 import com.oop.payday.net.WireCodec;
@@ -45,6 +46,7 @@ import com.oop.payday.player.BotPlayer;
 import com.oop.payday.player.HumanPlayer;
 import com.oop.payday.player.Player;
 import com.oop.payday.view.CardView;
+import com.oop.payday.view.RulebookBuilder;
 import com.oop.payday.view.ScoreTableBuilder;
 
 import javafx.animation.FadeTransition;
@@ -77,6 +79,8 @@ import javafx.scene.layout.Region;
 import java.util.concurrent.CountDownLatch;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.Dragboard;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.TransferMode;
 import javafx.scene.layout.FlowPane;
@@ -143,6 +147,19 @@ public final class GameBoardController implements GameListener, Initializable {
     private boolean introPhase = true;
     private boolean gameOver = false;
     private Node cachedScoreTablePanel;
+
+    /** 게임 모드. 다시하기/나가기 동작과 일시정지 메뉴 버튼 노출을 결정한다. */
+    private enum Mode { OFFLINE, HOST, CLIENT }
+    private Mode mode;
+    private GameConfig config;            // 오프라인/호스트 재시작용
+    private boolean testBot;              // 오프라인 재시작용
+    private GameServer server;            // 호스트 세션 (소켓·리더 스레드 유지)
+    private GameClient client;            // 클라이언트 세션
+    private NetworkPlayer networkPlayer;  // 현재 호스트측 원격 대리자 (재시작 시 교체)
+    private Game currentGame;             // 진행 중 게임 (중단용)
+    private Thread gameThread;            // 게임 루프 스레드 (중단용)
+    private boolean pauseMenuOpen;
+    private boolean keyHandlerInstalled;
     private VBox activeBundle0;
     private VBox activeBundle1;
     private int phaseRevision;
@@ -259,6 +276,13 @@ public final class GameBoardController implements GameListener, Initializable {
     /** 메인 메뉴에서 호출. 플레이어/팀/게임을 구성하고 게임 스레드를 시작한다 (오프라인). */
     public void startGame(GameConfig config, boolean testBot) {
         resetBoard();
+        this.mode = Mode.OFFLINE;
+        this.config = config;
+        this.testBot = testBot;
+        this.server = null;
+        this.client = null;
+        this.networkPlayer = null;
+
         HumanPlayer p1 = new HumanPlayer("플레이어 1");
         localPlayer = p1;
         inputGateway = new LocalInputGateway(p1);
@@ -272,72 +296,113 @@ public final class GameBoardController implements GameListener, Initializable {
         updateBoardStatus();
 
         Game game = new Game(config, teamA, teamB, this);
-        Thread loop = new Thread(game::play, "game-loop");
-        loop.setDaemon(true);
-        loop.start();
+        this.currentGame = game;
+        startGameThread(game);
+        installEscHandler();
     }
 
     /** 호스트 모드: 권위 Game 을 로컬에서 실행하고 NetworkPlayer 로 원격 클라이언트와 대전. */
     public void startHostGame(GameConfig config, GameServer server, NetworkPlayer networkPlayer) {
+        this.mode = Mode.HOST;
+        this.config = config;
+        this.server = server;
+        this.client = null;
+        buildAndStartHostGame(networkPlayer, false);
+        installEscHandler();
+    }
+
+    /** 호스트 게임을 구성하고 시작한다. {@code restart} 면 같은 연결로 재시작(핸드셰이크 대신 Restart 전송). */
+    private void buildAndStartHostGame(NetworkPlayer np, boolean restart) {
         resetBoard();
         HumanPlayer p1 = new HumanPlayer("플레이어 1");
         localPlayer = p1;
         inputGateway = new LocalInputGateway(p1);
 
         teamA = new Team(p1.name(), List.of(p1));
-        teamB = new Team(networkPlayer.name(), List.of(networkPlayer));
+        teamB = new Team(np.name(), List.of(np));
         animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER_BY_COLOR);
         updateBoardStatus();
 
-        List<Player> allPlayers = List.of(p1, networkPlayer);
+        List<Player> allPlayers = List.of(p1, np);
         NetworkBroadcaster broadcaster = new NetworkBroadcaster(
-                networkPlayer, teamA, teamB, null, allPlayers, server.outputStream());
+                np, teamA, teamB, null, allPlayers, server.outputStream());
         FanOutGameListener fanOut = new FanOutGameListener(this, broadcaster);
         Game game = new Game(config, teamA, teamB, fanOut);
         broadcaster.setGame(game);
 
         PublicBoardState initState = WireCodec.buildState(teamA, teamB, game, 1, allPlayers);
         try {
-            server.sendHandshake(config, 1, initState);
+            if (restart) {
+                server.sendRestart(config, 1, initState);  // 클라이언트에 재시작 통지
+                server.rebind(np, allPlayers);             // 기존 net-reader 를 새 대리자로 재지정
+            } else {
+                server.sendHandshake(config, 1, initState);
+                // 리더 스레드는 최초 한 번만 시작한다. onDisconnect 는 현재 세션 필드를 참조한다.
+                server.startReaderLoop(np, allPlayers, this::onHostDisconnect);
+            }
         } catch (java.io.IOException e) {
-            setMessage("핸드셰이크 전송 실패: " + e.getMessage());
+            setMessage((restart ? "재시작" : "핸드셰이크") + " 전송 실패: " + e.getMessage());
             return;
         }
 
-        server.startReaderLoop(networkPlayer, allPlayers, () -> {
-            // 리더 스레드에서 호출: 대기 중인 게임 스레드를 깨워 판을 정상 종료시킨다.
-            networkPlayer.abort();   // decideSplit/Choice/Helpers 대기 해제
-            game.abort();            // 환금 인박스 대기 해제
-            try {
-                server.close();      // 죽은 소켓·스트림 정리
-            } catch (java.io.IOException ignored) {
-                // 이미 끊긴 연결 — 무시
-            }
-            Platform.runLater(() -> showDisconnected("상대 연결이 끊어졌습니다."));
-        });
+        this.networkPlayer = np;
+        this.currentGame = game;
+        startGameThread(game);
+    }
 
-        Thread loop = new Thread(game::play, "game-loop");
-        loop.setDaemon(true);
-        loop.start();
+    /** 호스트 net-reader 가 연결 종료를 감지하면 호출. 현재 진행 중인 게임/대리자를 깨워 정상 종료시킨다. */
+    private void onHostDisconnect() {
+        NetworkPlayer np = this.networkPlayer;
+        Game g = this.currentGame;
+        if (np != null) np.abort();   // decideSplit/Choice/Helpers 대기 해제
+        if (g != null) g.abort();     // 환금 인박스 대기 해제
+        try {
+            if (server != null) server.close();
+        } catch (java.io.IOException ignored) {
+            // 이미 끊긴 연결 — 무시
+        }
+        Platform.runLater(() -> showDisconnected("상대 연결이 끊어졌습니다."));
     }
 
     /** 클라이언트 모드: Game 없이 미러 상태만 추종하며 원격에서 온 이벤트를 렌더링한다. */
     public void startClientGame(ClientMirror mirror, GameClient client) {
+        this.mode = Mode.CLIENT;
+        this.server = null;
+        this.client = client;
+        bindClientMirror(mirror, client);
+
+        client.startReaderLoop(mirror, this,
+                () -> showDisconnected("호스트 연결이 끊어졌습니다."),
+                this::onClientRestart);
+        installEscHandler();
+    }
+
+    /**
+     * 호스트가 보낸 {@link NetMessage.Restart} 를 reader 스레드(JavaFX)가 받아 호출.
+     * 새 미러를 만들어 보드를 리셋하고, 반환된 미러가 이후 Envelope 적용 대상이 된다.
+     */
+    private ClientMirror onClientRestart(NetMessage.Restart restart) {
+        ClientMirror mirror = new ClientMirror();
+        mirror.init(restart.clientTeamId(), restart.initialState());
         resetBoard();
+        bindClientMirror(mirror, client);
+        return mirror;
+    }
+
+    /** 클라이언트 미러를 컨트롤러 상태에 연결한다(최초/재시작 공용). reader 루프는 건드리지 않는다. */
+    private void bindClientMirror(ClientMirror mirror, GameClient client) {
         localPlayer = mirror.myPlayer();
         inputGateway = new NetworkInputGateway(client);
-
         teamA = mirror.myTeam();
         teamB = mirror.opponentTeam();
         animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER_BY_COLOR);
         updateBoardStatus();
-
-        client.startReaderLoop(mirror, this, () -> showDisconnected("호스트 연결이 끊어졌습니다."));
     }
 
     private void resetBoard() {
         gameOver = false;
         introPhase = true;
+        pauseMenuOpen = false;
         phaseRevision = 0;
         distributionFieldUpdatePending = false;
         resetCashPanel();
@@ -345,6 +410,131 @@ public final class GameBoardController implements GameListener, Initializable {
         screenOverlay.getStyleClass().clear();
         screenOverlay.setMouseTransparent(true);
         screenOverlay.setPickOnBounds(false);
+    }
+
+    /**
+     * 게임 루프 스레드를 시작한다. 재시작/나가기로 버려진(현재가 아닌) 스레드의 인터럽트 예외는
+     * 콘솔을 더럽히지 않도록 무시하고, 현재 게임 스레드의 예외만 출력한다.
+     */
+    private void startGameThread(Game game) {
+        Thread loop = new Thread(game::play, "game-loop");
+        loop.setDaemon(true);
+        loop.setUncaughtExceptionHandler((t, e) -> {
+            if (t == gameThread) {  // 교체된 옛 스레드면 gameThread 가 이미 새 스레드 → 무시
+                e.printStackTrace();
+            }
+        });
+        this.gameThread = loop;
+        loop.start();
+    }
+
+    /** 진행 중인 게임 스레드를 중단시킨다(재시작·나가기 공용). 소켓·net-reader 는 호출자가 관리한다. */
+    private void tearDownCurrentGame() {
+        if (currentGame != null) currentGame.abort();      // 환금 인박스 대기 해제
+        if (networkPlayer != null) networkPlayer.abort();  // 호스트 결정 채널 해제
+        if (gameThread != null) gameThread.interrupt();    // 오프라인 HumanPlayer 대기 해제
+    }
+
+    // ===== ESC 일시정지 메뉴 =====
+
+    /** 게임 보드 씬에 ESC 키 필터를 한 번만 설치한다. 같은 씬을 재사용하는 재시작에도 중복 설치되지 않는다. */
+    private void installEscHandler() {
+        if (keyHandlerInstalled) return;
+        Platform.runLater(() -> {
+            if (keyHandlerInstalled || contentArea.getScene() == null) return;
+            keyHandlerInstalled = true;
+            contentArea.getScene().addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                if (e.getCode() == KeyCode.ESCAPE) {
+                    e.consume();
+                    togglePauseMenu();
+                }
+            });
+        });
+    }
+
+    private void togglePauseMenu() {
+        if (gameOver) return;  // 종료 화면에선 ESC 무시
+        if (pauseMenuOpen) {
+            pauseMenuOpen = false;
+            hideScreenOverlay();
+        } else {
+            pauseMenuOpen = true;
+            showPauseOverlay();
+        }
+    }
+
+    /** 일시정지 메뉴를 띄운다. 이 오버레이만 더 어둡게(pause-overlay) 표시한다. */
+    private void showPauseOverlay() {
+        showScreenOverlay(buildPauseMenu());
+        screenOverlay.getStyleClass().add("pause-overlay");
+    }
+
+    private Node buildPauseMenu() {
+        VBox root = panelRoot("메뉴");
+        root.setSpacing(14);
+
+        Button resume = pauseMenuButton("계속하기", e -> togglePauseMenu());
+        Button rulebook = pauseMenuButton("규칙서", e -> showScreenOverlay(
+                RulebookBuilder.build(this::showPauseOverlay)));
+
+        VBox buttons = new VBox(10, resume, rulebook);
+        buttons.setAlignment(Pos.CENTER);
+        buttons.setMaxWidth(260);
+
+        // 다시하기: 오프라인·호스트만 (네트워크 클라이언트는 재시작을 시작할 수 없음)
+        if (mode != Mode.CLIENT) {
+            buttons.getChildren().add(pauseMenuButton("다시하기", e -> restartGame()));
+        }
+        buttons.getChildren().add(pauseMenuButton("메인 메뉴로 나가기", e -> exitToMainMenu()));
+
+        root.getChildren().add(buttons);
+        return root;
+    }
+
+    private Button pauseMenuButton(String text, javafx.event.EventHandler<javafx.event.ActionEvent> action) {
+        Button button = new Button(text);
+        button.getStyleClass().add("menu-mode-button");  // 메인 메뉴 버튼과 통일
+        button.setMaxWidth(Double.MAX_VALUE);
+        button.setOnAction(action);
+        return button;
+    }
+
+    // ===== 다시하기 / 나가기 =====
+
+    /** 같은 설정으로 새 판을 시작한다. 모드별 분기. */
+    private void restartGame() {
+        switch (mode) {
+            case OFFLINE -> {
+                tearDownCurrentGame();
+                startGame(config, testBot);
+            }
+            case HOST -> {
+                tearDownCurrentGame();
+                buildAndStartHostGame(new NetworkPlayer("플레이어 2"), true);
+            }
+            case CLIENT -> {
+                // 클라이언트는 재시작을 시작하지 않는다(버튼이 노출되지 않음).
+            }
+        }
+    }
+
+    /** 진행 중인 게임을 정리하고 메인 메뉴로 돌아간다. 네트워크는 연결을 닫아 상대에게 알린다. */
+    private void exitToMainMenu() {
+        tearDownCurrentGame();
+        try {
+            if (mode == Mode.HOST && server != null) {
+                server.close();
+            } else if (mode == Mode.CLIENT && client != null) {
+                client.close();
+            }
+        } catch (java.io.IOException ignored) {
+            // 이미 끊긴 연결 — 무시
+        }
+        try {
+            GameApp.get().showScene("main_menu.fxml");
+        } catch (java.io.IOException ex) {
+            alert("메인 화면으로 이동할 수 없습니다: " + ex.getMessage());
+        }
     }
 
     private void showDisconnected(String msg) {
@@ -435,7 +625,7 @@ public final class GameBoardController implements GameListener, Initializable {
                 newlyReceivedOpponentCards.clear();
                 newlyReceivedOpponentCards.addAll(opponentCards);
                 updateBoardStatus();
-                PauseTransition clearNew = new PauseTransition(Duration.seconds(4));
+                PauseTransition clearNew = new PauseTransition(Duration.seconds(6));
                 clearNew.setOnFinished(e -> {
                     newlyReceivedCards.clear();
                     newlyReceivedOpponentCards.clear();
@@ -506,6 +696,7 @@ public final class GameBoardController implements GameListener, Initializable {
     public void onGameOver(Team winner) {
         Platform.runLater(() -> {
             gameOver = true;
+            pauseMenuOpen = false;
             showScreenOverlay(buildGameOverPanel(winner));
             turnLabel.setText("게임 종료");
             updateBoardStatus();
@@ -1271,17 +1462,27 @@ public final class GameBoardController implements GameListener, Initializable {
         scoreColumn.setAlignment(Pos.CENTER);
         scoreColumn.setMaxWidth(440);
 
-        Button mainMenu = new Button("메인 화면");
-        mainMenu.getStyleClass().add("menu-button");
-        mainMenu.setOnAction(e -> {
-            try {
-                GameApp.get().showScene("main_menu.fxml");
-            } catch (java.io.IOException ex) {
-                alert("메인 화면으로 이동할 수 없습니다: " + ex.getMessage());
-            }
-        });
+        Button exit = new Button("나가기");
+        exit.getStyleClass().add("menu-button");
+        exit.setOnAction(e -> exitToMainMenu());
 
-        root.getChildren().addAll(scoreColumn, mainMenu);
+        HBox actions = new HBox(12);
+        actions.setAlignment(Pos.CENTER);
+        // 다시하기: 오프라인·호스트만. 네트워크 클라이언트는 호스트의 재시작을 기다린다.
+        if (mode != Mode.CLIENT) {
+            Button restart = new Button("다시하기");
+            restart.getStyleClass().add("menu-button");
+            restart.setOnAction(e -> restartGame());
+            actions.getChildren().add(restart);
+        }
+        actions.getChildren().add(exit);
+
+        root.getChildren().addAll(scoreColumn, actions);
+        if (mode == Mode.CLIENT) {
+            Label note = new Label("호스트가 다시 시작할 수 있습니다.");
+            note.getStyleClass().add("guide");
+            root.getChildren().add(note);
+        }
         return root;
     }
 

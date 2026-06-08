@@ -68,6 +68,29 @@ public final class GameServer implements Closeable {
     }
 
     /**
+     * 같은 연결로 새 판을 시작할 때 클라이언트에 재시작을 통지한다.
+     * 진행 중 스트림에서 reader 가 {@link NetMessage.Restart} 를 받아 미러를 새로 초기화한다.
+     */
+    public void sendRestart(GameConfig config, int clientTeamId, PublicBoardState state) throws IOException {
+        synchronized (oos) {
+            oos.writeObject(new NetMessage.Restart(
+                    config.winningCoins(), config.leaderEffectsEnabled(),
+                    clientTeamId, state));
+            oos.reset();
+            oos.flush();
+        }
+    }
+
+    /**
+     * 재시작 시 reader 스레드의 라우팅 대상을 새 게임의 {@link NetworkPlayer}/플레이어 목록으로 교체한다.
+     * reader 스레드는 재시작하지 않고 그대로 재사용한다.
+     */
+    public void rebind(NetworkPlayer player, List<Player> players) {
+        this.networkPlayer = player;
+        this.allPlayers = players;
+    }
+
+    /**
      * 네트워크 리더 스레드를 시작한다.
      * 클라이언트가 보내는 결정 메시지를 읽어 {@link NetworkPlayer} 로 라우팅한다.
      * 연결이 끊기면 {@link NetworkPlayer} 채널을 인터럽트해 게임 루프를 해제한다.

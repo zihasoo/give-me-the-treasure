@@ -39,6 +39,12 @@ public final class ScoreTableBuilder {
         close.setOnAction(e -> onClose.run());
         header.getChildren().addAll(title, spacer, close);
 
+        root.getChildren().addAll(header, buildColumns());
+        return root;
+    }
+
+    /** 환금표 본체(3개 컬럼)를 닫기 헤더 없이 만든다. */
+    private static HBox buildColumns() {
         HBox columns = new HBox(18);
         columns.setAlignment(Pos.TOP_CENTER);
         columns.getChildren().addAll(
@@ -54,9 +60,7 @@ public final class ScoreTableBuilder {
                         List.of(row(SetType.RUN_SAME_COLOR, 3, 6),
                                 row(SetType.RUN_SAME_COLOR, 4, 9),
                                 row(SetType.RUN_SAME_COLOR, 5, 15))));
-
-        root.getChildren().addAll(header, columns);
-        return root;
+        return columns;
     }
 
     private static VBox column(String title, List<Node> rows) {

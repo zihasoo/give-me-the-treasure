@@ -13,12 +13,23 @@ import java.util.List;
  * </ul>
  */
 public sealed interface NetMessage extends Serializable
-        permits NetMessage.Handshake, NetMessage.Envelope,
+        permits NetMessage.Handshake, NetMessage.Restart, NetMessage.Envelope,
                 NetMessage.SplitDecision, NetMessage.ChoiceDecision,
                 NetMessage.HelpersDecision, NetMessage.CashAction, NetMessage.CashPass {
 
     /** 게임 시작 전 호스트→클라이언트 핸드셰이크. */
     record Handshake(
+            int winningCoins,
+            boolean leaderEffectsEnabled,
+            int clientTeamId,
+            PublicBoardState initialState) implements NetMessage {}
+
+    /**
+     * 게임 종료/일시정지 후 호스트가 같은 연결로 새 판을 시작할 때 보내는 재시작 통지.
+     * 페이로드는 {@link Handshake} 와 동일하지만, 진행 중 스트림에서 reader 가 구분해
+     * 미러를 새로 초기화하도록 별도 타입으로 둔다.
+     */
+    record Restart(
             int winningCoins,
             boolean leaderEffectsEnabled,
             int clientTeamId,
