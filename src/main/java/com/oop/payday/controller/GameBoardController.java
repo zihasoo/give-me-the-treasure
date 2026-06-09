@@ -10,8 +10,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import com.oop.payday.bot.BotStrategy;
-import com.oop.payday.bot.SmartBotStrategy;
 import com.oop.payday.app.GameApp;
 import com.oop.payday.net.FanOutGameListener;
 import com.oop.payday.net.NetMessage;
@@ -27,9 +25,11 @@ import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
+import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.game.Game;
 import com.oop.payday.game.GameConfig;
 import com.oop.payday.game.GameListener;
+import com.oop.payday.game.MatchSetup;
 import com.oop.payday.game.Phase;
 import com.oop.payday.game.Team;
 import com.oop.payday.model.card.Card;
@@ -152,7 +152,7 @@ public final class GameBoardController implements GameListener, Initializable {
     private enum Mode { OFFLINE, HOST, CLIENT }
     private Mode mode;
     private GameConfig config;            // 오프라인/호스트 재시작용
-    private boolean testBot;              // 오프라인 재시작용
+    private MatchSetup matchSetup;        // 오프라인 자리 배치(재시작용)
     private GameServer server;            // 호스트 세션 (소켓·리더 스레드 유지)
     private GameClient client;            // 클라이언트 세션
     private NetworkPlayer networkPlayer;  // 현재 호스트측 원격 대리자 (재시작 시 교체)
@@ -273,25 +273,32 @@ public final class GameBoardController implements GameListener, Initializable {
         }
     }
 
-    /** 메인 메뉴에서 호출. 플레이어/팀/게임을 구성하고 게임 스레드를 시작한다 (오프라인). */
-    public void startGame(GameConfig config, boolean testBot) {
+    /** 메인 메뉴 대기실에서 호출. 슬롯 구성대로 팀/플레이어를 만들고 게임 스레드를 시작한다 (오프라인). */
+    public void startGame(MatchSetup setup) {
         resetBoard();
         this.mode = Mode.OFFLINE;
-        this.config = config;
-        this.testBot = testBot;
+        this.matchSetup = setup;
+        this.config = setup.gameConfig();
         this.server = null;
         this.client = null;
         this.networkPlayer = null;
 
-        HumanPlayer p1 = new HumanPlayer("플레이어 1");
-        localPlayer = p1;
-        inputGateway = new LocalInputGateway(p1);
+        // 사람(방장)이 속한 대기실 팀을 항상 teamA(=내 필드)로 둔다.
+        boolean humanInA = setup.teamA().stream()
+                .anyMatch(s -> s.kind() == MatchSetup.SlotKind.HUMAN_LOCAL);
+        List<MatchSetup.Slot> mySlots = humanInA ? setup.teamA() : setup.teamB();
+        List<MatchSetup.Slot> oppSlots = humanInA ? setup.teamB() : setup.teamA();
 
-        BotStrategy strategy = new SmartBotStrategy();
-        Player p2 = testBot ? BotPlayer.test(strategy) : BotPlayer.play(strategy);
+        HumanPlayer[] humanRef = new HumanPlayer[1];
+        List<Player> myPlayers = buildPlayers(mySlots, humanRef);
+        List<Player> oppPlayers = buildPlayers(oppSlots, humanRef);
 
-        teamA = new Team(p1.name(), List.of(p1));
-        teamB = new Team(p2.name(), List.of(p2));
+        HumanPlayer human = humanRef[0];
+        localPlayer = human;
+        inputGateway = human != null ? new LocalInputGateway(human) : null;
+
+        teamA = new Team(teamName(myPlayers, "우리 팀"), myPlayers);
+        teamB = new Team(teamName(oppPlayers, "상대 팀"), oppPlayers);
         animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER_BY_COLOR);
         updateBoardStatus();
 
@@ -299,6 +306,28 @@ public final class GameBoardController implements GameListener, Initializable {
         this.currentGame = game;
         startGameThread(game);
         installEscHandler();
+    }
+
+    /** 슬롯 목록을 플레이어로 변환한다. 사람 슬롯을 만나면 {@code humanRef[0]} 에 기록(로컬 플레이어 추적). */
+    private List<Player> buildPlayers(List<MatchSetup.Slot> slots, HumanPlayer[] humanRef) {
+        List<Player> players = new ArrayList<>();
+        for (MatchSetup.Slot slot : slots) {
+            switch (slot.kind()) {
+                case HUMAN_LOCAL -> {
+                    HumanPlayer h = new HumanPlayer(slot.name());
+                    humanRef[0] = h;
+                    players.add(h);
+                }
+                case BOT -> players.add(BotPlayer.play(slot.botKind().create()));
+                case REMOTE -> players.add(new NetworkPlayer(slot.name())); // 2단계 네트워크
+                case EMPTY -> { /* 빈 자리는 게임에서 제외 */ }
+            }
+        }
+        return players;
+    }
+
+    private static String teamName(List<Player> players, String fallback) {
+        return players.isEmpty() ? fallback : players.get(0).name();
     }
 
     /** 호스트 모드: 권위 Game 을 로컬에서 실행하고 NetworkPlayer 로 원격 클라이언트와 대전. */
@@ -506,7 +535,7 @@ public final class GameBoardController implements GameListener, Initializable {
         switch (mode) {
             case OFFLINE -> {
                 tearDownCurrentGame();
-                startGame(config, testBot);
+                startGame(matchSetup);
             }
             case HOST -> {
                 tearDownCurrentGame();
@@ -604,12 +633,13 @@ public final class GameBoardController implements GameListener, Initializable {
             setMessage(chooseTeam.name() + "이(가) 묶음 " + (chosenIndex == 0 ? "①" : "②") + " 선택 · "
                     + chooseTeam.name() + " " + chooseCards + " / "
                     + splitTeam.name() + " " + splitCards);
+            Team myTeam = localPlayer != null ? teamFor(localPlayer) : null;
             List<Card> myCards;
             List<Card> opponentCards;
-            if (isLocalActor(chooseTeam.leader())) {
+            if (myTeam == chooseTeam) {
                 myCards = chooseCards;
                 opponentCards = splitCards;
-            } else if (isLocalActor(splitTeam.leader())) {
+            } else if (myTeam == splitTeam) {
                 myCards = splitCards;
                 opponentCards = chooseCards;
             } else {
@@ -733,6 +763,15 @@ public final class GameBoardController implements GameListener, Initializable {
     }
 
     @Override
+    public void onRequestTeamDistribution(Player leader, Team team, List<Card> acquired) {
+        if (!isLocalActor(leader)) return; // 봇 리더는 전략이 자동 분배하므로 패널을 띄우지 않는다.
+        Platform.runLater(() -> runAfterOverlay(() -> {
+            updateBoardStatus();
+            setCenterAnimated(buildTeamDistributionPanel(team, acquired));
+        }));
+    }
+
+    @Override
     public void onCashTurn(Player player, CashInContext snapshot) {
         if (!isLocalActor(player)) {
             return;
@@ -751,7 +790,8 @@ public final class GameBoardController implements GameListener, Initializable {
                 resetCashPanel();
                 runAfterOverlay(() -> setWaiting("환금 완료 — 상대를 기다리는 중"));
             });
-        } else {
+        } else if (teamFor(player) == teamB) {
+            // 상대 팀 멤버가 환금을 마쳤을 때만 상대 완료 배지. 우리 팀 봇 멤버는 배지 없이 보드만 갱신.
             Platform.runLater(() -> {
                 opponentCashDone = true;
                 showOpponentCashDoneBadge();
@@ -1072,6 +1112,61 @@ public final class GameBoardController implements GameListener, Initializable {
                 }
             }
         }
+    }
+
+    /** 사람 리더가 가져온 카드를 팀원과 나눠 갖는 패널(규칙 §6-2-4). 카드를 눌러 보관할 사람을 순환한다. */
+    private VBox buildTeamDistributionPanel(Team team, List<Card> acquired) {
+        List<Player> members = team.members();
+        Map<Card, Integer> assign = new HashMap<>();
+        int[] counts = new int[members.size()];
+        for (int i = 0; i < members.size(); i++) {
+            counts[i] = members.get(i).holdingCount();
+        }
+        for (Card card : acquired) {                    // 균형 분배로 초기 배정
+            int target = 0;
+            for (int i = 1; i < members.size(); i++) {
+                if (counts[i] < counts[target]) target = i;
+            }
+            assign.put(card, target);
+            counts[target]++;
+        }
+
+        VBox root = panelRoot("가져온 카드를 팀원과 나눠 가지세요. 카드를 눌러 보관할 사람을 바꿉니다.");
+
+        FlowPane cardRow = new FlowPane(10, 10);
+        cardRow.setAlignment(Pos.CENTER);
+        for (Card card : acquired) {
+            VBox cell = new VBox(4);
+            cell.setAlignment(Pos.CENTER);
+            CardView cardView = new CardView(card, true);
+            Label owner = new Label(members.get(assign.get(card)).name());
+            owner.getStyleClass().add("distribution-owner");
+            cardView.setOnMouseClicked(e -> {
+                int next = (assign.get(card) + 1) % members.size();
+                assign.put(card, next);
+                owner.setText(members.get(next).name());
+            });
+            cell.getChildren().addAll(cardView, owner);
+            cardRow.getChildren().add(cell);
+        }
+
+        Button confirm = new Button("분배 확정");
+        confirm.getStyleClass().add("menu-button");
+        confirm.setOnAction(e -> {
+            List<List<Card>> byMember = new ArrayList<>();
+            for (int i = 0; i < members.size(); i++) {
+                byMember.add(new ArrayList<>());
+            }
+            for (Card card : acquired) {
+                byMember.get(assign.get(card)).add(card);
+            }
+            inputGateway.provideDistribution(new TeamDistribution(byMember));
+        });
+        HBox buttonRow = new HBox(confirm);
+        buttonRow.setAlignment(Pos.CENTER);
+
+        root.getChildren().addAll(cardRow, buttonRow);
+        return root;
     }
 
     private Node buildHelperSelectionPanel(List<HelperCard> options, int chooseCount) {
@@ -1729,48 +1824,78 @@ public final class GameBoardController implements GameListener, Initializable {
             helpers.getChildren().clear();
             return;
         }
-        Player player = team.leader();
-        titleLabel.setText(fallback + " · " + player.name());
-        if (player.officer() != null) {
-            officerLabel.setText(player.officer().korean());
-            officerEffectLabel.setText(player.officer().effectText());
+        List<Player> members = team.members();
+        Player leader = team.leader();
+        titleLabel.setText(fallback + " · " + memberNames(members));
+        if (leader.officer() != null) {
+            officerLabel.setText(leader.officer().korean());
+            officerEffectLabel.setText(leader.officer().effectText());
         } else {
             officerLabel.setText("간부 없음");
             officerEffectLabel.setText("");
         }
         coinsLabel.setText(team.coins() + " 코인");
         boolean hideDetails = introPhase || gameOver; // 인트로·게임 종료 화면에선 보유 수/빈 필드 안내를 숨긴다
-        countLabel.setText(hideDetails ? "" : "보유 " + player.holdingCount() + " / " + player.holdLimit());
-        renderSidebarHelpers(helpers, player);
-        boolean cashSelectable = cashSelectableField(team, player);
+        countLabel.setText(hideDetails ? "" : holdingSummary(members));
+        renderSidebarHelpers(helpers, members);
         Map<Card, Bounds> previousBounds = hideDetails ? Map.of() : cardBoundsByScene(field);
         field.getChildren().clear();
-        List<Card> cards = cashSelectable
-                ? new ArrayList<>(cashRemaining)
-                : new ArrayList<>(player.holdings());
-        if (hideDetails || cards.isEmpty()) {
-            if (!hideDetails) {
-                playFieldReflowTransition(stage, field, previousBounds, Map.of());
-            }
+        if (hideDetails) {
             return;
         }
-        cards.sort(sortOrder);
+        // 다인 팀이면 멤버별로 카드 묶음을 나눠 그린다(멤버 사이에 이름 칩을 끼움).
+        boolean multi = members.size() > 1;
         Map<Card, CardView> currentViews = new HashMap<>();
-        for (Card card : cards) {
-            CardView cardView = new CardView(card, true);
-            if (cashSelection.contains(card)) {
-                cardView.setSelected(true);
+        for (Player member : members) {
+            boolean cashSelectable = cashSelectableField(team, member);
+            List<Card> cards = cashSelectable
+                    ? new ArrayList<>(cashRemaining)
+                    : new ArrayList<>(member.holdings());
+            cards.sort(sortOrder);
+            if (multi) {
+                field.getChildren().add(memberChip(member, cards.size()));
             }
-            if (newlyReceivedCards.contains(card) || newlyReceivedOpponentCards.contains(card)) {
-                cardView.setNewlyReceived(true);
+            for (Card card : cards) {
+                CardView cardView = new CardView(card, true);
+                if (cashSelection.contains(card)) {
+                    cardView.setSelected(true);
+                }
+                if (newlyReceivedCards.contains(card) || newlyReceivedOpponentCards.contains(card)) {
+                    cardView.setNewlyReceived(true);
+                }
+                if (cashSelectable) {
+                    cardView.setOnMouseClicked(e -> toggleCashFieldSelection(cardView, card));
+                }
+                field.getChildren().add(cardView);
+                currentViews.put(card, cardView);
             }
-            if (cashSelectable) {
-                cardView.setOnMouseClicked(e -> toggleCashFieldSelection(cardView, card));
-            }
-            field.getChildren().add(cardView);
-            currentViews.put(card, cardView);
         }
         playFieldReflowTransition(stage, field, previousBounds, currentViews);
+    }
+
+    private static String memberNames(List<Player> members) {
+        return members.stream().map(Player::name)
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    private static String holdingSummary(List<Player> members) {
+        if (members.size() == 1) {
+            Player p = members.get(0);
+            return "보유 " + p.holdingCount() + " / " + p.holdLimit();
+        }
+        return members.stream()
+                .map(p -> p.name() + " " + p.holdingCount() + "/" + p.holdLimit())
+                .collect(java.util.stream.Collectors.joining("   "));
+    }
+
+    /** 다인 팀 카드 영역에서 멤버 구분용 칩. 환금 중인 로컬 멤버는 강조한다. */
+    private Node memberChip(Player member, int cardCount) {
+        Label chip = new Label(member.name() + " · " + cardCount + "장");
+        chip.getStyleClass().add("field-member-chip");
+        if (isLocalActor(member)) {
+            chip.getStyleClass().add("field-member-chip-local");
+        }
+        return chip;
     }
 
     private Map<Card, Bounds> cardBoundsByScene(FlowPane field) {
@@ -1865,12 +1990,14 @@ public final class GameBoardController implements GameListener, Initializable {
         refreshCashHelperToggles(cashCashContext.helpers());
     }
 
-    private void renderSidebarHelpers(VBox target, Player player) {
+    private void renderSidebarHelpers(VBox target, List<Player> members) {
         target.getChildren().clear();
-        boolean local = isLocalActor(player);
-        for (HelperCard helper : player.helpers()) {
-            boolean faceUp = local || helper.isUsed();
-            target.getChildren().add(buildSidebarHelperCard(helper, faceUp));
+        for (Player member : members) {
+            boolean local = isLocalActor(member);
+            for (HelperCard helper : member.helpers()) {
+                boolean faceUp = local || helper.isUsed();
+                target.getChildren().add(buildSidebarHelperCard(helper, faceUp));
+            }
         }
     }
 

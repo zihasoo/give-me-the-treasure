@@ -1,5 +1,6 @@
 package com.oop.payday.player;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -9,6 +10,7 @@ import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
+import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
 
@@ -75,6 +77,16 @@ public final class BotPlayer extends Player {
     public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount) {
         think();
         return strategy.decideHelpers(options, chooseCount);
+    }
+
+    @Override
+    public TeamDistribution decideTeamDistribution(List<Card> acquired, List<Player> members) {
+        think();
+        List<List<Card>> memberHoldings = new ArrayList<>();
+        for (Player member : members) {
+            memberHoldings.add(new ArrayList<>(member.holdings()));
+        }
+        return strategy.decideTeamDistribution(acquired, memberHoldings);
     }
 
     @Override

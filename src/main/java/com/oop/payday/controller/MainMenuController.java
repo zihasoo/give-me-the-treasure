@@ -35,18 +35,16 @@ public class MainMenuController {
     private Node cachedRulebookPanel;
 
     @FXML
-    private void onPlayerVsPlayBot() {
-        startOfflineGame(false);
+    private void onStartGame() {
+        try {
+            GameApp.get().showLobby();
+        } catch (IOException ignored) {
+        }
     }
 
     @FXML
-    private void onPlayerVsTestBot() {
-        startOfflineGame(true);
-    }
-
-    @FXML
-    private void onNetworkBattle() {
-        showNetworkLobby();
+    private void onJoinGame() {
+        showJoinInput();
     }
 
     @FXML
@@ -72,15 +70,7 @@ public class MainMenuController {
         menuOverlay.setPickOnBounds(false);
     }
 
-    private void startOfflineGame(boolean testBot) {
-        GameConfig config = testBot ? GameConfig.practice(true) : GameConfig.standard(true);
-        try {
-            GameApp.get().showGameBoard(config, testBot);
-        } catch (IOException ignored) {
-        }
-    }
-
-    // ── 네트워크 로비 ────────────────────────────────────────────────
+    // ── 네트워크 로비 (접속하기 — 2단계에서 대기실과 연동) ───────────────
 
     private void showNetworkLobby() {
         VBox panel = lobbyPanel();

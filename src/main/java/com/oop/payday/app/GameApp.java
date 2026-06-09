@@ -6,6 +6,7 @@ import java.util.Objects;
 
 import com.oop.payday.controller.GameBoardController;
 import com.oop.payday.game.GameConfig;
+import com.oop.payday.game.MatchSetup;
 import com.oop.payday.net.ClientMirror;
 import com.oop.payday.net.GameClient;
 import com.oop.payday.net.GameServer;
@@ -65,12 +66,17 @@ public class GameApp extends Application {
         applyScene(load(fxmlFile).getRoot());
     }
 
-    /** 게임 보드 화면으로 전환하고 게임을 시작한다 (오프라인). */
-    public void showGameBoard(GameConfig config, boolean testBot) throws IOException {
+    /** 대기실 화면으로 전환한다. */
+    public void showLobby() throws IOException {
+        showScene("lobby.fxml");
+    }
+
+    /** 게임 보드 화면으로 전환하고 대기실 구성대로 게임을 시작한다 (오프라인). */
+    public void showGameBoard(MatchSetup setup) throws IOException {
         FXMLLoader loader = load("game_board.fxml");
         applyScene(loader.getRoot());
         GameBoardController controller = loader.getController();
-        controller.startGame(config, testBot);
+        controller.startGame(setup);
     }
 
     /** 게임 보드 화면으로 전환하고 호스트 모드 게임을 시작한다. */

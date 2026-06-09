@@ -1,11 +1,13 @@
 package com.oop.payday.bot;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
+import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
 
@@ -26,6 +28,35 @@ public interface BotStrategy {
 
     /** 분배: 두 묶음 중 가져갈 인덱스(0 또는 1). */
     int decideChoice(ChoiceView view);
+
+    /**
+     * 분배(다인 팀): 팀이 가져간 카드({@code acquired})를 팀원끼리 나눈다(규칙서 §6-2-4).
+     * {@code memberHoldings.get(i)} 는 i번째 멤버(0 = 리더)의 현재 보관 카드다.
+     * 반환의 {@code byMember.get(i)} 는 그 멤버에게 새로 배정할 {@code acquired} 카드들이다.
+     *
+     * <p>기본 구현은 보관 수가 가장 적은 멤버에게 한 장씩 배분하는 균형 분배다(보유 한도
+     * 초과 강제 처분을 피하고 멤버도 환금에 참여하게 함). 1v1은 이 메서드를 호출하지 않는다.
+     */
+    default TeamDistribution decideTeamDistribution(List<Card> acquired, List<List<Card>> memberHoldings) {
+        int n = memberHoldings.size();
+        List<List<Card>> byMember = new ArrayList<>();
+        int[] counts = new int[n];
+        for (int i = 0; i < n; i++) {
+            byMember.add(new ArrayList<>());
+            counts[i] = memberHoldings.get(i).size();
+        }
+        for (Card card : acquired) {
+            int target = 0;
+            for (int i = 1; i < n; i++) {
+                if (counts[i] < counts[target]) {
+                    target = i;
+                }
+            }
+            byMember.get(target).add(card);
+            counts[target]++;
+        }
+        return new TeamDistribution(byMember);
+    }
 
     /** 준비: 도우미 후보 중 사용할 카드를 고른다. */
     List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount);

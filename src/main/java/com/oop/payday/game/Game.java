@@ -21,6 +21,7 @@ import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
+import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.model.Deck;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.card.CursedCard;
@@ -167,15 +168,39 @@ public final class Game {
         List<Card> chosen = index == 0 ? bundleA : bundleB;
         List<Card> other = index == 0 ? bundleB : bundleA;
 
-        // 1v1: 각 팀 대표가 가져간 카드를 모두 보관. (다인 팀 내 분배는 추후)
         listener.onDistributed(index, chooseTeam, chosen, splitTeam, other);
 
-        chooseTeam.leader().receiveAll(chosen);
-        splitTeam.leader().receiveAll(other);
+        // 가져간 카드를 팀원끼리 나눠 보관하고, 슬쩍하기가 있으면 즉시 처리(규칙서 §6-2).
+        distributeWithinTeam(chooseTeam, chosen);
+        distributeWithinTeam(splitTeam, other);
+    }
 
-        // 가져간 카드 중 슬쩍하기가 있으면 즉시 처리(규칙서 §6-2).
-        handleSteal(chooseTeam.leader(), chosen);
-        handleSteal(splitTeam.leader(), other);
+    /**
+     * 가져간 카드를 팀원끼리 나눠 각자 보관영역에 넣는다(규칙서 §6-2-4).
+     * 1인 팀은 리더가 모두 보관(1v1 동작과 동일). 다인 팀은 리더가 분배를 결정한다.
+     * 슬쩍하기는 카드를 실제로 배정받은 멤버 기준으로 즉시 처리한다(규칙서 §6-2-3).
+     */
+    private void distributeWithinTeam(Team team, List<Card> acquired) {
+        List<Player> members = team.members();
+        if (members.size() == 1) {
+            Player leader = members.get(0);
+            leader.receiveAll(acquired);
+            handleSteal(leader, acquired);
+            return;
+        }
+        Player leader = team.leader();
+        listener.onRequestTeamDistribution(leader, team, acquired);
+        TeamDistribution decided = leader.decideTeamDistribution(acquired, members);
+        TeamDistribution distribution = decided.isValid(acquired, members.size())
+                ? decided
+                : TeamDistribution.leaderTakesAll(acquired, members.size());
+        for (int i = 0; i < members.size(); i++) {
+            members.get(i).receiveAll(distribution.byMember().get(i));
+        }
+        listener.awaitAnimations();
+        for (int i = 0; i < members.size(); i++) {
+            handleSteal(members.get(i), distribution.byMember().get(i));
+        }
     }
 
     private void handleSteal(Player player, List<Card> takenCards) {
@@ -558,17 +583,31 @@ public final class Game {
                     results[1] = chooseLeader.decideHelpers(optionsChoose, 2);
                 }));
 
-        // 검증·등록 (게임 스레드, 순차)
-        applyHelperSelection(splitLeader, optionsSplit, results[0]);
-        applyHelperSelection(chooseLeader, optionsChoose, results[1]);
+        // 검증·등록 (게임 스레드, 순차). 다인 팀이면 리더·멤버가 1장씩 나눠 갖는다(규칙서 §4-3).
+        applyHelperSelectionToTeam(splitTeam, optionsSplit, results[0]);
+        applyHelperSelectionToTeam(chooseTeam, optionsChoose, results[1]);
     }
 
-    private void applyHelperSelection(Player player, List<HelperCard> options, List<HelperCard> selected) {
+    /**
+     * 리더가 고른 도우미 2장을 팀에 등록한다(규칙서 §4-3).
+     * 1인 팀은 리더가 2장 모두, 2인 팀은 리더·멤버가 1장씩 나눠 갖는다.
+     */
+    private void applyHelperSelectionToTeam(Team team, List<HelperCard> options, List<HelperCard> selected) {
         if (!isValidHelperSelection(options, selected, 2)) {
             selected = options.subList(0, Math.min(2, options.size()));
         }
-        player.receiveHelpers(selected);
-        listener.onPlayerSetup(player);
+        List<Player> members = team.members();
+        if (members.size() == 1) {
+            members.get(0).receiveHelpers(selected);
+            listener.onPlayerSetup(members.get(0));
+            return;
+        }
+        for (int i = 0; i < members.size(); i++) {
+            if (i < selected.size()) {
+                members.get(i).receiveHelpers(List.of(selected.get(i)));
+            }
+            listener.onPlayerSetup(members.get(i));
+        }
     }
 
     /** 태스크 목록을 가상 스레드로 동시 실행하고 전부 완료될 때까지 블록(join 배리어). */

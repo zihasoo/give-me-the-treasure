@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.SplitDecision;
+import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
 import com.oop.payday.net.GameClient;
@@ -36,6 +37,11 @@ public final class NetworkInputGateway implements InputGateway {
     @Override
     public void provideHelpers(List<HelperCard> helpers) {
         send(new NetMessage.HelpersDecision(requestId(), helpers.stream().map(HelperCard::id).toList()));
+    }
+
+    @Override
+    public void provideDistribution(TeamDistribution distribution) {
+        // 2단계 네트워크에서 구현. 현재 클라이언트는 다인 팀 내 분배를 수행하지 않는다.
     }
 
     @Override

@@ -37,6 +37,14 @@ public interface GameListener {
             Team splitTeam, List<Card> splitCards) {
     }
 
+    /**
+     * 분배(다인 팀): {@code leader} 가 가져간 카드를 팀원끼리 나눠야 한다(규칙서 §6-2-4).
+     * 구현체(UI)는 분배 패널을 띄우고, 완료 시 {@code HumanPlayer.provideDistribution} 으로 결과를 돌려준다.
+     * 봇·헤드리스·1인 팀에선 무시해도 된다.
+     */
+    default void onRequestTeamDistribution(Player leader, Team team, List<Card> acquired) {
+    }
+
     default void onCashIn(Player player, TreasureSet set) {
     }
 

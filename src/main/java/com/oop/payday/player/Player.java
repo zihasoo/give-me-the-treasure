@@ -9,6 +9,7 @@ import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
+import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
 import com.oop.payday.model.officer.OfficerTile;
@@ -124,6 +125,14 @@ public abstract class Player {
 
     /** 분배: 두 묶음 중 가져갈 묶음의 인덱스(0 또는 1)를 고른다. */
     public abstract int decideChoice(ChoiceView view);
+
+    /**
+     * 분배(다인 팀): 팀이 가져간 카드를 팀원끼리 나눈다(규칙서 §6-2-4). 1인 팀은 호출되지 않는다.
+     * 기본 구현은 리더 독식이며, 사람·봇은 오버라이드해 실제 분배를 돌려준다.
+     */
+    public TeamDistribution decideTeamDistribution(List<Card> acquired, List<Player> members) {
+        return TeamDistribution.leaderTakesAll(acquired, members.size());
+    }
 
     /** 게임 준비: 받은 도우미 후보 중 사용할 카드를 고른다. */
     public abstract List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount);

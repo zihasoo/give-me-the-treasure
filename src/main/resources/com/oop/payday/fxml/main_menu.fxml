@@ -27,11 +27,9 @@
                     <children>
                         <Label styleClass="menu-section" text="게임 모드" />
                         <Button maxWidth="Infinity" styleClass="menu-mode-button"
-                                text="플레이 봇과 대전" onAction="#onPlayerVsPlayBot" />
+                                text="게임 시작" onAction="#onStartGame" />
                         <Button maxWidth="Infinity" styleClass="menu-mode-button"
-                                text="테스트 봇과 대전" onAction="#onPlayerVsTestBot" />
-                        <Button maxWidth="Infinity" styleClass="menu-mode-button"
-                                text="네트워크 대전" onAction="#onNetworkBattle" />
+                                text="접속하기" onAction="#onJoinGame" />
                     </children>
                 </VBox>
 

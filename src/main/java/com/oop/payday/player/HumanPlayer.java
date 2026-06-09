@@ -8,6 +8,7 @@ import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
+import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
 
@@ -23,6 +24,7 @@ public final class HumanPlayer extends Player {
     private final SynchronousQueue<SplitDecision> splitChannel = new SynchronousQueue<>();
     private final SynchronousQueue<Integer> choiceChannel = new SynchronousQueue<>();
     private final SynchronousQueue<List<HelperCard>> helperChannel = new SynchronousQueue<>();
+    private final SynchronousQueue<TeamDistribution> distributionChannel = new SynchronousQueue<>();
 
     // 환금 제출 창구. 게임 스레드가 beginCashIn 에서 설정하고, UI 스레드가 submitCash/passCash 로 사용.
     private volatile CashSink cashSink;
@@ -44,6 +46,11 @@ public final class HumanPlayer extends Player {
     @Override
     public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount) {
         return take(helperChannel);
+    }
+
+    @Override
+    public TeamDistribution decideTeamDistribution(List<Card> acquired, List<Player> members) {
+        return take(distributionChannel);
     }
 
     @Override
@@ -69,6 +76,10 @@ public final class HumanPlayer extends Player {
 
     public void provideHelpers(List<HelperCard> helpers) {
         put(helperChannel, helpers);
+    }
+
+    public void provideDistribution(TeamDistribution distribution) {
+        put(distributionChannel, distribution);
     }
 
     /** UI 스레드: 환금 행동 한 건을 제출한다. */
