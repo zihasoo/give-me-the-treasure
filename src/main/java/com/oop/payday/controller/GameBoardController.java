@@ -318,7 +318,7 @@ public final class GameBoardController implements GameListener, Initializable {
                     humanRef[0] = h;
                     players.add(h);
                 }
-                case BOT -> players.add(BotPlayer.play(slot.botKind().create()));
+                case BOT -> players.add(BotPlayer.play(slot.botKind().create(), slot.name()));
                 case REMOTE -> players.add(new NetworkPlayer(slot.name())); // 2단계 네트워크
                 case EMPTY -> { /* 빈 자리는 게임에서 제외 */ }
             }
@@ -579,7 +579,19 @@ public final class GameBoardController implements GameListener, Initializable {
 
     @Override
     public void onGameSetup(List<Player> players) {
-        Platform.runLater(() -> enqueueOverlay(() -> animator.playOfficerSetup(players)));
+        Platform.runLater(() -> {
+            // 팀 대 팀 구도로 보여주기 위해 우리 팀(teamA)/상대 팀(teamB)으로 나눈다.
+            List<Player> myMembers = new ArrayList<>();
+            List<Player> oppMembers = new ArrayList<>();
+            for (Player p : players) {
+                if (teamA != null && teamA.members().contains(p)) {
+                    myMembers.add(p);
+                } else {
+                    oppMembers.add(p);
+                }
+            }
+            enqueueOverlay(() -> animator.playOfficerSetup(oppMembers, myMembers));
+        });
     }
 
     @Override
@@ -1133,18 +1145,18 @@ public final class GameBoardController implements GameListener, Initializable {
 
         VBox root = panelRoot("가져온 카드를 팀원과 나눠 가지세요. 카드를 눌러 보관할 사람을 바꿉니다.");
 
-        FlowPane cardRow = new FlowPane(10, 10);
+        FlowPane cardRow = new FlowPane(14, 10);
         cardRow.setAlignment(Pos.CENTER);
         for (Card card : acquired) {
-            VBox cell = new VBox(4);
+            VBox cell = new VBox(6);
             cell.setAlignment(Pos.CENTER);
             CardView cardView = new CardView(card, true);
-            Label owner = new Label(members.get(assign.get(card)).name());
-            owner.getStyleClass().add("distribution-owner");
+            Label owner = new Label();
+            applyOwnerLabel(owner, members.get(assign.get(card)));
             cardView.setOnMouseClicked(e -> {
                 int next = (assign.get(card) + 1) % members.size();
                 assign.put(card, next);
-                owner.setText(members.get(next).name());
+                applyOwnerLabel(owner, members.get(next));
             });
             cell.getChildren().addAll(cardView, owner);
             cardRow.getChildren().add(cell);
@@ -1152,7 +1164,16 @@ public final class GameBoardController implements GameListener, Initializable {
 
         Button confirm = new Button("분배 확정");
         confirm.getStyleClass().add("menu-button");
+        boolean[] submitted = {false};
         confirm.setOnAction(e -> {
+            // 결정은 FX 스레드에서 SynchronousQueue.put 으로 게임 스레드에 넘긴다. 중복 클릭하면
+            // 두 번째 put 이 받는 쪽 없이 FX 스레드를 영원히 막아 화면이 멈춘다 → 한 번만 제출하도록 막는다.
+            if (submitted[0]) {
+                return;
+            }
+            submitted[0] = true;
+            confirm.setDisable(true);
+            cardRow.setDisable(true);
             List<List<Card>> byMember = new ArrayList<>();
             for (int i = 0; i < members.size(); i++) {
                 byMember.add(new ArrayList<>());
@@ -1169,7 +1190,27 @@ public final class GameBoardController implements GameListener, Initializable {
         return root;
     }
 
+    /** 분배 패널의 보관자 라벨을 갱신한다. 내(로컬) 카드면 강조 스타일을 입힌다. */
+    private void applyOwnerLabel(Label label, Player owner) {
+        label.setText(owner.name() + (isLocalActor(owner) ? " (나)" : ""));
+        label.getStyleClass().setAll("distribution-owner");
+        if (isLocalActor(owner)) {
+            label.getStyleClass().add("distribution-owner-mine");
+        }
+    }
+
     private Node buildHelperSelectionPanel(List<HelperCard> options, int chooseCount) {
+        Team myTeam = teamFor(localPlayer);
+        Player teammate = myTeam == null ? null : teammateOf(myTeam, localPlayer);
+        // 2인 팀 리더는 고르는 동시에 나/팀원 배정까지 한 패널에서 끝낸다(규칙 §4-3).
+        if (teammate != null && chooseCount == 2) {
+            return buildHelperSelectAndAssignPanel(options, teammate);
+        }
+        return buildHelperSelectOnlyPanel(options, chooseCount);
+    }
+
+    /** 1인 팀(또는 1장 선택): 후보 중 {@code chooseCount} 장만 고른다. */
+    private Node buildHelperSelectOnlyPanel(List<HelperCard> options, int chooseCount) {
         VBox root = panelRoot("도우미 후보 3장 중 " + chooseCount + "장을 선택하세요.");
 
         List<ToggleButton> toggles = new ArrayList<>();
@@ -1204,6 +1245,7 @@ public final class GameBoardController implements GameListener, Initializable {
 
         Button done = new Button("선택 완료");
         done.getStyleClass().add("menu-button");
+        boolean[] submitted = {false};
         done.setOnAction(e -> {
             List<HelperCard> selected = toggles.stream()
                     .filter(ToggleButton::isSelected)
@@ -1213,12 +1255,146 @@ public final class GameBoardController implements GameListener, Initializable {
                 alert(chooseCount + "장을 선택하세요.");
                 return;
             }
+            // 중복 클릭(FX 스레드 put 교착) 방지.
+            if (submitted[0]) {
+                return;
+            }
+            submitted[0] = true;
+            done.setDisable(true);
             setWaiting("상대가 도우미를 선택 중입니다");
             inputGateway.provideHelpers(selected);
         });
 
         root.getChildren().addAll(row, done);
         return root;
+    }
+
+    /**
+     * 2인 팀 리더용: 후보 3장 중 2장을 고르면서 동시에 나/팀원에게 배정한다(규칙 §4-3).
+     * 카드를 누르면 미선택 → 나 → 팀원 순으로 순환한다. 같은 역할은 한 장만 가질 수 있고,
+     * "나" 1장 + "팀원" 1장이 되면 제출 가능. 제출 순서 [나, 팀원] → 엔진이 리더(=나)·멤버(=팀원)에 매핑.
+     */
+    private Node buildHelperSelectAndAssignPanel(List<HelperCard> options, Player teammate) {
+        final int NONE = 0, MINE = 1, MATE = 2;
+        VBox root = panelRoot("후보 3장 중 2장을 골라 팀과 나누세요. "
+                + "카드를 누르면 배정되고, 다시 누르면 역할(나 ↔ " + teammate.name() + ")이 바뀝니다.");
+
+        Map<HelperCard, Integer> state = new HashMap<>();
+        Map<HelperCard, Node> cardOf = new HashMap<>();
+        Map<HelperCard, Label> badgeOf = new HashMap<>();
+
+        FlowPane row = new FlowPane(12, 12);
+        row.setAlignment(Pos.CENTER);
+        row.getStyleClass().add("helper-grid");
+        row.setPrefWrapLength(860);
+
+        Button done = new Button("선택 완료");
+        done.getStyleClass().add("menu-button");
+        done.setDisable(true);
+
+        Runnable refresh = () -> {
+            long mine = options.stream().filter(h -> state.get(h) == MINE).count();
+            long mate = options.stream().filter(h -> state.get(h) == MATE).count();
+            for (HelperCard h : options) {
+                int s = state.get(h);
+                Node card = cardOf.get(h);
+                Label badge = badgeOf.get(h);
+                card.getStyleClass().removeAll("helper-pick-mine", "helper-pick-mate");
+                badge.getStyleClass().removeAll("helper-pick-badge-mine", "helper-pick-badge-mate");
+                if (s == MINE) {
+                    card.getStyleClass().add("helper-pick-mine");
+                    badge.getStyleClass().add("helper-pick-badge-mine");
+                    badge.setText("나");
+                } else if (s == MATE) {
+                    card.getStyleClass().add("helper-pick-mate");
+                    badge.getStyleClass().add("helper-pick-badge-mate");
+                    badge.setText(teammate.name());
+                } else {
+                    badge.setText("미선택");
+                }
+            }
+            done.setDisable(!(mine == 1 && mate == 1));
+        };
+
+        for (HelperCard helper : options) {
+            state.put(helper, NONE);
+
+            Label badge = new Label("미선택");
+            badge.getStyleClass().add("helper-pick-badge");
+            badgeOf.put(helper, badge);
+
+            Label nameLbl = new Label(helper.displayName());
+            nameLbl.getStyleClass().add("helper-button-name");
+            nameLbl.setWrapText(true);
+            nameLbl.setMaxWidth(220);
+
+            Label descLbl = new Label(helper.effectText());
+            descLbl.getStyleClass().add("helper-button-desc");
+            descLbl.setWrapText(true);
+            descLbl.setMaxWidth(220);
+
+            VBox content = new VBox(6, badge, nameLbl, descLbl);
+            content.setAlignment(Pos.CENTER);
+
+            StackPane card = new StackPane(content);
+            card.getStyleClass().addAll("helper-button", "helper-pick-card");
+            card.setPrefWidth(250);
+            card.setPrefHeight(150);
+            card.setOnMouseClicked(e -> {
+                int cur = state.get(helper);
+                int next;
+                if (cur == NONE) {
+                    // 미선택 카드는 아직 비어 있는 역할(나 우선, 없으면 팀원)에 배정 →
+                    // 두 카드를 한 번씩만 눌러도 나·팀원 배정이 끝난다.
+                    boolean hasMine = options.stream().anyMatch(h -> state.get(h) == MINE);
+                    boolean hasMate = options.stream().anyMatch(h -> state.get(h) == MATE);
+                    next = !hasMine ? MINE : (!hasMate ? MATE : MINE);
+                } else if (cur == MINE) {
+                    next = MATE;    // 다시 누르면 역할 전환
+                } else {
+                    next = NONE;    // 한 바퀴 돌면 해제
+                }
+                // 같은 역할(나/팀원)은 한 장만: 다른 카드가 이미 그 역할이면 비운다.
+                if (next == MINE || next == MATE) {
+                    for (HelperCard other : options) {
+                        if (other != helper && state.get(other) == next) {
+                            state.put(other, NONE);
+                        }
+                    }
+                }
+                state.put(helper, next);
+                refresh.run();
+            });
+            cardOf.put(helper, card);
+            row.getChildren().add(card);
+        }
+        refresh.run();
+
+        boolean[] submitted = {false};
+        done.setOnAction(e -> {
+            HelperCard mine = options.stream().filter(h -> state.get(h) == MINE).findFirst().orElse(null);
+            HelperCard mate = options.stream().filter(h -> state.get(h) == MATE).findFirst().orElse(null);
+            if (mine == null || mate == null || submitted[0]) {     // done은 유효할 때만 켜지지만 방어
+                return;
+            }
+            submitted[0] = true;
+            done.setDisable(true);
+            setWaiting("상대가 도우미를 선택 중입니다");
+            inputGateway.provideHelpers(List.of(mine, mate));   // [나, 팀원]
+        });
+
+        root.getChildren().addAll(row, done);
+        return root;
+    }
+
+    /** 같은 팀에서 나를 제외한 다른 멤버(2인 팀의 팀원). 없으면 null. */
+    private Player teammateOf(Team team, Player me) {
+        for (Player p : team.members()) {
+            if (p != me) {
+                return p;
+            }
+        }
+        return null;
     }
 
     /** 환금 행동 한 건을 큐에 제출한다. onCashTurn 콜백이 패널을 증분 갱신한다. */
@@ -1993,9 +2169,10 @@ public final class GameBoardController implements GameListener, Initializable {
     private void renderSidebarHelpers(VBox target, List<Player> members) {
         target.getChildren().clear();
         for (Player member : members) {
-            boolean local = isLocalActor(member);
+            // 우리 팀(아군)의 도우미는 항상 공개한다. 상대 팀은 사용 완료된 것만 공개.
+            boolean ally = isAlly(member);
             for (HelperCard helper : member.helpers()) {
-                boolean faceUp = local || helper.isUsed();
+                boolean faceUp = ally || helper.isUsed();
                 target.getChildren().add(buildSidebarHelperCard(helper, faceUp));
             }
         }
@@ -2062,6 +2239,11 @@ public final class GameBoardController implements GameListener, Initializable {
 
     private boolean isLocalActor(Player player) {
         return player != null && player == localPlayer;
+    }
+
+    /** 로컬 플레이어와 같은 팀(우리 팀 = teamA)인지. 아군 도우미·분배 표시 판정에 쓴다. */
+    private boolean isAlly(Player player) {
+        return player != null && teamA != null && teamA.members().contains(player);
     }
 
     private void playCoinChangeAnimation(Team team, int delta) {

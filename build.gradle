@@ -20,8 +20,13 @@ javafx {
 
 application {
     mainClass = 'com.oop.payday.Main'
-    // JavaFX 21 을 Java 25 에서 실행할 때 뜨는 네이티브 접근 경고 억제.
-    applicationDefaultJvmArgs = ['--enable-native-access=javafx.graphics']
+    applicationDefaultJvmArgs = [
+        // JavaFX 21 을 Java 25 에서 실행할 때 뜨는 네이티브 접근 경고 억제.
+        '--enable-native-access=javafx.graphics',
+        // Windows 콘솔(cp949)에서 한글 로그가 깨지지 않도록 표준 출력/오류 인코딩을 UTF-8 로.
+        '-Dstdout.encoding=UTF-8',
+        '-Dstderr.encoding=UTF-8'
+    ]
 }
 
 repositories {

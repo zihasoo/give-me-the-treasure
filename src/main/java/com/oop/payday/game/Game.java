@@ -110,8 +110,9 @@ public final class Game {
                 }
                 swapRoles();
             }
-        } catch (NetworkDisconnectedException e) {
-            // 상대 연결이 끊겨 게임 스레드를 조용히 종료한다. 연결 해제 안내는 컨트롤러가 표시한다.
+        } catch (NetworkDisconnectedException | GameAbortedException e) {
+            // 상대 연결 해제(네트워크) 또는 재시작·나가기 중단 — 게임 스레드를 조용히 종료한다.
+            // 연결 해제 안내는 컨트롤러가 표시하고, 재시작·나가기는 새 게임/메뉴로 이미 전환된 상태다.
         }
     }
 
@@ -178,31 +179,62 @@ public final class Game {
     /**
      * 가져간 카드를 팀원끼리 나눠 각자 보관영역에 넣는다(규칙서 §6-2-4).
      * 1인 팀은 리더가 모두 보관(1v1 동작과 동일). 다인 팀은 리더가 분배를 결정한다.
-     * 슬쩍하기는 카드를 실제로 배정받은 멤버 기준으로 즉시 처리한다(규칙서 §6-2-3).
+     *
+     * <p>슬쩍하기는 <b>묶음을 가져온 즉시</b>(분배 전) 해소한다(규칙서 §6-2-3) →
+     * 팀원은 슬쩍하기가 아닌 대체된 실제 카드를 나눠 갖게 된다.
      */
     private void distributeWithinTeam(Team team, List<Card> acquired) {
+        List<Card> cards = resolveBundleSteals(team, acquired);
+
         List<Player> members = team.members();
         if (members.size() == 1) {
-            Player leader = members.get(0);
-            leader.receiveAll(acquired);
-            handleSteal(leader, acquired);
+            members.get(0).receiveAll(cards);
             return;
         }
         Player leader = team.leader();
-        listener.onRequestTeamDistribution(leader, team, acquired);
-        TeamDistribution decided = leader.decideTeamDistribution(acquired, members);
-        TeamDistribution distribution = decided.isValid(acquired, members.size())
+        listener.onRequestTeamDistribution(leader, team, cards);
+        TeamDistribution decided = leader.decideTeamDistribution(cards, members);
+        TeamDistribution distribution = decided.isValid(cards, members.size())
                 ? decided
-                : TeamDistribution.leaderTakesAll(acquired, members.size());
+                : TeamDistribution.leaderTakesAll(cards, members.size());
         for (int i = 0; i < members.size(); i++) {
             members.get(i).receiveAll(distribution.byMember().get(i));
         }
         listener.awaitAnimations();
-        for (int i = 0; i < members.size(); i++) {
-            handleSteal(members.get(i), distribution.byMember().get(i));
+    }
+
+    /**
+     * 가져온 묶음의 슬쩍하기를 즉시 처리해 대체 카드로 바꾼 새 묶음을 돌려준다(규칙서 §6-2-3).
+     * 슬쩍하기는 누구의 보관 영역에도 들어가기 전, 묶음 단위로 버리고 더미를 섞어 새 카드를 뽑는다.
+     * 연출에서는 팀 리더가 발동한 것으로 표시한다.
+     */
+    private List<Card> resolveBundleSteals(Team team, List<Card> acquired) {
+        Player actor = team.leader();
+        List<Card> result = new ArrayList<>();
+        for (Card card : acquired) {
+            if (card instanceof StealCard steal) {
+                drawStealReplacement(actor, steal, result);
+            } else {
+                result.add(card);
+            }
+        }
+        return result;
+    }
+
+    /** 슬쩍하기 한 장을 버리고 더미를 섞어 대체 카드를 뽑아 묶음에 더한다. 뽑은 게 또 슬쩍하기면 재귀. */
+    private void drawStealReplacement(Player actor, StealCard steal, List<Card> bundle) {
+        deck.absorbDiscardWith(steal);
+        Card drawn = deck.draw();
+        listener.onStealActivated(actor, drawn);
+        listener.awaitAnimations();
+        if (drawn instanceof StealCard nextSteal) {
+            drawStealReplacement(actor, nextSteal, bundle);
+        } else if (drawn != null) {
+            bundle.add(drawn);
         }
     }
 
+    /** 도우미 효과 등으로 보관 영역에 들어온 슬쩍하기를 처리한다(환금 단계). */
     private void handleSteal(Player player, List<Card> takenCards) {
         for (Card card : takenCards) {
             if (card instanceof StealCard steal) {
@@ -623,7 +655,8 @@ public final class Game {
                     throw new RuntimeException("동시 실행 중 오류", cause);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new RuntimeException("동시 실행 중 인터럽트", e);
+                    // 재시작·나가기로 게임 스레드가 인터럽트됨 → play 가 잡아 조용히 종료.
+                    throw new GameAbortedException();
                 }
             }
         }

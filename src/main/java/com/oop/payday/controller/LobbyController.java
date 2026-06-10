@@ -39,7 +39,6 @@ public final class LobbyController implements Initializable {
     @FXML private VBox teamBBox;
 
     private final MatchSetup setup = MatchSetup.defaultSetup();
-    private int botCounter = 2; // defaultSetup 이 "봇 1" 을 쓰므로 다음 봇은 2번부터.
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -50,8 +49,22 @@ public final class LobbyController implements Initializable {
     }
 
     private void renderTeams() {
+        renumberBots();
         renderTeam(teamABox, setup.teamA(), "우리 팀 (방장)", true);
         renderTeam(teamBBox, setup.teamB(), "상대 팀", false);
+    }
+
+    /** 두 팀의 봇을 순서대로 훑어 "봇 1, 봇 2…"로 다시 매긴다. 삭제해도 번호에 구멍이 안 생긴다. */
+    private void renumberBots() {
+        int n = 1;
+        for (List<MatchSetup.Slot> team : List.of(setup.teamA(), setup.teamB())) {
+            for (int i = 0; i < team.size(); i++) {
+                MatchSetup.Slot slot = team.get(i);
+                if (slot.kind() == MatchSetup.SlotKind.BOT) {
+                    team.set(i, MatchSetup.Slot.bot(slot.botKind(), "봇 " + n++));
+                }
+            }
+        }
     }
 
     private void renderTeam(VBox box, List<MatchSetup.Slot> slots, String title, boolean isTeamA) {
@@ -66,10 +79,10 @@ public final class LobbyController implements Initializable {
 
         if (slots.size() < MatchSetup.MAX_TEAM_SIZE) {
             Button addBot = new Button("+ 봇 추가");
-            addBot.getStyleClass().add("menu-button");
+            addBot.getStyleClass().add("lobby-add-button");
             addBot.setMaxWidth(Double.MAX_VALUE);
             addBot.setOnAction(e -> {
-                slots.add(MatchSetup.Slot.bot(BotKind.SMART, "봇 " + botCounter++));
+                slots.add(MatchSetup.Slot.bot(BotKind.SMART, "봇")); // 번호는 renumberBots 가 매김
                 renderTeams();
             });
             box.getChildren().add(addBot);
@@ -81,6 +94,9 @@ public final class LobbyController implements Initializable {
         HBox row = new HBox(8);
         row.setAlignment(Pos.CENTER_LEFT);
         row.getStyleClass().add("lobby-slot");
+        // 모든 행이 팀 박스 폭을 꽉 채우게 해, 라벨 행과 드롭다운 행의 폭이 같아지도록 한다
+        // (봇을 추가/제거해도 가로 레이아웃이 흔들리지 않음).
+        row.setMaxWidth(Double.MAX_VALUE);
 
         if (slot.kind() == MatchSetup.SlotKind.HUMAN_LOCAL) {
             Label me = new Label("👑 " + slot.name() + " (나)");
@@ -92,9 +108,11 @@ public final class LobbyController implements Initializable {
         }
 
         Label tag = new Label(slot.name());
-        tag.setMinWidth(60);
+        tag.getStyleClass().add("lobby-slot-tag");
+        tag.setMinWidth(70);
 
         ComboBox<BotKind> strategy = new ComboBox<>();
+        strategy.getStyleClass().add("lobby-combo");
         strategy.getItems().setAll(BotKind.values());
         strategy.setValue(slot.botKind() != null ? slot.botKind() : BotKind.SMART);
         strategy.setConverter(botKindConverter());
@@ -103,9 +121,10 @@ public final class LobbyController implements Initializable {
         strategy.setOnAction(e -> slots.set(index, MatchSetup.Slot.bot(strategy.getValue(), slot.name())));
         HBox.setHgrow(strategy, Priority.ALWAYS);
         strategy.setMaxWidth(Double.MAX_VALUE);
+        strategy.setPrefHeight(38);
 
         Button remove = new Button("제거");
-        remove.getStyleClass().add("menu-button");
+        remove.getStyleClass().add("lobby-remove-button");
         // 활성 인원이 최소 1명은 남아야 한다.
         remove.setDisable(setup.activeCount(slots) <= 1);
         remove.setOnAction(e -> {

@@ -9,6 +9,7 @@ import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
+import com.oop.payday.game.GameAbortedException;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
 
@@ -97,7 +98,8 @@ public final class HumanPlayer extends Player {
             return channel.take();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("의사결정 대기 중 인터럽트됨", e);
+            // 재시작·나가기로 게임 스레드가 인터럽트됨 → 게임 루프(play)가 잡아 조용히 종료한다.
+            throw new GameAbortedException();
         }
     }
 

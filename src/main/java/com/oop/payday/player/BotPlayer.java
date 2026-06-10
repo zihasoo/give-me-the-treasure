@@ -50,7 +50,12 @@ public final class BotPlayer extends Player {
 
     /** 생각 시간 + 환금 이벤트 루프에서 행동 사이 사람 같은 텀이 있는 플레이용 봇. */
     public static BotPlayer play(BotStrategy strategy) {
-        return new BotPlayer("봇", strategy, 2000, 4000, 850, 800, 1400);
+        return play(strategy, "봇");
+    }
+
+    /** 이름을 지정하는 플레이용 봇. 대기실에서 "봇 1", "봇 2" 처럼 구분된 이름을 그대로 인게임에 반영한다. */
+    public static BotPlayer play(BotStrategy strategy, String name) {
+        return new BotPlayer(name, strategy, 2000, 4000, 850, 800, 1400);
     }
 
     @Override

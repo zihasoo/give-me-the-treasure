@@ -12,9 +12,9 @@
            xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml/1"
            fx:controller="com.oop.payday.controller.LobbyController">
     <children>
-        <VBox alignment="TOP_CENTER" spacing="16.0" styleClass="menu-card" maxWidth="760.0" maxHeight="-Infinity">
+        <VBox alignment="TOP_CENTER" spacing="22.0" styleClass="menu-card" maxWidth="900.0" maxHeight="-Infinity">
             <children>
-                <VBox alignment="CENTER" spacing="2.0">
+                <VBox alignment="CENTER" spacing="4.0">
                     <children>
                         <Label styleClass="title" text="대기실" />
                         <Label fx:id="roomAddressLabel" styleClass="subtitle" />
@@ -25,16 +25,18 @@
 
                 <CheckBox fx:id="practiceCheck" text="연습 모드 (20코인 · 리더 효과 비활성)" />
 
-                <HBox spacing="24.0" alignment="TOP_CENTER">
+                <HBox spacing="28.0" alignment="TOP_CENTER">
                     <children>
-                        <VBox fx:id="teamABox" spacing="8.0" styleClass="lobby-team" minWidth="320.0" />
-                        <VBox fx:id="teamBBox" spacing="8.0" styleClass="lobby-team" minWidth="320.0" />
+                        <VBox fx:id="teamABox" spacing="10.0" styleClass="lobby-team"
+                              minWidth="380.0" prefWidth="380.0" maxWidth="380.0" />
+                        <VBox fx:id="teamBBox" spacing="10.0" styleClass="lobby-team"
+                              minWidth="380.0" prefWidth="380.0" maxWidth="380.0" />
                     </children>
                 </HBox>
 
                 <Region styleClass="menu-divider" maxWidth="Infinity" />
 
-                <HBox spacing="12.0" alignment="CENTER">
+                <HBox spacing="14.0" alignment="CENTER">
                     <children>
                         <Button text="뒤로" styleClass="menu-button" onAction="#onBack" />
                         <Button text="게임 시작" styleClass="menu-mode-button" onAction="#onStart" />

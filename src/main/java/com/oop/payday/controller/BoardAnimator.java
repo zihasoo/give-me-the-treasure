@@ -25,7 +25,6 @@ import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
-import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -190,13 +189,18 @@ final class BoardAnimator {
 
     // ===== 게임 시작 간부 애니메이션 =====
 
-    void playOfficerSetup(List<Player> players) {
-        final double CW = 124, CH = 176;
+    /**
+     * 간부 배정 연출을 팀 단위로 보여준다(상대 팀 위 / 우리 팀 아래).
+     * 같은 팀 카드는 한 줄에 가로로 늘어놓아 "팀 대 팀" 구도가 드러나게 한다.
+     * 뒤집기 순서는 상대 팀 먼저, 우리 팀(내 카드 포함) 나중이다.
+     */
+    void playOfficerSetup(List<Player> opponentMembers, List<Player> myMembers) {
+        final double CW = 116, CH = 166;
 
-        VBox panel = new VBox(20);
+        VBox panel = new VBox(14);
         panel.setAlignment(Pos.CENTER);
-        panel.setPadding(new Insets(32, 44, 32, 44));
-        panel.setMaxWidth(480);
+        panel.setPadding(new Insets(28, 40, 28, 40));
+        panel.setMaxWidth(660);
 
         Label title = new Label("간부 배정");
         title.getStyleClass().add("waiting-label");
@@ -204,58 +208,21 @@ final class BoardAnimator {
         Label sub = new Label("각 플레이어에게 간부가 배정되었습니다");
         sub.setStyle("-fx-text-fill: #8aa0a8; -fx-font-size: 13px;");
 
-        VBox cardsCol = new VBox(12);
-        cardsCol.setAlignment(Pos.CENTER_LEFT);
-        cardsCol.setMaxWidth(Double.MAX_VALUE);
-
         List<StackPane> containers = new ArrayList<>();
         List<Node> fronts = new ArrayList<>();
 
-        List<Player> ordered = players.stream()
-                .sorted(Comparator.comparingInt(p -> isLocalActor.test(p) ? 1 : 0))
-                .toList();
-        for (Player p : ordered) {
-            boolean local = isLocalActor.test(p);
+        // 상대 팀 먼저(위), 우리 팀 나중(아래) — containers/fronts 에 추가된 순서가 뒤집기 순서.
+        Node opponentGroup = buildOfficerTeamGroup("상대 팀", opponentMembers, false, CW, CH, containers, fronts);
+        Node myGroup = buildOfficerTeamGroup("우리 팀", myMembers, true, CW, CH, containers, fronts);
 
-            StackPane container = new StackPane(buildOfficerCardBack(CW, CH));
-            container.setPrefSize(CW, CH);
-            container.setMinSize(CW, CH);
-            container.setMaxSize(CW, CH);
+        Label vs = new Label("VS");
+        vs.setStyle("-fx-text-fill: #f2d36b; -fx-font-size: 20px; -fx-font-weight: bold;"
+            + " -fx-font-family: 'Book Antiqua','Malgun Gothic',serif;");
 
-            Label nameLabel = new Label(p.name());
-            nameLabel.setStyle("-fx-text-fill: " + (local ? "#f2d36b" : "#b9c8c2")
-                + "; -fx-font-size: 14px; -fx-font-weight: bold;");
-            HBox.setHgrow(nameLabel, Priority.ALWAYS);
-
-            Label badge = new Label(local ? "나" : "상대");
-            badge.setStyle("-fx-text-fill: " + (local ? "#101a1e" : "#8aa0a8")
-                + "; -fx-background-color: " + (local ? "#f2d36b" : "rgba(180,200,210,0.25)")
-                + "; -fx-background-radius: 4; -fx-font-size: 11px;"
-                + " -fx-font-weight: bold; -fx-padding: 1 6 1 6;");
-
-            HBox nameRow = new HBox(8, badge, nameLabel);
-            nameRow.setAlignment(Pos.CENTER_LEFT);
-
-            VBox nameCol = new VBox(4, nameRow);
-            nameCol.setAlignment(Pos.CENTER_LEFT);
-            HBox.setHgrow(nameCol, Priority.ALWAYS);
-
-            HBox row = new HBox(18, nameCol, container);
-            row.setAlignment(Pos.CENTER_LEFT);
-            row.setPadding(new Insets(12, 16, 12, 16));
-            row.setStyle("-fx-background-color: "
-                + (local ? "rgba(242,211,107,0.07)" : "rgba(255,255,255,0.04)")
-                + "; -fx-background-radius: 10; -fx-border-color: "
-                + (local ? "rgba(242,211,107,0.25)" : "rgba(255,255,255,0.08)")
-                + "; -fx-border-radius: 10; -fx-border-width: 1;");
-            row.setMaxWidth(Double.MAX_VALUE);
-
-            cardsCol.getChildren().add(row);
-            containers.add(container);
-            fronts.add(buildOfficerCardFront(p, CW, CH));
-        }
-
-        panel.getChildren().addAll(title, sub, cardsCol);
+        panel.getChildren().addAll(title, sub);
+        if (opponentGroup != null) panel.getChildren().add(opponentGroup);
+        panel.getChildren().add(vs);
+        if (myGroup != null) panel.getChildren().add(myGroup);
         StackPane.setAlignment(panel, Pos.CENTER);
         setCenter(panel);
 
@@ -263,12 +230,75 @@ final class BoardAnimator {
         seq.getChildren().add(new PauseTransition(Duration.millis(500)));
         for (int i = 0; i < containers.size(); i++) {
             seq.getChildren().add(buildCardFlip(containers.get(i), fronts.get(i)));
-            long afterPause = (i < containers.size() - 1) ? 1000 : 300;
+            long afterPause = (i < containers.size() - 1) ? 800 : 300;
             seq.getChildren().add(new PauseTransition(Duration.millis(afterPause)));
         }
         seq.getChildren().add(new PauseTransition(Duration.millis(2000)));
         seq.setOnFinished(e -> { clearCenter(); playNextOverlay(); });
         seq.play();
+    }
+
+    /** 한 팀의 간부 카드 줄(가로 배치 + 팀 배너)을 만든다. 멤버가 없으면 {@code null}. */
+    private Node buildOfficerTeamGroup(String teamName, List<Player> members, boolean isMyTeam,
+            double cw, double ch, List<StackPane> containers, List<Node> fronts) {
+        if (members == null || members.isEmpty()) {
+            return null;
+        }
+        HBox row = new HBox(16);
+        row.setAlignment(Pos.CENTER);
+        for (Player p : members) {
+            boolean local = isLocalActor.test(p);
+
+            StackPane container = new StackPane(buildOfficerCardBack(cw, ch));
+            container.setPrefSize(cw, ch);
+            container.setMinSize(cw, ch);
+            container.setMaxSize(cw, ch);
+
+            Label nameLabel = new Label(p.name());
+            nameLabel.setStyle("-fx-text-fill: " + (isMyTeam ? "#f2d36b" : "#b9c8c2")
+                + "; -fx-font-size: 14px; -fx-font-weight: bold;");
+
+            // 배지: 나 / 아군 / 상대 — 같은 팀(아군)은 우리 팀임이 드러나게 표기.
+            String badgeText = local ? "나" : (isMyTeam ? "아군" : "상대");
+            String badgeFill = local ? "#101a1e" : (isMyTeam ? "#91dfc0" : "#8aa0a8");
+            String badgeBg = local ? "#f2d36b"
+                : (isMyTeam ? "rgba(145,223,192,0.22)" : "rgba(180,200,210,0.22)");
+            Label badge = new Label(badgeText);
+            badge.setStyle("-fx-text-fill: " + badgeFill
+                + "; -fx-background-color: " + badgeBg
+                + "; -fx-background-radius: 4; -fx-font-size: 11px;"
+                + " -fx-font-weight: bold; -fx-padding: 1 6 1 6;");
+
+            HBox nameRow = new HBox(6, badge, nameLabel);
+            nameRow.setAlignment(Pos.CENTER);
+
+            VBox cell = new VBox(8, nameRow, container);
+            cell.setAlignment(Pos.CENTER);
+            cell.setPadding(new Insets(12, 14, 12, 14));
+            cell.setStyle("-fx-background-color: "
+                + (isMyTeam ? "rgba(242,211,107,0.07)" : "rgba(255,255,255,0.04)")
+                + "; -fx-background-radius: 12; -fx-border-color: "
+                + (isMyTeam ? "rgba(242,211,107,0.25)" : "rgba(255,255,255,0.08)")
+                + "; -fx-border-radius: 12; -fx-border-width: 1;");
+
+            row.getChildren().add(cell);
+            containers.add(container);
+            fronts.add(buildOfficerCardFront(p, cw, ch));
+        }
+
+        Label banner = new Label(teamName);
+        banner.setStyle("-fx-text-fill: " + (isMyTeam ? "#f2d36b" : "#8aa0a8")
+            + "; -fx-font-size: 13px; -fx-font-weight: bold;");
+
+        VBox group = new VBox(8);
+        group.setAlignment(Pos.CENTER);
+        // 상대 팀은 배너를 카드 위에, 우리 팀은 카드 아래에 둔다(보드의 상/하 구도와 일치).
+        if (isMyTeam) {
+            group.getChildren().addAll(row, banner);
+        } else {
+            group.getChildren().addAll(banner, row);
+        }
+        return group;
     }
 
     private Node buildOfficerCardBack(double w, double h) {
