@@ -28,23 +28,30 @@ public final class MatchSetup {
         EMPTY
     }
 
-    /** 한 자리의 구성. {@code botKind} 는 {@code kind == BOT} 일 때만 의미 있다. */
-    public record Slot(SlotKind kind, BotKind botKind, String name) {
+    /** 점유한 원격 클라이언트가 없는 슬롯의 clientId 표식. */
+    public static final int NO_CLIENT = -1;
+
+    /**
+     * 한 자리의 구성.
+     * {@code botKind} 는 {@code kind == BOT} 일 때만, {@code clientId} 는 {@code kind == REMOTE} 일 때만
+     * 의미 있다(그 외엔 {@link #NO_CLIENT}).
+     */
+    public record Slot(SlotKind kind, BotKind botKind, String name, int clientId) {
 
         public static Slot human(String name) {
-            return new Slot(SlotKind.HUMAN_LOCAL, null, name);
+            return new Slot(SlotKind.HUMAN_LOCAL, null, name, NO_CLIENT);
         }
 
         public static Slot bot(BotKind botKind, String name) {
-            return new Slot(SlotKind.BOT, botKind, name);
+            return new Slot(SlotKind.BOT, botKind, name, NO_CLIENT);
         }
 
-        public static Slot remote(String name) {
-            return new Slot(SlotKind.REMOTE, null, name);
+        public static Slot remote(int clientId, String name) {
+            return new Slot(SlotKind.REMOTE, null, name, clientId);
         }
 
         public static Slot empty() {
-            return new Slot(SlotKind.EMPTY, null, "빈 자리");
+            return new Slot(SlotKind.EMPTY, null, "빈 자리", NO_CLIENT);
         }
     }
 

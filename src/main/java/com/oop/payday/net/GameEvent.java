@@ -16,7 +16,8 @@ public sealed interface GameEvent extends Serializable
                 GameEvent.Discard, GameEvent.HelperUsed, GameEvent.ForcedDiscard,
                 GameEvent.CoinsChanged, GameEvent.RoundEnd, GameEvent.GameOver,
                 GameEvent.Message, GameEvent.StealActivated,
-                GameEvent.RequestSplit, GameEvent.RequestChoice, GameEvent.RequestHelpers {
+                GameEvent.RequestSplit, GameEvent.RequestChoice, GameEvent.RequestHelpers,
+                GameEvent.RequestTeamDistribution {
 
     record PhaseChanged(Phase phase, int round, int splitTeamId) implements GameEvent {}
 
@@ -69,4 +70,8 @@ public sealed interface GameEvent extends Serializable
 
     /** 도우미 선택 요청 — 해당 플레이어(클라이언트)에게만 전달. requestId 는 응답 상관관계용. */
     record RequestHelpers(long requestId, int playerId, List<HelperDto> options, int chooseCount) implements GameEvent {}
+
+    /** 팀 내 분배 요청(다인 팀 리더) — 리더(클라이언트)에게만 전달. requestId 는 응답 상관관계용. */
+    record RequestTeamDistribution(long requestId, int leaderId, int teamId,
+                                   List<CardDto> acquired) implements GameEvent {}
 }

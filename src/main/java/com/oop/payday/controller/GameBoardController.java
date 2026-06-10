@@ -155,7 +155,7 @@ public final class GameBoardController implements GameListener, Initializable {
     private MatchSetup matchSetup;        // 오프라인 자리 배치(재시작용)
     private GameServer server;            // 호스트 세션 (소켓·리더 스레드 유지)
     private GameClient client;            // 클라이언트 세션
-    private NetworkPlayer networkPlayer;  // 현재 호스트측 원격 대리자 (재시작 시 교체)
+    private List<NetworkPlayer> networkPlayers = new ArrayList<>(); // 호스트측 원격 대리자들 (재시작 시 교체)
     private Game currentGame;             // 진행 중 게임 (중단용)
     private Thread gameThread;            // 게임 루프 스레드 (중단용)
     private boolean pauseMenuOpen;
@@ -281,7 +281,7 @@ public final class GameBoardController implements GameListener, Initializable {
         this.config = setup.gameConfig();
         this.server = null;
         this.client = null;
-        this.networkPlayer = null;
+        this.networkPlayers = List.of();
 
         // 사람(방장)이 속한 대기실 팀을 항상 teamA(=내 필드)로 둔다.
         boolean humanInA = setup.teamA().stream()
@@ -290,8 +290,8 @@ public final class GameBoardController implements GameListener, Initializable {
         List<MatchSetup.Slot> oppSlots = humanInA ? setup.teamB() : setup.teamA();
 
         HumanPlayer[] humanRef = new HumanPlayer[1];
-        List<Player> myPlayers = buildPlayers(mySlots, humanRef);
-        List<Player> oppPlayers = buildPlayers(oppSlots, humanRef);
+        List<Player> myPlayers = buildPlayers(mySlots, humanRef, null);
+        List<Player> oppPlayers = buildPlayers(oppSlots, humanRef, null);
 
         HumanPlayer human = humanRef[0];
         localPlayer = human;
@@ -308,8 +308,15 @@ public final class GameBoardController implements GameListener, Initializable {
         installEscHandler();
     }
 
-    /** 슬롯 목록을 플레이어로 변환한다. 사람 슬롯을 만나면 {@code humanRef[0]} 에 기록(로컬 플레이어 추적). */
-    private List<Player> buildPlayers(List<MatchSetup.Slot> slots, HumanPlayer[] humanRef) {
+    /** 원격 슬롯과 그 대리자의 묶음(핸드셰이크·바인딩용). */
+    private record RemoteBinding(int clientId, NetworkPlayer player) {}
+
+    /**
+     * 슬롯 목록을 플레이어로 변환한다. 사람 슬롯은 {@code humanRef[0]} 에 기록(로컬 플레이어 추적),
+     * 원격 슬롯은 {@code remotes} 가 null 이 아니면 {@link RemoteBinding} 으로 수집한다.
+     */
+    private List<Player> buildPlayers(List<MatchSetup.Slot> slots, HumanPlayer[] humanRef,
+            List<RemoteBinding> remotes) {
         List<Player> players = new ArrayList<>();
         for (MatchSetup.Slot slot : slots) {
             switch (slot.kind()) {
@@ -319,7 +326,11 @@ public final class GameBoardController implements GameListener, Initializable {
                     players.add(h);
                 }
                 case BOT -> players.add(BotPlayer.play(slot.botKind().create(), slot.name()));
-                case REMOTE -> players.add(new NetworkPlayer(slot.name())); // 2단계 네트워크
+                case REMOTE -> {
+                    NetworkPlayer np = new NetworkPlayer(slot.name());
+                    if (remotes != null) remotes.add(new RemoteBinding(slot.clientId(), np));
+                    players.add(np);
+                }
                 case EMPTY -> { /* 빈 자리는 게임에서 제외 */ }
             }
         }
@@ -330,60 +341,86 @@ public final class GameBoardController implements GameListener, Initializable {
         return players.isEmpty() ? fallback : players.get(0).name();
     }
 
-    /** 호스트 모드: 권위 Game 을 로컬에서 실행하고 NetworkPlayer 로 원격 클라이언트와 대전. */
-    public void startHostGame(GameConfig config, GameServer server, NetworkPlayer networkPlayer) {
+    /** 호스트 모드: 대기실 구성(원격 슬롯 포함)으로 권위 Game 을 실행한다. */
+    public void startHostGame(MatchSetup setup, GameServer server) {
         this.mode = Mode.HOST;
-        this.config = config;
+        this.matchSetup = setup;
+        this.config = setup.gameConfig();
         this.server = server;
         this.client = null;
-        buildAndStartHostGame(networkPlayer, false);
+        buildAndStartHostGame(false);
         installEscHandler();
     }
 
-    /** 호스트 게임을 구성하고 시작한다. {@code restart} 면 같은 연결로 재시작(핸드셰이크 대신 Restart 전송). */
-    private void buildAndStartHostGame(NetworkPlayer np, boolean restart) {
+    /**
+     * 호스트 게임을 구성하고 시작한다. {@code restart} 면 같은 연결로 재시작(핸드셰이크 대신 Restart 전송).
+     * 대기실 {@code matchSetup} 의 슬롯대로 팀/플레이어를 만들고, 원격 슬롯마다 {@link NetworkPlayer}
+     * 를 만들어 그 클라이언트 세션에 묶는다. 클라이언트별 관점 초기 상태를 핸드셰이크로 보낸다.
+     */
+    private void buildAndStartHostGame(boolean restart) {
         resetBoard();
-        HumanPlayer p1 = new HumanPlayer("플레이어 1");
-        localPlayer = p1;
-        inputGateway = new LocalInputGateway(p1);
+        MatchSetup setup = this.matchSetup;
 
-        teamA = new Team(p1.name(), List.of(p1));
-        teamB = new Team(np.name(), List.of(np));
+        // 사람(방장)이 속한 대기실 팀을 board teamA(내 필드)로 둔다.
+        boolean humanInA = setup.teamA().stream()
+                .anyMatch(s -> s.kind() == MatchSetup.SlotKind.HUMAN_LOCAL);
+        List<MatchSetup.Slot> mySlots = humanInA ? setup.teamA() : setup.teamB();
+        List<MatchSetup.Slot> oppSlots = humanInA ? setup.teamB() : setup.teamA();
+
+        HumanPlayer[] hostRef = new HumanPlayer[1];
+        List<RemoteBinding> remotes = new ArrayList<>();
+        List<Player> myPlayers = buildPlayers(mySlots, hostRef, remotes);
+        List<Player> oppPlayers = buildPlayers(oppSlots, hostRef, remotes);
+
+        HumanPlayer host = hostRef[0];
+        localPlayer = host;
+        inputGateway = new LocalInputGateway(host);
+
+        teamA = new Team(teamName(myPlayers, "우리 팀"), myPlayers);
+        teamB = new Team(teamName(oppPlayers, "상대 팀"), oppPlayers);
         animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER_BY_COLOR);
         updateBoardStatus();
 
-        List<Player> allPlayers = List.of(p1, np);
-        NetworkBroadcaster broadcaster = new NetworkBroadcaster(
-                np, teamA, teamB, null, allPlayers, server.outputStream());
+        List<Player> allPlayers = new ArrayList<>(myPlayers);
+        allPlayers.addAll(oppPlayers);
+        this.networkPlayers = remotes.stream().map(RemoteBinding::player).toList();
+
+        NetworkBroadcaster broadcaster = new NetworkBroadcaster(server, teamA, teamB, null, allPlayers);
         FanOutGameListener fanOut = new FanOutGameListener(this, broadcaster);
         Game game = new Game(config, teamA, teamB, fanOut);
         broadcaster.setGame(game);
 
-        PublicBoardState initState = WireCodec.buildState(teamA, teamB, game, 1, allPlayers);
-        try {
-            if (restart) {
-                server.sendRestart(config, 1, initState);  // 클라이언트에 재시작 통지
-                server.rebind(np, allPlayers);             // 기존 net-reader 를 새 대리자로 재지정
-            } else {
-                server.sendHandshake(config, 1, initState);
-                // 리더 스레드는 최초 한 번만 시작한다. onDisconnect 는 현재 세션 필드를 참조한다.
-                server.startReaderLoop(np, allPlayers, this::onHostDisconnect);
-            }
-        } catch (java.io.IOException e) {
-            setMessage((restart ? "재시작" : "핸드셰이크") + " 전송 실패: " + e.getMessage());
-            return;
+        server.beginGame(allPlayers);
+        // 각 원격 클라이언트에 자기 관점 초기 상태 + 팀/플레이어 id 를 핸드셰이크로 보내고 대리자를 바인딩한다.
+        for (RemoteBinding rb : remotes) {
+            int playerId = allPlayers.indexOf(rb.player());
+            int teamId = myPlayers.contains(rb.player()) ? 0 : 1;
+            PublicBoardState init = WireCodec.buildState(teamA, teamB, game, playerId, allPlayers);
+            NetMessage msg = restart
+                    ? new NetMessage.Restart(config.winningCoins(), config.leaderEffectsEnabled(),
+                            teamId, playerId, init)
+                    : new NetMessage.Handshake(config.winningCoins(), config.leaderEffectsEnabled(),
+                            teamId, playerId, init);
+            server.sendTo(rb.clientId(), msg);
+            server.bindPlayer(rb.clientId(), rb.player());
         }
+        // 게임 단계: 클라이언트 연결 종료를 감지하면 게임을 정상 종료시킨다.
+        server.setClientListener(new GameServer.ClientListener() {
+            @Override public void onClientConnected(int clientId) { /* 게임 중 신규 접속 없음 */ }
+            @Override public void onLobbyMessage(int clientId, NetMessage msg) { /* 무시 */ }
+            @Override public void onClientDisconnected(int clientId) { onHostDisconnect(); }
+        });
 
-        this.networkPlayer = np;
         this.currentGame = game;
         startGameThread(game);
     }
 
-    /** 호스트 net-reader 가 연결 종료를 감지하면 호출. 현재 진행 중인 게임/대리자를 깨워 정상 종료시킨다. */
+    /** 호스트 net-reader 가 연결 종료를 감지하면 호출. 진행 중인 게임/대리자들을 깨워 정상 종료시킨다. */
     private void onHostDisconnect() {
-        NetworkPlayer np = this.networkPlayer;
         Game g = this.currentGame;
-        if (np != null) np.abort();   // decideSplit/Choice/Helpers 대기 해제
+        for (NetworkPlayer np : this.networkPlayers) {
+            np.abort();   // decideSplit/Choice/Helpers/Distribution 대기 해제
+        }
         if (g != null) g.abort();     // 환금 인박스 대기 해제
         try {
             if (server != null) server.close();
@@ -393,14 +430,20 @@ public final class GameBoardController implements GameListener, Initializable {
         Platform.runLater(() -> showDisconnected("상대 연결이 끊어졌습니다."));
     }
 
-    /** 클라이언트 모드: Game 없이 미러 상태만 추종하며 원격에서 온 이벤트를 렌더링한다. */
-    public void startClientGame(ClientMirror mirror, GameClient client) {
+    /**
+     * 클라이언트 모드: 핸드셰이크로 미러를 초기화하고 Game 없이 미러 상태만 추종한다.
+     * reader 스레드는 대기실 단계에서 이미 돌고 있으므로 {@link GameClient#enterGame} 로 게임 단계로 전환만 한다.
+     */
+    public void startClientGame(GameClient client, NetMessage.Handshake hs) {
         this.mode = Mode.CLIENT;
         this.server = null;
         this.client = client;
+        ClientMirror mirror = new ClientMirror();
+        mirror.init(hs.clientTeamId(), hs.clientPlayerId(), hs.initialState());
+        resetBoard();
         bindClientMirror(mirror, client);
 
-        client.startReaderLoop(mirror, this,
+        client.enterGame(mirror, this,
                 () -> showDisconnected("호스트 연결이 끊어졌습니다."),
                 this::onClientRestart);
         installEscHandler();
@@ -412,7 +455,7 @@ public final class GameBoardController implements GameListener, Initializable {
      */
     private ClientMirror onClientRestart(NetMessage.Restart restart) {
         ClientMirror mirror = new ClientMirror();
-        mirror.init(restart.clientTeamId(), restart.initialState());
+        mirror.init(restart.clientTeamId(), restart.clientPlayerId(), restart.initialState());
         resetBoard();
         bindClientMirror(mirror, client);
         return mirror;
@@ -460,7 +503,7 @@ public final class GameBoardController implements GameListener, Initializable {
     /** 진행 중인 게임 스레드를 중단시킨다(재시작·나가기 공용). 소켓·net-reader 는 호출자가 관리한다. */
     private void tearDownCurrentGame() {
         if (currentGame != null) currentGame.abort();      // 환금 인박스 대기 해제
-        if (networkPlayer != null) networkPlayer.abort();  // 호스트 결정 채널 해제
+        for (NetworkPlayer np : networkPlayers) np.abort(); // 호스트 결정 채널들 해제
         if (gameThread != null) gameThread.interrupt();    // 오프라인 HumanPlayer 대기 해제
     }
 
@@ -539,7 +582,7 @@ public final class GameBoardController implements GameListener, Initializable {
             }
             case HOST -> {
                 tearDownCurrentGame();
-                buildAndStartHostGame(new NetworkPlayer("플레이어 2"), true);
+                buildAndStartHostGame(true);
             }
             case CLIENT -> {
                 // 클라이언트는 재시작을 시작하지 않는다(버튼이 노출되지 않음).

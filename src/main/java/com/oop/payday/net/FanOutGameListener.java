@@ -108,6 +108,10 @@ public final class FanOutGameListener implements GameListener {
         primary.onRequestHelpers(player, options, chooseCount);
         secondary.onRequestHelpers(player, options, chooseCount);
     }
+    @Override public void onRequestTeamDistribution(Player leader, Team team, List<Card> acquired) {
+        primary.onRequestTeamDistribution(leader, team, acquired);
+        secondary.onRequestTeamDistribution(leader, team, acquired);
+    }
 
     /** 호스트 컨트롤러의 애니메이션만 대기한다. 브로드캐스터는 no-op. */
     @Override public void awaitAnimations() {

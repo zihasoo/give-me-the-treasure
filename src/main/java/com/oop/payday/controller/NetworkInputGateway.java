@@ -41,7 +41,10 @@ public final class NetworkInputGateway implements InputGateway {
 
     @Override
     public void provideDistribution(TeamDistribution distribution) {
-        // 2단계 네트워크에서 구현. 현재 클라이언트는 다인 팀 내 분배를 수행하지 않는다.
+        List<List<Integer>> byMemberIds = distribution.byMember().stream()
+                .map(NetworkInputGateway::ids)
+                .toList();
+        send(new NetMessage.DistributionDecision(requestId(), byMemberIds));
     }
 
     @Override

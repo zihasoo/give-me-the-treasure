@@ -70,13 +70,16 @@ public final class WireCodec {
 
     /**
      * 팀 상태 DTO 변환.
-     * @param clientPlayerId 클라이언트 플레이어 id(이 플레이어가 소속된 팀의 members 는 그대로, 상대 팀 members 는 도우미 숨김).
+     * @param clientPlayerId 수신 클라이언트가 조작하는 플레이어 id. 그 플레이어가 속한 팀의 도우미는
+     *                       (팀원 포함) 그대로 보내고, 상대 팀 members 의 미사용 도우미 종류는 숨긴다
+     *                       (같은 팀은 정보를 공유한다 — 규칙서 §6 자유 논의).
      */
     public static TeamStateDto toTeamDto(Team team, int teamId, int clientPlayerId, List<Player> allPlayers) {
+        boolean clientOnThisTeam = team.members().stream()
+                .anyMatch(p -> allPlayers.indexOf(p) == clientPlayerId);
         List<PlayerStateDto> playerDtos = team.members().stream().map(p -> {
             int pid = allPlayers.indexOf(p);
-            boolean hide = (pid != clientPlayerId);
-            return toPlayerDto(p, pid, hide);
+            return toPlayerDto(p, pid, !clientOnThisTeam);
         }).toList();
         return new TeamStateDto(teamId, team.name(), team.coins(), playerDtos);
     }

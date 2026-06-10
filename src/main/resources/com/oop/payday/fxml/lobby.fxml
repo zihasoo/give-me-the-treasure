@@ -39,7 +39,7 @@
                 <HBox spacing="14.0" alignment="CENTER">
                     <children>
                         <Button text="뒤로" styleClass="menu-button" onAction="#onBack" />
-                        <Button text="게임 시작" styleClass="menu-mode-button" onAction="#onStart" />
+                        <Button fx:id="startButton" text="게임 시작" styleClass="menu-mode-button" onAction="#onStart" />
                     </children>
                 </HBox>
             </children>

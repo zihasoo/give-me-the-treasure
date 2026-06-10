@@ -9,6 +9,7 @@ import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
+import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.game.NetworkDisconnectedException;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
@@ -33,6 +34,10 @@ public final class NetworkPlayer extends Player {
     private final DecisionChannel<SplitDecision> splitChannel = new DecisionChannel<>();
     private final DecisionChannel<Integer> choiceChannel = new DecisionChannel<>();
     private final DecisionChannel<List<HelperCard>> helperChannel = new DecisionChannel<>();
+    private final DecisionChannel<TeamDistribution> distributionChannel = new DecisionChannel<>();
+
+    /** id 복원용 — decideTeamDistribution 에서 저장, 리더 스레드가 분배 결정 파싱 시 사용. */
+    public volatile List<Card> currentAcquired;
 
     /** 환금 제출 창구. beginCashIn 에서 저장, 네트워크 리더가 submitCash/passCash 로 사용. */
     private volatile CashSink cashSink;
@@ -46,6 +51,7 @@ public final class NetworkPlayer extends Player {
         SPLIT,
         CHOICE,
         HELPERS,
+        DISTRIBUTION,
         CASH
     }
 
@@ -74,6 +80,12 @@ public final class NetworkPlayer extends Player {
     public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount) {
         this.currentHelperOptions = options;
         return helperChannel.take();
+    }
+
+    @Override
+    public TeamDistribution decideTeamDistribution(List<Card> acquired, List<Player> members) {
+        this.currentAcquired = acquired;
+        return distributionChannel.take();
     }
 
     @Override
@@ -122,6 +134,10 @@ public final class NetworkPlayer extends Player {
         helperChannel.put(helpers);
     }
 
+    public void provideDistribution(TeamDistribution distribution) {
+        distributionChannel.put(distribution);
+    }
+
     public void submitCash(CashInAction action) {
         CashSink sink = cashSink;
         if (sink != null) {
@@ -145,6 +161,7 @@ public final class NetworkPlayer extends Player {
         splitChannel.abort();
         choiceChannel.abort();
         helperChannel.abort();
+        distributionChannel.abort();
     }
 
     /**

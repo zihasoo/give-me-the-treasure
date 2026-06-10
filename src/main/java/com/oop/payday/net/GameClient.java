@@ -44,17 +44,32 @@ public final class GameClient implements Closeable {
      */
     private volatile ClientMirror mirror;
 
-    /** connect 결과 핸드셰이크를 반환한다(블로킹). */
-    public NetMessage.Handshake connect(String host, int port) throws IOException {
+    /** 게임 단계 리스너/재시작 콜백 — {@link #enterGame} 에서 설정. */
+    private volatile GameListener gameListener;
+    private volatile Function<NetMessage.Restart, ClientMirror> onRestart;
+    /** 현재 단계(대기실→게임)에 맞는 연결 종료 콜백. */
+    private volatile Runnable onDisconnect;
+    private volatile LobbyHandler lobbyHandler;
+
+    /**
+     * 대기실 단계의 호스트→클라이언트 메시지를 처리하는 콜백.
+     * 모두 JavaFX 스레드에서 호출된다.
+     */
+    public interface LobbyHandler {
+        /** 대기실 상태 갱신 수신. */
+        void onLobbyState(NetMessage.LobbyState state);
+        /** 호스트가 게임을 시작 — 핸드셰이크 수신. 구현체는 미러를 만들고 {@link GameClient#enterGame} 를 호출한다. */
+        void onGameStart(NetMessage.Handshake handshake);
+        /** 호스트가 대기실을 닫음. */
+        void onLobbyClosed(String reason);
+    }
+
+    /** 호스트에 연결하고 스트림을 연다(블로킹). 핸드셰이크는 대기실 단계 이후에 받는다. */
+    public void connect(String host, int port) throws IOException {
         socket = new Socket(host, port);
         oos = new ObjectOutputStream(socket.getOutputStream());
         oos.flush();
         ois = new ObjectInputStream(socket.getInputStream());
-        try {
-            return (NetMessage.Handshake) ois.readObject();
-        } catch (ClassNotFoundException e) {
-            throw new IOException("핸드셰이크 역직렬화 실패", e);
-        }
     }
 
     /** 가장 최근 입력 요청의 식별자. 응답에 함께 실어 호스트가 stale 응답을 걸러내게 한다. */
@@ -72,47 +87,83 @@ public final class GameClient implements Closeable {
     }
 
     /**
-     * 수신 루프 스레드를 시작한다.
-     * 수신된 Envelope 마다 {@code mirror.applyState} 와 이벤트 dispatch 를
-     * <b>하나의 {@link Platform#runLater}</b> 안에서 순차 실행한다.
-     * 미러 모델(Team/Player/카드/도우미)을 만지는 주체를 JavaFX Application Thread 로 단일화해,
-     * reader 스레드와 UI 스레드가 같은 객체를 동시에 건드리는 경쟁을 없앤다.
+     * 대기실 단계 수신 루프를 시작한다. 단일 reader 스레드가 메시지 종류에 따라 분기한다:
+     * <ul>
+     *   <li>{@link NetMessage.LobbyState}/{@link NetMessage.Handshake}/{@link NetMessage.LobbyClosed}
+     *       → {@link LobbyHandler}
+     *   <li>(게임 진입 후) {@link NetMessage.Envelope}/{@link NetMessage.Restart} → 미러 적용·이벤트 dispatch
+     * </ul>
+     * 게임 진입은 {@link #enterGame} 가 미러/리스너/재시작 콜백을 설정하며, reader 스레드는 그대로 재사용한다.
+     */
+    public void startLobby(LobbyHandler handler, Runnable onDisconnect) {
+        this.lobbyHandler = handler;
+        this.onDisconnect = onDisconnect;
+        Thread t = new Thread(this::readLoop, "net-client-reader");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /**
+     * 게임 단계로 전환한다(핸드셰이크 수신 후, JavaFX 스레드에서 호출).
+     * 이후 수신되는 {@link NetMessage.Envelope}/{@link NetMessage.Restart} 가 이 미러/리스너로 처리된다.
      *
      * @param mirror       초기 미러 상태 저장소
      * @param listener     컨트롤러 (GameListener)
-     * @param onDisconnect 연결 종료 시 호출(Platform.runLater 로 감쌈)
-     * @param onRestart    {@link NetMessage.Restart} 수신 시 새 미러를 만들어 돌려주는 콜백
-     *                     (JavaFX 스레드에서 호출됨). 반환된 미러가 이후 Envelope 적용 대상이 된다.
+     * @param onDisconnect 게임 단계 연결 종료 시 호출(Platform.runLater 로 감쌈)
+     * @param onRestart    {@link NetMessage.Restart} 수신 시 새 미러를 만들어 돌려주는 콜백(JavaFX 스레드)
      */
-    public void startReaderLoop(ClientMirror mirror, GameListener listener,
+    public void enterGame(ClientMirror mirror, GameListener listener,
             Runnable onDisconnect, Function<NetMessage.Restart, ClientMirror> onRestart) {
         this.mirror = mirror;
-        Thread t = new Thread(() -> {
-            try {
-                while (true) {
-                    NetMessage msg = (NetMessage) ois.readObject();
-                    if (msg instanceof NetMessage.Restart restart) {
+        this.gameListener = listener;
+        this.onRestart = onRestart;
+        this.onDisconnect = onDisconnect;
+        this.lobbyHandler = null; // 게임 진입 후 들어오는 늦은 대기실 메시지는 무시한다.
+    }
+
+    private void readLoop() {
+        try {
+            while (true) {
+                NetMessage msg = (NetMessage) ois.readObject();
+                switch (msg) {
+                    case NetMessage.LobbyState ls -> {
+                        LobbyHandler h = lobbyHandler;
+                        if (h != null) Platform.runLater(() -> h.onLobbyState(ls));
+                    }
+                    case NetMessage.Handshake hs -> {
+                        LobbyHandler h = lobbyHandler;
+                        if (h != null) Platform.runLater(() -> h.onGameStart(hs));
+                    }
+                    case NetMessage.LobbyClosed lc -> {
+                        LobbyHandler h = lobbyHandler;
+                        if (h != null) Platform.runLater(() -> h.onLobbyClosed(lc.reason()));
+                    }
+                    case NetMessage.Restart restart -> {
                         // 재시작: 컨트롤러가 새 미러를 만들고 보드를 리셋한다. 이후 Envelope 는 새 미러에 적용.
-                        Platform.runLater(() -> this.mirror = onRestart.apply(restart));
-                    } else if (msg instanceof NetMessage.Envelope env) {
+                        Platform.runLater(() -> {
+                            Function<NetMessage.Restart, ClientMirror> r = this.onRestart;
+                            if (r != null) this.mirror = r.apply(restart);
+                        });
+                    }
+                    case NetMessage.Envelope env -> {
                         // 상태 적용 → 이벤트 dispatch 를 같은 runLater 로 묶어 순서와 스레드를 보장한다.
                         Platform.runLater(() -> {
                             ClientMirror current = this.mirror;
+                            GameListener l = this.gameListener;
+                            if (current == null || l == null) return; // 게임 진입 전 — 무시
                             current.applyState(env.state());
-                            dispatchEvent(env.event(), current, listener);
+                            dispatchEvent(env.event(), current, l);
                         });
                     }
-                }
-            } catch (IOException | ClassNotFoundException e) {
-                // 연결 종료
-            } finally {
-                if (onDisconnect != null) {
-                    Platform.runLater(onDisconnect);
+                    default -> {} // 클라이언트→호스트 결정 메시지 등 무시
                 }
             }
-        }, "net-client-reader");
-        t.setDaemon(true);
-        t.start();
+        } catch (IOException | ClassNotFoundException e) {
+            // 연결 종료
+        } finally {
+            Runnable d = this.onDisconnect;
+            if (d != null) Platform.runLater(d);
+        }
     }
 
     @Override
@@ -231,6 +282,13 @@ public final class GameClient implements Closeable {
                         .<HelperCard>map(h -> mirror.getOrCreateHelper(h))
                         .toList();
                 listener.onRequestHelpers(mirror.playerById(e.playerId()), opts, e.chooseCount());
+            }
+
+            case GameEvent.RequestTeamDistribution e -> {
+                currentRequestId = e.requestId();
+                List<Card> acquired = e.acquired().stream().map(mirror::getOrCreateCard).toList();
+                listener.onRequestTeamDistribution(
+                        mirror.playerById(e.leaderId()), mirror.teamById(e.teamId()), acquired);
             }
         }
     }

@@ -24,16 +24,19 @@ public final class ClientMirror {
     private final Map<Integer, Team> teamRegistry = new HashMap<>();
 
     private int myTeamId;
+    private int myPlayerId;
     private List<Card> discardPile = List.of();
     private List<Player> allPlayers = List.of();
 
     /**
      * 핸드셰이크 수신 시 미러를 초기화한다.
-     * @param clientTeamId 이 클라이언트가 속한 팀 id (0 또는 1)
-     * @param state        초기 보드 스냅샷
+     * @param clientTeamId   이 클라이언트가 속한 팀 id (0 또는 1)
+     * @param clientPlayerId 이 클라이언트가 조작하는 플레이어의 전역 id(다인 팀에서 리더가 아닐 수 있음)
+     * @param state          초기 보드 스냅샷
      */
-    public void init(int clientTeamId, PublicBoardState state) {
+    public void init(int clientTeamId, int clientPlayerId, PublicBoardState state) {
         this.myTeamId = clientTeamId;
+        this.myPlayerId = clientPlayerId;
         // 팀·플레이어 객체 미리 생성
         for (TeamStateDto tDto : state.teams()) {
             for (PlayerStateDto pDto : tDto.members()) {
@@ -145,7 +148,7 @@ public final class ClientMirror {
     }
 
     public Player myPlayer() {
-        return myTeam().leader();
+        return playerRegistry.get(myPlayerId);
     }
 
     public Player playerById(int id) {

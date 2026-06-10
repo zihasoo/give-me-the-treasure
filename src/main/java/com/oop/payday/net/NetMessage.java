@@ -14,14 +14,21 @@ import java.util.List;
  */
 public sealed interface NetMessage extends Serializable
         permits NetMessage.Handshake, NetMessage.Restart, NetMessage.Envelope,
+                NetMessage.LobbyState, NetMessage.LobbyHello, NetMessage.LobbyClosed,
                 NetMessage.SplitDecision, NetMessage.ChoiceDecision,
-                NetMessage.HelpersDecision, NetMessage.CashAction, NetMessage.CashPass {
+                NetMessage.HelpersDecision, NetMessage.CashAction, NetMessage.CashPass,
+                NetMessage.DistributionDecision {
 
-    /** 게임 시작 전 호스트→클라이언트 핸드셰이크. */
+    /**
+     * 게임 시작 전 호스트→클라이언트 핸드셰이크.
+     * {@code clientPlayerId} 는 이 클라이언트가 조작하는 플레이어의 전역 id 다(다인 팀에서
+     * 리더가 아닐 수 있으므로 팀 id 만으로는 부족하다).
+     */
     record Handshake(
             int winningCoins,
             boolean leaderEffectsEnabled,
             int clientTeamId,
+            int clientPlayerId,
             PublicBoardState initialState) implements NetMessage {}
 
     /**
@@ -33,7 +40,23 @@ public sealed interface NetMessage extends Serializable
             int winningCoins,
             boolean leaderEffectsEnabled,
             int clientTeamId,
+            int clientPlayerId,
             PublicBoardState initialState) implements NetMessage {}
+
+    /**
+     * 대기실 상태 방송(호스트→클라이언트). 슬롯 구성·연습모드·자기 자리(yourClientId)를 담는다.
+     * 클라이언트는 이를 받아 대기실 화면을 갱신한다.
+     */
+    record LobbyState(
+            List<LobbySlotView> slots,
+            boolean practice,
+            int yourClientId) implements NetMessage {}
+
+    /** 접속 직후 클라이언트→호스트 인사: 표시 이름 등록(없으면 호스트가 자동 명명). */
+    record LobbyHello(String name) implements NetMessage {}
+
+    /** 호스트가 대기실을 닫음(취소). 클라이언트는 메뉴로 복귀한다. */
+    record LobbyClosed(String reason) implements NetMessage {}
 
     /** 매 게임 이벤트마다 호스트가 보내는 봉투: 이벤트 + 공개 보드 스냅샷. */
     record Envelope(GameEvent event, PublicBoardState state) implements NetMessage {}
@@ -67,4 +90,18 @@ public sealed interface NetMessage extends Serializable
             List<Integer> selectedCardIds) implements NetMessage {}
 
     record CashPass(long requestId) implements NetMessage {}
+
+    /**
+     * 팀 내 분배 결정(다인 팀 리더 클라이언트→호스트).
+     * {@code byMemberIds.get(i)} = 팀 멤버 i 에게 줄 카드 id 목록(가져온 카드 기준).
+     */
+    record DistributionDecision(long requestId, List<List<Integer>> byMemberIds) implements NetMessage {}
+
+    /**
+     * 대기실 슬롯 하나의 직렬화 가능한 표현(렌더링 전용).
+     * {@code kind} ∈ {"HUMAN","BOT","REMOTE","EMPTY"}, {@code detail} 은 봇 전략 표시명 등.
+     * {@code clientId} 는 원격 점유 슬롯의 클라이언트 id(그 외 -1).
+     */
+    record LobbySlotView(int teamId, int seatIndex, String kind, String name,
+                         String detail, int clientId) implements Serializable {}
 }

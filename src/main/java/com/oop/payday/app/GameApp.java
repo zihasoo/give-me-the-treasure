@@ -5,12 +5,11 @@ import java.net.URL;
 import java.util.Objects;
 
 import com.oop.payday.controller.GameBoardController;
-import com.oop.payday.game.GameConfig;
+import com.oop.payday.controller.LobbyController;
 import com.oop.payday.game.MatchSetup;
-import com.oop.payday.net.ClientMirror;
 import com.oop.payday.net.GameClient;
 import com.oop.payday.net.GameServer;
-import com.oop.payday.player.NetworkPlayer;
+import com.oop.payday.net.NetMessage;
 
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
@@ -66,9 +65,20 @@ public class GameApp extends Application {
         applyScene(load(fxmlFile).getRoot());
     }
 
-    /** 대기실 화면으로 전환한다. */
+    /** 호스트 대기실 화면으로 전환한다(서버를 열고 접속을 받는다). */
     public void showLobby() throws IOException {
-        showScene("lobby.fxml");
+        FXMLLoader loader = load("lobby.fxml");
+        applyScene(loader.getRoot());
+        LobbyController controller = loader.getController();
+        controller.initHost();
+    }
+
+    /** 클라이언트 대기실 화면으로 전환한다(호스트 대기실 상태를 받아 표시). */
+    public void showClientLobby(GameClient client) throws IOException {
+        FXMLLoader loader = load("lobby.fxml");
+        applyScene(loader.getRoot());
+        LobbyController controller = loader.getController();
+        controller.initClient(client);
     }
 
     /** 게임 보드 화면으로 전환하고 대기실 구성대로 게임을 시작한다 (오프라인). */
@@ -79,21 +89,20 @@ public class GameApp extends Application {
         controller.startGame(setup);
     }
 
-    /** 게임 보드 화면으로 전환하고 호스트 모드 게임을 시작한다. */
-    public void showHostGame(GameConfig config, GameServer server, NetworkPlayer networkPlayer)
-            throws IOException {
+    /** 게임 보드 화면으로 전환하고 호스트 모드 게임을 시작한다(대기실 구성·원격 포함). */
+    public void showHostGame(MatchSetup setup, GameServer server) throws IOException {
         FXMLLoader loader = load("game_board.fxml");
         applyScene(loader.getRoot());
         GameBoardController controller = loader.getController();
-        controller.startHostGame(config, server, networkPlayer);
+        controller.startHostGame(setup, server);
     }
 
-    /** 게임 보드 화면으로 전환하고 클라이언트 모드 게임을 시작한다. */
-    public void showClientGame(ClientMirror mirror, GameClient client) throws IOException {
+    /** 게임 보드 화면으로 전환하고 클라이언트 모드 게임을 시작한다(핸드셰이크 수신 시). */
+    public void showClientGame(GameClient client, NetMessage.Handshake handshake) throws IOException {
         FXMLLoader loader = load("game_board.fxml");
         applyScene(loader.getRoot());
         GameBoardController controller = loader.getController();
-        controller.startClientGame(mirror, client);
+        controller.startClientGame(client, handshake);
     }
 
     private FXMLLoader load(String fxmlFile) throws IOException {
