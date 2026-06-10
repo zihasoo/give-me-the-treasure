@@ -4,6 +4,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.List;
 import java.util.function.Function;
@@ -25,9 +26,21 @@ import javafx.application.Platform;
  */
 public final class GameClient implements Closeable {
 
+    /** 접속 시도 제한 시간 — OS 기본(윈도우 ~21초)을 기다리지 않게 한다. */
+    private static final int CONNECT_TIMEOUT_MS = 5_000;
+
     private Socket socket;
     private ObjectOutputStream oos;
     private ObjectInputStream ois;
+
+    /** {@link #close} 로 의도적으로 닫혔는지 — 이후 리더 스레드의 끊김 콜백을 억제한다. */
+    private volatile boolean closed;
+
+    /**
+     * 현재 게임 세대. 핸드셰이크/재시작이 정하며, 다른 세대의 {@link NetMessage.Envelope} 는
+     * 버린다(재시작 직후 도착하는 이전 판의 늦은 이벤트 차단). JavaFX 스레드에서만 접근.
+     */
+    private int currentEpoch;
 
     /**
      * 가장 최근 수신한 입력 요청(분할/선택/도우미/환금)의 식별자.
@@ -64,12 +77,16 @@ public final class GameClient implements Closeable {
         void onLobbyClosed(String reason);
     }
 
-    /** 호스트에 연결하고 스트림을 연다(블로킹). 핸드셰이크는 대기실 단계 이후에 받는다. */
+    /** 호스트에 연결하고 스트림을 연다(블로킹, 최대 {@link #CONNECT_TIMEOUT_MS}). 핸드셰이크는 대기실 단계 이후에 받는다. */
     public void connect(String host, int port) throws IOException {
-        socket = new Socket(host, port);
+        socket = new Socket();
+        socket.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
+        socket.setTcpNoDelay(true);   // 턴제 소량 메시지 — Nagle 지연 제거
+        socket.setKeepAlive(true);    // 무응답 피어(전원 차단 등) 감지 보조
         oos = new ObjectOutputStream(socket.getOutputStream());
         oos.flush();
         ois = new ObjectInputStream(socket.getInputStream());
+        ois.setObjectInputFilter(WireCodec.WIRE_FILTER);
     }
 
     /** 가장 최근 입력 요청의 식별자. 응답에 함께 실어 호스트가 stale 응답을 걸러내게 한다. */
@@ -108,13 +125,15 @@ public final class GameClient implements Closeable {
      * 이후 수신되는 {@link NetMessage.Envelope}/{@link NetMessage.Restart} 가 이 미러/리스너로 처리된다.
      *
      * @param mirror       초기 미러 상태 저장소
+     * @param epoch        핸드셰이크가 정한 게임 세대 — 다른 세대의 봉투는 버린다
      * @param listener     컨트롤러 (GameListener)
      * @param onDisconnect 게임 단계 연결 종료 시 호출(Platform.runLater 로 감쌈)
      * @param onRestart    {@link NetMessage.Restart} 수신 시 새 미러를 만들어 돌려주는 콜백(JavaFX 스레드)
      */
-    public void enterGame(ClientMirror mirror, GameListener listener,
+    public void enterGame(ClientMirror mirror, int epoch, GameListener listener,
             Runnable onDisconnect, Function<NetMessage.Restart, ClientMirror> onRestart) {
         this.mirror = mirror;
+        this.currentEpoch = epoch;
         this.gameListener = listener;
         this.onRestart = onRestart;
         this.onDisconnect = onDisconnect;
@@ -142,7 +161,10 @@ public final class GameClient implements Closeable {
                         // 재시작: 컨트롤러가 새 미러를 만들고 보드를 리셋한다. 이후 Envelope 는 새 미러에 적용.
                         Platform.runLater(() -> {
                             Function<NetMessage.Restart, ClientMirror> r = this.onRestart;
-                            if (r != null) this.mirror = r.apply(restart);
+                            if (r != null) {
+                                this.mirror = r.apply(restart);
+                                this.currentEpoch = restart.epoch();
+                            }
                         });
                     }
                     case NetMessage.Envelope env -> {
@@ -151,6 +173,7 @@ public final class GameClient implements Closeable {
                             ClientMirror current = this.mirror;
                             GameListener l = this.gameListener;
                             if (current == null || l == null) return; // 게임 진입 전 — 무시
+                            if (env.epoch() != currentEpoch) return;  // 이전 판의 늦은 이벤트 — 무시
                             current.applyState(env.state());
                             dispatchEvent(env.event(), current, l);
                         });
@@ -161,13 +184,16 @@ public final class GameClient implements Closeable {
         } catch (IOException | ClassNotFoundException e) {
             // 연결 종료
         } finally {
-            Runnable d = this.onDisconnect;
-            if (d != null) Platform.runLater(d);
+            if (!closed) {  // 의도적으로 닫은 경우(나가기 등)에는 끊김 통지를 보내지 않는다.
+                Runnable d = this.onDisconnect;
+                if (d != null) Platform.runLater(d);
+            }
         }
     }
 
     @Override
     public void close() throws IOException {
+        closed = true;
         if (socket != null && !socket.isClosed()) socket.close();
     }
 

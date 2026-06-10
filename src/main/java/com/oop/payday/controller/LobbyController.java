@@ -107,6 +107,7 @@ public final class LobbyController implements Initializable {
         if (server == null) return;
         if (!assignSeat(clientId)) {
             server.sendTo(clientId, new NetMessage.LobbyClosed("방이 가득 찼습니다."));
+            server.closeSession(clientId);  // 클라이언트의 자발적 종료에 의존하지 않고 즉시 정리
             return;
         }
         renderHostTeams();

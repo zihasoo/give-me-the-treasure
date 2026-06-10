@@ -4,10 +4,13 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -82,6 +85,8 @@ public final class GameServer implements Closeable {
     private final AtomicInteger nextClientId = new AtomicInteger(1);
     private volatile ClientListener listener;
     private volatile boolean accepting;
+    /** {@link #close} 로 의도적으로 닫혔는지 — 이후 리더 스레드의 끊김 콜백을 억제한다. */
+    private volatile boolean closed;
 
     /** 게임 시작 시 설정 — 사용된 도우미 id 복원에 쓰는 전체 플레이어 목록. */
     private volatile List<Player> allPlayers = List.of();
@@ -130,9 +135,12 @@ public final class GameServer implements Closeable {
             }
             ClientSession session;
             try {
+                sock.setTcpNoDelay(true);   // 턴제 소량 메시지 — Nagle 지연 제거
+                sock.setKeepAlive(true);    // 무응답 피어(전원 차단 등) 감지 보조
                 ObjectOutputStream oos = new ObjectOutputStream(sock.getOutputStream());
                 oos.flush();
                 ObjectInputStream ois = new ObjectInputStream(sock.getInputStream());
+                ois.setObjectInputFilter(WireCodec.WIRE_FILTER);
                 int id = nextClientId.getAndIncrement();
                 session = new ClientSession(id, sock, oos, ois);
                 sessions.put(id, session);
@@ -140,9 +148,11 @@ public final class GameServer implements Closeable {
                 try { sock.close(); } catch (IOException ignored) {}
                 continue;
             }
-            startReader(session);
+            // 연결 통지를 리더 시작보다 먼저 — 첫 메시지(LobbyHello 등)의 onLobbyMessage 가
+            // onClientConnected(자리 배정)보다 먼저 큐잉되는 경합을 막는다.
             ClientListener l = listener;
             if (l != null) l.onClientConnected(session.clientId);
+            startReader(session);
         }
     }
 
@@ -153,7 +163,13 @@ public final class GameServer implements Closeable {
                     NetMessage msg = (NetMessage) session.ois.readObject();
                     NetworkPlayer p = session.player;
                     if (p != null && isDecision(msg)) {
-                        route(p, msg);
+                        try {
+                            route(p, msg);
+                        } catch (RuntimeException e) {
+                            // 잘못된 id 등 손상된 결정 메시지 — 이 메시지만 버린다.
+                            // 요청은 소비 전이므로(route 가 resolve 후 consume) 클라이언트가 재시도할 수 있다.
+                            System.err.println("결정 메시지 처리 실패(폐기): " + msg + " — " + e);
+                        }
                     } else if (msg instanceof NetMessage.LobbyHello hello) {
                         session.name = hello.name();
                         ClientListener l = listener;
@@ -168,8 +184,10 @@ public final class GameServer implements Closeable {
             } finally {
                 sessions.remove(session.clientId);
                 try { session.socket.close(); } catch (IOException ignored) {}
-                ClientListener l = listener;
-                if (l != null) l.onClientDisconnected(session.clientId);
+                if (!closed) {  // 서버를 의도적으로 닫은 경우(나가기 등)에는 끊김 통지를 보내지 않는다.
+                    ClientListener l = listener;
+                    if (l != null) l.onClientDisconnected(session.clientId);
+                }
             }
         }, "net-reader-" + session.clientId);
         t.setDaemon(true);
@@ -230,15 +248,31 @@ public final class GameServer implements Closeable {
         }
     }
 
+    /**
+     * 한 세션의 연결을 끊는다(방 가득 참 거절 등). 보낸 메시지는 커널 버퍼에 있어 close 후에도
+     * 전송되며, 정리는 리더 스레드의 finally 가 수행한다.
+     */
+    public void closeSession(int clientId) {
+        ClientSession s = sessions.get(clientId);
+        if (s == null) return;
+        try { s.socket.close(); } catch (IOException ignored) {}
+    }
+
     // ── 결정 메시지 라우팅 ───────────────────────────────────────────
 
+    /**
+     * 클라이언트 결정 메시지를 대리자에 전달한다. 각 분기는 <b>id 복원(resolve)을 먼저, 요청 소비
+     * (consume)를 마지막에</b> 한다 — 손상된 메시지가 resolve 에서 실패해도 요청이 살아 있어
+     * 클라이언트가 재시도할 수 있고, resolve 예외는 호출자(리더 루프)가 잡아 메시지만 버린다.
+     */
     private void route(NetworkPlayer networkPlayer, NetMessage msg) {
         switch (msg) {
             case NetMessage.SplitDecision m -> {
+                var hand = networkPlayer.currentHand;
+                var bundleA = resolveCards(hand, m.bundleAIds());
+                var bundleB = resolveCards(hand, m.bundleBIds());
+                Card fd = resolveCard(m.faceDownId(), hand);
                 if (!networkPlayer.consumeRequest(m.requestId(), RequestKind.SPLIT)) return;
-                var bundleA = resolveCards(networkPlayer.currentHand, m.bundleAIds());
-                var bundleB = resolveCards(networkPlayer.currentHand, m.bundleBIds());
-                Card fd = resolveCard(m.faceDownId(), networkPlayer.currentHand);
                 networkPlayer.provideSplit(new SplitDecision(bundleA, bundleB, fd));
             }
             case NetMessage.ChoiceDecision m -> {
@@ -246,24 +280,25 @@ public final class GameServer implements Closeable {
                 networkPlayer.provideChoice(m.index());
             }
             case NetMessage.HelpersDecision m -> {
-                if (!networkPlayer.consumeRequest(m.requestId(), RequestKind.HELPERS)) return;
                 var options = networkPlayer.currentHelperOptions;
                 var selected = m.helperIds().stream()
                         .map(id -> WireCodec.resolveHelper(id, options))
                         .toList();
+                if (!networkPlayer.consumeRequest(m.requestId(), RequestKind.HELPERS)) return;
                 networkPlayer.provideHelpers(selected);
             }
             case NetMessage.DistributionDecision m -> {
-                if (!networkPlayer.consumeRequest(m.requestId(), RequestKind.DISTRIBUTION)) return;
                 var acquired = networkPlayer.currentAcquired;
                 List<List<Card>> byMember = m.byMemberIds().stream()
                         .map(ids -> resolveCards(acquired, ids))
                         .toList();
+                if (!networkPlayer.consumeRequest(m.requestId(), RequestKind.DISTRIBUTION)) return;
                 networkPlayer.provideDistribution(new TeamDistribution(byMember));
             }
             case NetMessage.CashAction m -> {
+                CashInAction action = buildCashAction(networkPlayer, m);
                 if (!networkPlayer.consumeRequest(m.requestId(), RequestKind.CASH)) return;
-                routeCashAction(networkPlayer, m);
+                networkPlayer.submitCash(action);
             }
             case NetMessage.CashPass m -> {
                 if (!networkPlayer.consumeRequest(m.requestId(), RequestKind.CASH)) return;
@@ -273,33 +308,27 @@ public final class GameServer implements Closeable {
         }
     }
 
-    private void routeCashAction(NetworkPlayer networkPlayer, NetMessage.CashAction m) {
-        switch (m.type()) {
-            case "CASH" -> {
-                var cards = resolveCards(networkPlayer.holdings(), m.cardIds());
-                networkPlayer.submitCash(new CashInAction.Cash(cards));
-            }
-            case "CASH_WITH_HELPERS" -> {
-                var cards = resolveCards(networkPlayer.holdings(), m.cardIds());
-                var helperList = networkPlayer.helpers().stream()
-                        .filter(h -> m.selectedCardIds().contains(h.id()))
-                        .toList();
-                networkPlayer.submitCash(new CashInAction.CashWithHelpers(cards, helperList));
-            }
-            case "DISCARD" -> {
-                Card card = resolveCard(m.cardIds().get(0), networkPlayer.holdings());
-                networkPlayer.submitCash(new CashInAction.Discard(card));
-            }
-            case "USE_HELPER" -> {
+    private CashInAction buildCashAction(NetworkPlayer networkPlayer, NetMessage.CashAction m) {
+        return switch (m.kind()) {
+            case CASH -> new CashInAction.Cash(
+                    resolveCards(networkPlayer.holdings(), m.cardIds()));
+            case CASH_WITH_HELPERS -> new CashInAction.CashWithHelpers(
+                    resolveCards(networkPlayer.holdings(), m.cardIds()),
+                    m.helperIds().stream()
+                            .map(id -> WireCodec.resolveHelper(id, networkPlayer.helpers()))
+                            .toList());
+            case DISCARD -> new CashInAction.Discard(
+                    resolveCard(m.cardIds().get(0), networkPlayer.holdings()));
+            case USE_HELPER -> {
                 HelperCard helper = WireCodec.resolveHelper(m.helperId(), networkPlayer.helpers());
                 HelperCard copyTarget = m.copyTargetId() != null
                         ? findUsedHelper(m.copyTargetId()) : null;
                 var selected = m.selectedCardIds().stream()
                         .map(id -> resolveCard(id, networkPlayer.holdings()))
                         .toList();
-                networkPlayer.submitCash(new CashInAction.UseHelper(helper, copyTarget, selected));
+                yield new CashInAction.UseHelper(helper, copyTarget, selected);
             }
-        }
+        };
     }
 
     private List<Card> resolveCards(Collection<? extends Card> candidates, List<Integer> ids) {
@@ -323,9 +352,21 @@ public final class GameServer implements Closeable {
 
     // ── 주소/종료 ────────────────────────────────────────────────────
 
-    /** 현재 호스트 IP 주소 문자열 반환(LAN 접속용). */
+    /**
+     * 현재 호스트 IP 주소 문자열 반환(LAN 접속용).
+     * {@code InetAddress.getLocalHost()} 는 VPN·다중 NIC 환경에서 엉뚱한 주소를 돌려주기 쉬우므로,
+     * 활성 인터페이스를 열거해 사설망(site-local) IPv4 주소를 우선 고른다.
+     */
     public String localAddress() {
         try {
+            for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback() || ni.isVirtual()) continue;
+                for (InetAddress addr : Collections.list(ni.getInetAddresses())) {
+                    if (addr instanceof Inet4Address && addr.isSiteLocalAddress()) {
+                        return addr.getHostAddress();
+                    }
+                }
+            }
             return InetAddress.getLocalHost().getHostAddress();
         } catch (Exception e) {
             return "127.0.0.1";
@@ -338,6 +379,7 @@ public final class GameServer implements Closeable {
 
     @Override
     public void close() throws IOException {
+        closed = true;   // 이후 리더 스레드의 끊김 콜백 억제(의도적 종료)
         accepting = false;
         for (ClientSession s : sessions.values()) {
             try { s.socket.close(); } catch (IOException ignored) {}

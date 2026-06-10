@@ -90,7 +90,9 @@ public final class ClientMirror {
             player.receive(getOrCreateCard(c));
         }
 
-        // helpers: 최초 수신 시 추가, 이후엔 used/kind 만 갱신
+        // helpers: 최초 수신 시 추가, 이후엔 used/kind 만 갱신.
+        // 도우미는 게임 시작 시 한 번만 배분된다는 가정(Game.setupHelpers)에 기댄다 —
+        // 게임 중 도우미가 늘어나는 효과가 생기면 여기서 추가분도 합류시켜야 한다.
         if (player.helpers().isEmpty() && !dto.helpers().isEmpty()) {
             List<HelperCard> cards = dto.helpers().stream()
                     .<HelperCard>map(h -> getOrCreateHelper(h))

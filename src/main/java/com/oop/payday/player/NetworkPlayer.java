@@ -57,8 +57,9 @@ public final class NetworkPlayer extends Player {
 
     private record ActiveRequest(long id, RequestKind kind) {}
 
-    // 요청-응답 상관관계용 식별자.
-    private final AtomicLong requestCounter = new AtomicLong();
+    // 요청-응답 상관관계용 식별자. 전역(static) 카운터라 재시작으로 만들어진 새 인스턴스의 id 가
+    // 이전 판의 id 와 절대 겹치지 않는다 → 재시작 직전에 전송 중이던 응답이 새 판 요청에 수용될 수 없다.
+    private static final AtomicLong REQUEST_SEQ = new AtomicLong();
     private final AtomicReference<ActiveRequest> activeRequest = new AtomicReference<>();
 
     public NetworkPlayer(String name) {
@@ -102,7 +103,7 @@ public final class NetworkPlayer extends Player {
 
     /** 새 입력 요청 id 를 발급하고 현재 대기 요청으로 등록한다. */
     public long nextRequestId(RequestKind kind) {
-        long id = requestCounter.incrementAndGet();
+        long id = REQUEST_SEQ.incrementAndGet();
         activeRequest.set(new ActiveRequest(id, kind));
         return id;
     }

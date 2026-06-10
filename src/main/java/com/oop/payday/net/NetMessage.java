@@ -7,10 +7,15 @@ import java.util.List;
  * 호스트↔클라이언트 간 전송되는 모든 메시지의 sealed 루트 타입.
  *
  * <ul>
- *   <li>호스트→클라이언트: {@link Handshake}, {@link Envelope}
- *   <li>클라이언트→호스트: {@link SplitDecision}, {@link ChoiceDecision},
- *       {@link HelpersDecision}, {@link CashAction}, {@link CashPass}
+ *   <li>호스트→클라이언트(대기실): {@link LobbyState}, {@link LobbyClosed}
+ *   <li>호스트→클라이언트(게임): {@link Handshake}, {@link Restart}, {@link Envelope}
+ *   <li>클라이언트→호스트: {@link LobbyHello}, {@link SplitDecision}, {@link ChoiceDecision},
+ *       {@link HelpersDecision}, {@link DistributionDecision}, {@link CashAction}, {@link CashPass}
  * </ul>
+ *
+ * <p>{@code epoch} 는 한 판(게임 세대)의 식별자다. 호스트가 판마다 증가시켜 핸드셰이크/재시작에
+ * 실어 보내고, 모든 {@link Envelope} 에도 찍는다. 클라이언트는 현재 세대와 다른 봉투를 버려서
+ * 재시작 직후 도착하는 이전 판의 늦은 이벤트가 새 보드를 오염시키지 않게 한다.
  */
 public sealed interface NetMessage extends Serializable
         permits NetMessage.Handshake, NetMessage.Restart, NetMessage.Envelope,
@@ -25,6 +30,7 @@ public sealed interface NetMessage extends Serializable
      * 리더가 아닐 수 있으므로 팀 id 만으로는 부족하다).
      */
     record Handshake(
+            int epoch,
             int winningCoins,
             boolean leaderEffectsEnabled,
             int clientTeamId,
@@ -37,6 +43,7 @@ public sealed interface NetMessage extends Serializable
      * 미러를 새로 초기화하도록 별도 타입으로 둔다.
      */
     record Restart(
+            int epoch,
             int winningCoins,
             boolean leaderEffectsEnabled,
             int clientTeamId,
@@ -58,8 +65,8 @@ public sealed interface NetMessage extends Serializable
     /** 호스트가 대기실을 닫음(취소). 클라이언트는 메뉴로 복귀한다. */
     record LobbyClosed(String reason) implements NetMessage {}
 
-    /** 매 게임 이벤트마다 호스트가 보내는 봉투: 이벤트 + 공개 보드 스냅샷. */
-    record Envelope(GameEvent event, PublicBoardState state) implements NetMessage {}
+    /** 매 게임 이벤트마다 호스트가 보내는 봉투: 게임 세대 + 이벤트 + 공개 보드 스냅샷. */
+    record Envelope(int epoch, GameEvent event, PublicBoardState state) implements NetMessage {}
 
     // --- 클라이언트→호스트 결정 메시지 ---
     // 각 응답은 자신이 답하는 요청의 식별자(requestId)를 echo 한다. 호스트는 현재 대기 중인
@@ -77,17 +84,24 @@ public sealed interface NetMessage extends Serializable
 
     /**
      * 환금 행동.
-     * type: "CASH" | "CASH_WITH_HELPERS" | "DISCARD" | "USE_HELPER"
-     * cardIds: 환금 카드 목록(또는 처분 카드 1장)
-     * helperId / copyTargetId / selectedCardIds: USE_HELPER 에서만 사용.
+     * <ul>
+     *   <li>{@code cardIds}: 환금 카드 목록(CASH/CASH_WITH_HELPERS) 또는 처분 카드 1장(DISCARD)
+     *   <li>{@code helperIds}: 환금에 함께 내는 도우미들(CASH_WITH_HELPERS 전용)
+     *   <li>{@code helperId}/{@code copyTargetId}/{@code selectedCardIds}: USE_HELPER 전용 —
+     *       사용할 도우미·복사 대상·효과 대상 카드
+     * </ul>
      */
     record CashAction(
             long requestId,
-            String type,
+            Kind kind,
             List<Integer> cardIds,
+            List<Integer> helperIds,
             Integer helperId,
             Integer copyTargetId,
-            List<Integer> selectedCardIds) implements NetMessage {}
+            List<Integer> selectedCardIds) implements NetMessage {
+
+        public enum Kind { CASH, CASH_WITH_HELPERS, DISCARD, USE_HELPER }
+    }
 
     record CashPass(long requestId) implements NetMessage {}
 

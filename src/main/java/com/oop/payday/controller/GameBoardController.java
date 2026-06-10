@@ -158,6 +158,11 @@ public final class GameBoardController implements GameListener, Initializable {
     private List<NetworkPlayer> networkPlayers = new ArrayList<>(); // 호스트측 원격 대리자들 (재시작 시 교체)
     private Game currentGame;             // 진행 중 게임 (중단용)
     private Thread gameThread;            // 게임 루프 스레드 (중단용)
+    private boolean disconnected;         // 네트워크 끊김 — 다시하기 불가(일시정지 메뉴에서 숨김)
+
+    /** 게임 세대 발급기. 호스트가 판마다 증가시켜 이전 판의 늦은 메시지를 클라이언트가 걸러내게 한다. */
+    private static final java.util.concurrent.atomic.AtomicInteger EPOCH_SEQ =
+            new java.util.concurrent.atomic.AtomicInteger();
     private boolean pauseMenuOpen;
     private boolean keyHandlerInstalled;
     private VBox activeBundle0;
@@ -385,33 +390,43 @@ public final class GameBoardController implements GameListener, Initializable {
         allPlayers.addAll(oppPlayers);
         this.networkPlayers = remotes.stream().map(RemoteBinding::player).toList();
 
-        NetworkBroadcaster broadcaster = new NetworkBroadcaster(server, teamA, teamB, null, allPlayers);
+        int epoch = EPOCH_SEQ.incrementAndGet();
+        NetworkBroadcaster broadcaster = new NetworkBroadcaster(server, teamA, teamB, null, allPlayers, epoch);
         FanOutGameListener fanOut = new FanOutGameListener(this, broadcaster);
         Game game = new Game(config, teamA, teamB, fanOut);
         broadcaster.setGame(game);
+        this.currentGame = game;
 
         server.beginGame(allPlayers);
+        // 게임 단계 리스너를 핸드셰이크·바인딩보다 먼저 설치한다 — 대기실→게임 전환 창에서
+        // 끊긴 클라이언트의 통지가 옛 대기실 리스너로 새지 않고 여기로 온다.
+        server.setClientListener(new GameServer.ClientListener() {
+            @Override public void onClientConnected(int clientId) { /* 게임 중 신규 접속 없음 */ }
+            @Override public void onLobbyMessage(int clientId, NetMessage msg) { /* 무시 */ }
+            @Override public void onClientDisconnected(int clientId) { onHostDisconnect(); }
+        });
         // 각 원격 클라이언트에 자기 관점 초기 상태 + 팀/플레이어 id 를 핸드셰이크로 보내고 대리자를 바인딩한다.
         for (RemoteBinding rb : remotes) {
             int playerId = allPlayers.indexOf(rb.player());
             int teamId = myPlayers.contains(rb.player()) ? 0 : 1;
             PublicBoardState init = WireCodec.buildState(teamA, teamB, game, playerId, allPlayers);
             NetMessage msg = restart
-                    ? new NetMessage.Restart(config.winningCoins(), config.leaderEffectsEnabled(),
+                    ? new NetMessage.Restart(epoch, config.winningCoins(), config.leaderEffectsEnabled(),
                             teamId, playerId, init)
-                    : new NetMessage.Handshake(config.winningCoins(), config.leaderEffectsEnabled(),
+                    : new NetMessage.Handshake(epoch, config.winningCoins(), config.leaderEffectsEnabled(),
                             teamId, playerId, init);
             server.sendTo(rb.clientId(), msg);
             server.bindPlayer(rb.clientId(), rb.player());
         }
-        // 게임 단계: 클라이언트 연결 종료를 감지하면 게임을 정상 종료시킨다.
-        server.setClientListener(new GameServer.ClientListener() {
-            @Override public void onClientConnected(int clientId) { /* 게임 중 신규 접속 없음 */ }
-            @Override public void onLobbyMessage(int clientId, NetMessage msg) { /* 무시 */ }
-            @Override public void onClientDisconnected(int clientId) { onHostDisconnect(); }
-        });
+        // 리스너 설치 전에 이미 끊겨 통지를 놓친 원격(전환 창 끊김, 끊긴 채 다시하기 등)이 있으면
+        // 게임을 시작하지 않고 즉시 끊김 처리한다 — 죽은 대리자를 영원히 기다리는 멈춤 방지.
+        for (RemoteBinding rb : remotes) {
+            if (server.session(rb.clientId()) == null) {
+                onHostDisconnect();
+                return;
+            }
+        }
 
-        this.currentGame = game;
         startGameThread(game);
     }
 
@@ -443,7 +458,7 @@ public final class GameBoardController implements GameListener, Initializable {
         resetBoard();
         bindClientMirror(mirror, client);
 
-        client.enterGame(mirror, this,
+        client.enterGame(mirror, hs.epoch(), this,
                 () -> showDisconnected("호스트 연결이 끊어졌습니다."),
                 this::onClientRestart);
         installEscHandler();
@@ -473,6 +488,7 @@ public final class GameBoardController implements GameListener, Initializable {
 
     private void resetBoard() {
         gameOver = false;
+        disconnected = false;
         introPhase = true;
         pauseMenuOpen = false;
         phaseRevision = 0;
@@ -553,8 +569,9 @@ public final class GameBoardController implements GameListener, Initializable {
         buttons.setAlignment(Pos.CENTER);
         buttons.setMaxWidth(260);
 
-        // 다시하기: 오프라인·호스트만 (네트워크 클라이언트는 재시작을 시작할 수 없음)
-        if (mode != Mode.CLIENT) {
+        // 다시하기: 오프라인·호스트만 (네트워크 클라이언트는 재시작을 시작할 수 없음).
+        // 끊긴 뒤에는 상대가 없으므로 숨긴다.
+        if (mode != Mode.CLIENT && !disconnected) {
             buttons.getChildren().add(pauseMenuButton("다시하기", e -> restartGame()));
         }
         buttons.getChildren().add(pauseMenuButton("메인 메뉴로 나가기", e -> exitToMainMenu()));
@@ -581,6 +598,7 @@ public final class GameBoardController implements GameListener, Initializable {
                 startGame(matchSetup);
             }
             case HOST -> {
+                if (disconnected) return;  // 끊긴 채 재시작 불가(버튼은 숨겨지지만 이중 안전망)
                 tearDownCurrentGame();
                 buildAndStartHostGame(true);
             }
@@ -610,6 +628,7 @@ public final class GameBoardController implements GameListener, Initializable {
     }
 
     private void showDisconnected(String msg) {
+        disconnected = true;
         if (!gameOver) {
             setMessage(msg);
             Label label = new Label(msg);

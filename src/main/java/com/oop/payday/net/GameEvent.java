@@ -57,7 +57,7 @@ public sealed interface GameEvent extends Serializable
 
     record Message(String text) implements GameEvent {}
 
-    /** 슬쩍하기 발동 — drawnCardId == -1 이면 드로우 실패. */
+    /** 슬쩍하기 발동 — {@code drawnCard == null} 이면 드로우 실패. */
     record StealActivated(int playerId, CardDto drawnCard) implements GameEvent {}
 
     /** 꾀부리기 요청 — 분할자(클라이언트)에게만 전달. requestId 는 응답 상관관계용. */

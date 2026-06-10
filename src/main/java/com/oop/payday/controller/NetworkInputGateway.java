@@ -52,15 +52,19 @@ public final class NetworkInputGateway implements InputGateway {
         long requestId = requestId();
         NetMessage msg = switch (action) {
             case CashInAction.Cash c ->
-                new NetMessage.CashAction(requestId, "CASH", ids(c.cards()), null, null, List.of());
+                new NetMessage.CashAction(requestId, NetMessage.CashAction.Kind.CASH,
+                        ids(c.cards()), List.of(), null, null, List.of());
             case CashInAction.CashWithHelpers c ->
-                new NetMessage.CashAction(requestId, "CASH_WITH_HELPERS", ids(c.cards()),
-                        null, null,
-                        c.helpers().stream().map(HelperCard::id).toList());
+                new NetMessage.CashAction(requestId, NetMessage.CashAction.Kind.CASH_WITH_HELPERS,
+                        ids(c.cards()),
+                        c.helpers().stream().map(HelperCard::id).toList(),
+                        null, null, List.of());
             case CashInAction.Discard d ->
-                new NetMessage.CashAction(requestId, "DISCARD", List.of(d.card().id()), null, null, List.of());
+                new NetMessage.CashAction(requestId, NetMessage.CashAction.Kind.DISCARD,
+                        List.of(d.card().id()), List.of(), null, null, List.of());
             case CashInAction.UseHelper u ->
-                new NetMessage.CashAction(requestId, "USE_HELPER", List.of(),
+                new NetMessage.CashAction(requestId, NetMessage.CashAction.Kind.USE_HELPER,
+                        List.of(), List.of(),
                         u.helper().id(),
                         u.copyTarget() != null ? u.copyTarget().id() : null,
                         ids(u.selectedCards()));

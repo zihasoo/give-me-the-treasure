@@ -1,5 +1,6 @@
 package com.oop.payday.net;
 
+import java.io.ObjectInputFilter;
 import java.util.Collection;
 import java.util.List;
 
@@ -18,6 +19,13 @@ import com.oop.payday.player.Player;
  * 도메인 객체 ↔ 직렬화 가능 DTO 변환 + 호스트 측 id→객체 복원 유틸.
  */
 public final class WireCodec {
+
+    /**
+     * 네트워크 역직렬화 허용목록. 게임 메시지에 등장하는 타입(우리 패키지 + JDK 기본 컬렉션/래퍼)만
+     * 허용해 임의 클래스 역직렬화(가젯 체인) 공격 면을 막는다. 서버·클라이언트 양쪽 스트림에 설정한다.
+     */
+    public static final ObjectInputFilter WIRE_FILTER = ObjectInputFilter.Config.createFilter(
+            "com.oop.payday.**;java.lang.**;java.util.**;!*");
 
     private WireCodec() {}
 

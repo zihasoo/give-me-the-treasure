@@ -34,14 +34,17 @@ public final class NetworkBroadcaster implements GameListener {
     private final Team teamB;
     private Game game;
     private final List<Player> allPlayers;
+    /** 이 판의 게임 세대 — 모든 봉투에 찍어 재시작 후 늦게 도착한 이전 판 이벤트를 클라이언트가 버리게 한다. */
+    private final int epoch;
 
     public NetworkBroadcaster(GameServer server, Team teamA, Team teamB,
-            Game game, List<Player> allPlayers) {
+            Game game, List<Player> allPlayers, int epoch) {
         this.server = server;
         this.teamA = teamA;
         this.teamB = teamB;
         this.game = game;
         this.allPlayers = allPlayers;
+        this.epoch = epoch;
     }
 
     /** Game 인스턴스를 나중에 설정한다 (Game 생성 전에 broadcaster 를 만들어야 할 때). */
@@ -153,6 +156,9 @@ public final class NetworkBroadcaster implements GameListener {
     public void onRequestSplit(Player player, List<Card> hand) {
         ClientSession s = sessionFor(player);
         if (s == null) return;
+        // id 복원 컨텍스트를 requestId 발급 전에 저장한다 — 발급 전엔 응답이 consumeRequest 를
+        // 통과할 수 없으므로, 즉답하는 클라이언트와의 경합(컨텍스트 미설정 상태 resolve)이 차단된다.
+        s.player().currentHand = hand;
         long rid = s.player().nextRequestId(RequestKind.SPLIT);
         sendTo(s, new GameEvent.RequestSplit(rid, WireCodec.toDtos(hand)));
     }
@@ -174,6 +180,7 @@ public final class NetworkBroadcaster implements GameListener {
         ClientSession s = sessionFor(player);
         if (s == null) return;
         List<HelperDto> dtos = options.stream().map(h -> WireCodec.toDto(h, false)).toList();
+        s.player().currentHelperOptions = options;  // requestId 발급 전 저장(onRequestSplit 주석 참고)
         long rid = s.player().nextRequestId(RequestKind.HELPERS);
         sendTo(s, new GameEvent.RequestHelpers(rid, playerId(player), dtos, chooseCount));
     }
@@ -182,6 +189,7 @@ public final class NetworkBroadcaster implements GameListener {
     public void onRequestTeamDistribution(Player leader, Team team, List<Card> acquired) {
         ClientSession s = sessionFor(leader);
         if (s == null) return;
+        s.player().currentAcquired = acquired;  // requestId 발급 전 저장(onRequestSplit 주석 참고)
         long rid = s.player().nextRequestId(RequestKind.DISTRIBUTION);
         sendTo(s, new GameEvent.RequestTeamDistribution(
                 rid, playerId(leader), teamId(team), WireCodec.toDtos(acquired)));
@@ -208,13 +216,13 @@ public final class NetworkBroadcaster implements GameListener {
     private void sendPublic(GameEvent event) {
         for (ClientSession s : server.sessions()) {
             if (s.player() == null) continue;
-            server.sendTo(s.clientId(), new NetMessage.Envelope(event, perspectiveState(s.player())));
+            server.sendTo(s.clientId(), new NetMessage.Envelope(epoch, event, perspectiveState(s.player())));
         }
     }
 
     /** 한 세션에 이벤트를 그 클라이언트 관점의 스냅샷과 함께 보낸다. */
     private void sendTo(ClientSession s, GameEvent event) {
-        server.sendTo(s.clientId(), new NetMessage.Envelope(event, perspectiveState(s.player())));
+        server.sendTo(s.clientId(), new NetMessage.Envelope(epoch, event, perspectiveState(s.player())));
     }
 
     /** 이 플레이어를 소유한 클라이언트 세션. 호스트 사람/봇이면 {@code null}. */

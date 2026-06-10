@@ -80,7 +80,7 @@ final class NetworkMultiClientGameTest {
                 }
             };
 
-            NetworkBroadcaster broadcaster = new NetworkBroadcaster(server, teamA, teamB, null, allPlayers);
+            NetworkBroadcaster broadcaster = new NetworkBroadcaster(server, teamA, teamB, null, allPlayers, 1);
             FanOutGameListener fanOut = new FanOutGameListener(capture, broadcaster);
             GameConfig config = GameConfig.practice(true);
             Game game = new Game(config, teamA, teamB, fanOut);
@@ -114,7 +114,7 @@ final class NetworkMultiClientGameTest {
         int playerId = allPlayers.indexOf(np);
         PublicBoardState init = WireCodec.buildState(teamA, teamB, game, playerId, allPlayers);
         server.sendTo(clientId, new NetMessage.Handshake(
-                config.winningCoins(), config.leaderEffectsEnabled(), teamId, playerId, init));
+                1, config.winningCoins(), config.leaderEffectsEnabled(), teamId, playerId, init));
         server.bindPlayer(clientId, np);
     }
 
@@ -136,6 +136,9 @@ final class NetworkMultiClientGameTest {
             oos = new ObjectOutputStream(socket.getOutputStream());
             oos.flush();
             ois = new ObjectInputStream(socket.getInputStream());
+            // 실제 GameClient 와 같은 역직렬화 필터 — 게임 한 판의 모든 호스트→클라이언트
+            // 페이로드가 허용목록을 통과하는지 함께 회귀 보호한다.
+            ois.setObjectInputFilter(WireCodec.WIRE_FILTER);
         }
 
         void start() {
