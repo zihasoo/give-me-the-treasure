@@ -69,6 +69,7 @@ import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.control.Tooltip;
 import javafx.geometry.Bounds;
 import javafx.scene.image.WritableImage;
 import javafx.scene.SnapshotParameters;
@@ -101,11 +102,13 @@ public final class GameBoardController implements GameListener, Initializable {
     @FXML private Label fieldATitleLabel;
     @FXML private Label fieldAOfficerLabel;
     @FXML private Label fieldAOfficerEffectLabel;
+    @FXML private VBox fieldAOfficerPortrait;
     @FXML private Label fieldACoinsLabel;
     @FXML private Label fieldACountLabel;
     @FXML private Label fieldBTitleLabel;
     @FXML private Label fieldBOfficerLabel;
     @FXML private Label fieldBOfficerEffectLabel;
+    @FXML private VBox fieldBOfficerPortrait;
     @FXML private Label fieldBCoinsLabel;
     @FXML private Label fieldBCountLabel;
     @FXML private StackPane fieldAStage;
@@ -155,6 +158,7 @@ public final class GameBoardController implements GameListener, Initializable {
     private MatchSetup matchSetup;        // 오프라인 자리 배치(재시작용)
     private GameServer server;            // 호스트 세션 (소켓·리더 스레드 유지)
     private GameClient client;            // 클라이언트 세션
+    private NetworkBroadcaster broadcaster; // 호스트 모드에서 리더 진행 상태를 팀원에게 중계할 때 사용
     private List<NetworkPlayer> networkPlayers = new ArrayList<>(); // 호스트측 원격 대리자들 (재시작 시 교체)
     private Game currentGame;             // 진행 중 게임 (중단용)
     private Thread gameThread;            // 게임 루프 스레드 (중단용)
@@ -168,10 +172,17 @@ public final class GameBoardController implements GameListener, Initializable {
     private VBox activeBundle0;
     private VBox activeBundle1;
     private int phaseRevision;
-    private boolean opponentCashDone = false;
     private Node opponentCashDoneBadge;
+    private final Set<Player> cashDonePlayers = new HashSet<>();
     private final Set<Card> newlyReceivedCards = new HashSet<>();
     private final Set<Card> newlyReceivedOpponentCards = new HashSet<>();
+
+    // 팀원(리더가 아닌 아군) 읽기 전용 패널의 라이브 동기화 참조. 활성 패널이 아니면 null.
+    private List<Player> teammateDistMembers;            // 분배 패널 멤버 순서(배정 인덱스 해석용)
+    private List<Label> teammateDistOwnerLabels;         // 가져온 카드별 보관자 라벨(배정 인덱스순)
+    private List<Label> teammateHelperBadges;            // 도우미 후보별 역할 배지(후보 순서)
+    private List<StackPane> teammateHelperCards;         // 도우미 후보별 카드 노드(역할 강조용)
+    private Player teammateHelperLeader;                 // 도우미 선택 중인 리더(배지 라벨 표기용)
 
     private static final Comparator<Card> CARD_ORDER_BY_COLOR =
             Comparator.<Card>comparingInt(GameBoardController::cardRank)
@@ -286,6 +297,7 @@ public final class GameBoardController implements GameListener, Initializable {
         this.config = setup.gameConfig();
         this.server = null;
         this.client = null;
+        this.broadcaster = null;
         this.networkPlayers = List.of();
 
         // 사람(방장)이 속한 대기실 팀을 항상 teamA(=내 필드)로 둔다.
@@ -392,6 +404,7 @@ public final class GameBoardController implements GameListener, Initializable {
 
         int epoch = EPOCH_SEQ.incrementAndGet();
         NetworkBroadcaster broadcaster = new NetworkBroadcaster(server, teamA, teamB, null, allPlayers, epoch);
+        this.broadcaster = broadcaster;
         FanOutGameListener fanOut = new FanOutGameListener(this, broadcaster);
         Game game = new Game(config, teamA, teamB, fanOut);
         broadcaster.setGame(game);
@@ -402,7 +415,7 @@ public final class GameBoardController implements GameListener, Initializable {
         // 끊긴 클라이언트의 통지가 옛 대기실 리스너로 새지 않고 여기로 온다.
         server.setClientListener(new GameServer.ClientListener() {
             @Override public void onClientConnected(int clientId) { /* 게임 중 신규 접속 없음 */ }
-            @Override public void onLobbyMessage(int clientId, NetMessage msg) { /* 무시 */ }
+            @Override public void onLobbyMessage(int clientId, NetMessage msg) { handleClientPreview(clientId, msg); }
             @Override public void onClientDisconnected(int clientId) { onHostDisconnect(); }
         });
         // 각 원격 클라이언트에 자기 관점 초기 상태 + 팀/플레이어 id 를 핸드셰이크로 보내고 대리자를 바인딩한다.
@@ -453,6 +466,7 @@ public final class GameBoardController implements GameListener, Initializable {
         this.mode = Mode.CLIENT;
         this.server = null;
         this.client = client;
+        this.broadcaster = null;
         ClientMirror mirror = new ClientMirror();
         mirror.init(hs.clientTeamId(), hs.clientPlayerId(), hs.initialState());
         resetBoard();
@@ -493,6 +507,7 @@ public final class GameBoardController implements GameListener, Initializable {
         pauseMenuOpen = false;
         phaseRevision = 0;
         distributionFieldUpdatePending = false;
+        clearTeammatePanelState();
         resetCashPanel();
         screenOverlay.getChildren().clear();
         screenOverlay.getStyleClass().clear();
@@ -632,8 +647,18 @@ public final class GameBoardController implements GameListener, Initializable {
         if (!gameOver) {
             setMessage(msg);
             Label label = new Label(msg);
-            label.getStyleClass().add("preview");
-            showScreenOverlay(label);
+            label.getStyleClass().add("waiting-label");
+            label.setWrapText(true);
+
+            Button exitBtn = new Button("메인 화면으로 나가기");
+            exitBtn.getStyleClass().add("menu-button");
+            exitBtn.setOnAction(e -> exitToMainMenu());
+
+            VBox panel = new VBox(20, label, exitBtn);
+            panel.setAlignment(Pos.CENTER);
+            panel.setPadding(new Insets(32));
+            panel.getStyleClass().add("waiting-panel");
+            showScreenOverlay(panel);
         }
     }
 
@@ -668,13 +693,18 @@ public final class GameBoardController implements GameListener, Initializable {
             int phaseToken = ++phaseRevision;
             currentSplitTeam = splitTeam;
             clearOpponentCashDoneBadge();
+            cashDonePlayers.clear();
             newlyReceivedCards.clear();
             newlyReceivedOpponentCards.clear();
+            clearTeammatePanelState();
             clearCenterIfOpponentWaiting();
             turnLabel.setText(phase.korean());
             updateBoardStatus();
             if (phase == Phase.SCHEME && !isLocalActor(splitTeam.leader())) {
-                runAfterOverlay(() -> setWaitingIfCurrent(phaseToken, "상대가 카드를 분할 중입니다"));
+                String schemeMsg = splitTeam == teamA
+                        ? "리더가 카드를 분할 중입니다"
+                        : "상대가 카드를 분할 중입니다";
+                runAfterOverlay(() -> setWaitingIfCurrent(phaseToken, schemeMsg));
             } else if (phase == Phase.DISTRIBUTE) {
                 activeBundle0 = null;
                 activeBundle1 = null;
@@ -694,7 +724,10 @@ public final class GameBoardController implements GameListener, Initializable {
             int phaseToken = phaseRevision;
             Team chooser = otherTeam(currentSplitTeam);
             if (chooser != null && !isLocalActor(chooser.leader())) {
-                runAfterOverlay(() -> setWaitingChoiceIfCurrent(phaseToken, bundles));
+                String choiceMsg = chooser == teamA
+                        ? "리더가 묶음을 선택 중입니다"
+                        : "상대가 카드를 선택 중입니다";
+                runAfterOverlay(() -> setWaitingChoiceIfCurrent(phaseToken, bundles, choiceMsg));
             }
         });
     }
@@ -704,6 +737,7 @@ public final class GameBoardController implements GameListener, Initializable {
             Team splitTeam, List<Card> splitCards) {
         Platform.runLater(() -> {
             distributionFieldUpdatePending = true;
+            int phaseToken = phaseRevision;
             setMessage(chooseTeam.name() + "이(가) 묶음 " + (chosenIndex == 0 ? "①" : "②") + " 선택 · "
                     + chooseTeam.name() + " " + chooseCards + " / "
                     + splitTeam.name() + " " + splitCards);
@@ -742,6 +776,13 @@ public final class GameBoardController implements GameListener, Initializable {
                 });
                 clearNew.play();
             });
+            // 내 팀이 분배에 관여하지 않는(1인 팀) 경우, 상대 다인 팀의 분배를 기다리는 동안 빈 화면이
+            // 되지 않도록 대기 안내를 띄운다. 다인 팀이면 분배/읽기전용 패널이 대신 표시된다.
+            Team idleOpp = myTeam != null ? otherTeam(myTeam) : null;
+            if (myTeam != null && myTeam.members().size() == 1
+                    && idleOpp != null && idleOpp.members().size() > 1) {
+                runAfterOverlay(() -> setWaitingIfCurrent(phaseToken, "상대 팀이 카드를 분배하는 중입니다"));
+            }
         });
     }
 
@@ -829,7 +870,13 @@ public final class GameBoardController implements GameListener, Initializable {
 
     @Override
     public void onRequestHelpers(Player player, List<HelperCard> options, int chooseCount) {
-        if (!isLocalActor(player)) return;
+        if (!isLocalActor(player)) {
+            if (isAlly(player) && options != null && !options.isEmpty()) {
+                Platform.runLater(() -> runAfterOverlay(() ->
+                        setCenterAnimated(buildTeammateHelperWaitingPanel(player, options))));
+            }
+            return;
+        }
         Platform.runLater(() -> runAfterOverlay(() -> {
             updateBoardStatus();
             setCenterAnimated(buildHelperSelectionPanel(options, chooseCount));
@@ -838,11 +885,32 @@ public final class GameBoardController implements GameListener, Initializable {
 
     @Override
     public void onRequestTeamDistribution(Player leader, Team team, List<Card> acquired) {
-        if (!isLocalActor(leader)) return; // 봇 리더는 전략이 자동 분배하므로 패널을 띄우지 않는다.
-        Platform.runLater(() -> runAfterOverlay(() -> {
-            updateBoardStatus();
-            setCenterAnimated(buildTeamDistributionPanel(team, acquired));
-        }));
+        if (isLocalActor(leader)) {
+            Platform.runLater(() -> runAfterOverlay(() -> {
+                updateBoardStatus();
+                setCenterAnimated(buildTeamDistributionPanel(team, acquired));
+            }));
+        } else if (isAlly(leader)) {
+            // 같은 팀 팀원: 리더의 분배를 읽기 전용으로 보며 라이브 동기화한다(봇 리더면 즉시 결정되어 잠깐 표시).
+            Platform.runLater(() -> runAfterOverlay(() ->
+                    setCenterAnimated(buildTeammateDistributionPanel(team, acquired, leader))));
+        }
+        // 봇 리더(상대 팀)·내가 관여하지 않는 분배는 패널을 띄우지 않는다.
+    }
+
+    @Override
+    public void onTeamDistributionPreview(List<Integer> assignment) {
+        Platform.runLater(() -> applyTeammateDistributionPreview(assignment));
+    }
+
+    @Override
+    public void onHelperSelectionPreview(List<Integer> roles) {
+        Platform.runLater(() -> applyTeammateHelperPreview(roles));
+    }
+
+    @Override
+    public void onTeamDistributionDone(int leaderId) {
+        Platform.runLater(this::switchTeammateToOpponentWaiting);
     }
 
     @Override
@@ -862,13 +930,18 @@ public final class GameBoardController implements GameListener, Initializable {
             Platform.runLater(() -> {
                 cashSelection.clear();
                 resetCashPanel();
+                cashDonePlayers.add(player);
+                updateBoardStatus();
                 runAfterOverlay(() -> setWaiting("환금 완료 — 상대를 기다리는 중"));
             });
-        } else if (teamFor(player) == teamB) {
-            // 상대 팀 멤버가 환금을 마쳤을 때만 상대 완료 배지. 우리 팀 봇 멤버는 배지 없이 보드만 갱신.
+        } else {
             Platform.runLater(() -> {
-                opponentCashDone = true;
-                showOpponentCashDoneBadge();
+                cashDonePlayers.add(player);
+                // 1인 상대 팀: 기존 스테이지 배지 표시
+                if (teamFor(player) == teamB && teamB != null && teamB.members().size() == 1) {
+                    showOpponentCashDoneBadge();
+                }
+                updateBoardStatus(); // 다인 팀: memberChip 재렌더로 배지 표시
             });
         }
     }
@@ -887,7 +960,6 @@ public final class GameBoardController implements GameListener, Initializable {
             fieldBStage.getChildren().remove(opponentCashDoneBadge);
             opponentCashDoneBadge = null;
         }
-        opponentCashDone = false;
     }
 
     // ===== 패널 빌더 =====
@@ -1106,15 +1178,15 @@ public final class GameBoardController implements GameListener, Initializable {
         return root;
     }
 
-    private Node buildWaitingChoicePanel(GameListener.BundlePair bundles) {
+    private Node buildWaitingChoicePanel(GameListener.BundlePair bundles, String title) {
         return buildWaitingChoicePanel(
                 bundles.visible0(), bundles.faceDown0(),
-                bundles.visible1(), bundles.faceDown1());
+                bundles.visible1(), bundles.faceDown1(), title);
     }
 
     private Node buildWaitingChoicePanel(List<Card> visible0, boolean faceDown0,
-            List<Card> visible1, boolean faceDown1) {
-        VBox root = panelRoot("상대의 선택을 기다리는 중입니다.");
+            List<Card> visible1, boolean faceDown1, String title) {
+        VBox root = panelRoot(title);
         HBox bundlesRow = new HBox(40);
         bundlesRow.setAlignment(Pos.CENTER);
         activeBundle0 = bundleBox("묶음 ①", visible0, faceDown0);
@@ -1190,20 +1262,9 @@ public final class GameBoardController implements GameListener, Initializable {
 
     /** 사람 리더가 가져온 카드를 팀원과 나눠 갖는 패널(규칙 §6-2-4). 카드를 눌러 보관할 사람을 순환한다. */
     private VBox buildTeamDistributionPanel(Team team, List<Card> acquired) {
+        clearTeammatePanelState(); // 내가 리더 — 팀원 읽기 전용 패널은 없다.
         List<Player> members = team.members();
-        Map<Card, Integer> assign = new HashMap<>();
-        int[] counts = new int[members.size()];
-        for (int i = 0; i < members.size(); i++) {
-            counts[i] = members.get(i).holdingCount();
-        }
-        for (Card card : acquired) {                    // 균형 분배로 초기 배정
-            int target = 0;
-            for (int i = 1; i < members.size(); i++) {
-                if (counts[i] < counts[target]) target = i;
-            }
-            assign.put(card, target);
-            counts[target]++;
-        }
+        Map<Card, Integer> assign = balancedAssignment(acquired, members);
 
         VBox root = panelRoot("가져온 카드를 팀원과 나눠 가지세요. 카드를 눌러 보관할 사람을 바꿉니다.");
 
@@ -1219,6 +1280,7 @@ public final class GameBoardController implements GameListener, Initializable {
                 int next = (assign.get(card) + 1) % members.size();
                 assign.put(card, next);
                 applyOwnerLabel(owner, members.get(next));
+                broadcastTeamDistributionPreview(assignmentList(acquired, assign)); // 팀원 화면 동기화
             });
             cell.getChildren().addAll(cardView, owner);
             cardRow.getChildren().add(cell);
@@ -1243,13 +1305,91 @@ public final class GameBoardController implements GameListener, Initializable {
             for (Card card : acquired) {
                 byMember.get(assign.get(card)).add(card);
             }
+            // 제출 후 상대 팀 분배를 기다리는 동안 빈 화면 대신 대기 안내를 띄우고, 같은 팀 팀원도
+            // 읽기 전용 패널에서 같은 대기 화면으로 전환시킨다.
+            setWaiting("상대 팀이 카드를 분배하는 중입니다");
+            broadcastTeamDistributionDone();
             inputGateway.provideDistribution(new TeamDistribution(byMember));
         });
         HBox buttonRow = new HBox(confirm);
         buttonRow.setAlignment(Pos.CENTER);
 
         root.getChildren().addAll(cardRow, buttonRow);
+        broadcastTeamDistributionPreview(assignmentList(acquired, assign)); // 초기 균형 배정 동기화
         return root;
+    }
+
+    /** 같은 팀 팀원(리더가 아닌 아군)이 보는 읽기 전용 분배 패널. 리더의 배정을 라이브로 따라간다. */
+    private Node buildTeammateDistributionPanel(Team team, List<Card> acquired, Player leader) {
+        List<Player> members = team.members();
+        Map<Card, Integer> assign = balancedAssignment(acquired, members); // 리더 초기값과 동일한 규칙
+
+        VBox root = panelRoot(leader.name() + " 리더가 가져온 카드를 분배 중입니다...");
+
+        List<Label> ownerLabels = new ArrayList<>();
+        FlowPane cardRow = new FlowPane(14, 10);
+        cardRow.setAlignment(Pos.CENTER);
+        for (Card card : acquired) {
+            VBox cell = new VBox(6);
+            cell.setAlignment(Pos.CENTER);
+            CardView cardView = new CardView(card, true);
+            Label owner = new Label();
+            applyOwnerLabel(owner, members.get(assign.get(card)));
+            ownerLabels.add(owner);
+            cell.getChildren().addAll(cardView, owner);
+            cardRow.getChildren().add(cell);
+        }
+        // 읽기 전용: 클릭 핸들러를 달지 않는다(제목으로 리더가 분배 중임을 안내).
+
+        // 라이브 동기화 참조 등록(도우미 패널 참조는 비운다).
+        teammateHelperBadges = null;
+        teammateHelperLeader = null;
+        teammateDistMembers = members;
+        teammateDistOwnerLabels = ownerLabels;
+
+        root.getChildren().add(cardRow);
+        return root;
+    }
+
+    /** 리더의 분배 프리뷰를 팀원 패널에 반영한다. 활성 분배 패널이 없으면 무시. */
+    private void applyTeammateDistributionPreview(List<Integer> assignment) {
+        if (teammateDistOwnerLabels == null || teammateDistMembers == null) {
+            return;
+        }
+        int n = Math.min(assignment.size(), teammateDistOwnerLabels.size());
+        for (int i = 0; i < n; i++) {
+            int idx = assignment.get(i);
+            if (idx >= 0 && idx < teammateDistMembers.size()) {
+                applyOwnerLabel(teammateDistOwnerLabels.get(i), teammateDistMembers.get(idx));
+            }
+        }
+    }
+
+    /** 가져온 카드를 멤버 보유 수가 적은 쪽부터 균형 있게 초기 배정한다(리더·팀원 패널 공통). */
+    private Map<Card, Integer> balancedAssignment(List<Card> acquired, List<Player> members) {
+        Map<Card, Integer> assign = new HashMap<>();
+        int[] counts = new int[members.size()];
+        for (int i = 0; i < members.size(); i++) {
+            counts[i] = members.get(i).holdingCount();
+        }
+        for (Card card : acquired) {
+            int target = 0;
+            for (int i = 1; i < members.size(); i++) {
+                if (counts[i] < counts[target]) target = i;
+            }
+            assign.put(card, target);
+            counts[target]++;
+        }
+        return assign;
+    }
+
+    /** 배정 맵을 가져온 카드 순서의 멤버 인덱스 리스트로 변환(프리뷰 전송용). */
+    private List<Integer> assignmentList(List<Card> acquired, Map<Card, Integer> assign) {
+        List<Integer> list = new ArrayList<>(acquired.size());
+        for (Card card : acquired) {
+            list.add(assign.getOrDefault(card, 0));
+        }
+        return list;
     }
 
     /** 분배 패널의 보관자 라벨을 갱신한다. 내(로컬) 카드면 강조 스타일을 입힌다. */
@@ -1262,6 +1402,7 @@ public final class GameBoardController implements GameListener, Initializable {
     }
 
     private Node buildHelperSelectionPanel(List<HelperCard> options, int chooseCount) {
+        clearTeammatePanelState(); // 내가 선택 주체 — 팀원 읽기 전용 패널은 없다.
         Team myTeam = teamFor(localPlayer);
         Player teammate = myTeam == null ? null : teammateOf(myTeam, localPlayer);
         // 2인 팀 리더는 고르는 동시에 나/팀원 배정까지 한 패널에서 끝낸다(규칙 §4-3).
@@ -1269,6 +1410,81 @@ public final class GameBoardController implements GameListener, Initializable {
             return buildHelperSelectAndAssignPanel(options, teammate);
         }
         return buildHelperSelectOnlyPanel(options, chooseCount);
+    }
+
+    /**
+     * 팀원(리더가 아닌 쪽)이 볼 수 있는 도우미 후보 읽기 전용 패널.
+     * 각 후보에 역할 배지를 달고, 리더의 선택({@link #onHelperSelectionPreview})을 라이브로 따라간다.
+     */
+    private Node buildTeammateHelperWaitingPanel(Player leader, List<HelperCard> options) {
+        VBox root = panelRoot(leader.name() + " 리더가 도우미를 선택 중입니다...");
+        FlowPane row = new FlowPane(12, 12);
+        row.setAlignment(Pos.CENTER);
+        row.getStyleClass().add("helper-grid");
+        row.setPrefWrapLength(860);
+
+        List<Label> badges = new ArrayList<>();
+        List<StackPane> cards = new ArrayList<>();
+        for (HelperCard helper : options) {
+            Label badge = new Label("미선택");
+            badge.getStyleClass().add("helper-pick-badge");
+
+            Label nameLbl = new Label(helper.displayName());
+            nameLbl.getStyleClass().add("helper-button-name");
+            nameLbl.setWrapText(true);
+            nameLbl.setMaxWidth(220);
+            Label descLbl = new Label(helper.effectText());
+            descLbl.getStyleClass().add("helper-button-desc");
+            descLbl.setWrapText(true);
+            descLbl.setMaxWidth(220);
+
+            VBox content = new VBox(6, badge, nameLbl, descLbl);
+            content.setAlignment(Pos.CENTER);
+            StackPane card = new StackPane(content);
+            card.getStyleClass().addAll("helper-button", "helper-pick-card");
+            card.setPrefWidth(250);
+            card.setPrefHeight(150);
+
+            badges.add(badge);
+            cards.add(card);
+            row.getChildren().add(card);
+        }
+
+        // 라이브 동기화 참조 등록(분배 패널 참조는 비운다).
+        teammateDistMembers = null;
+        teammateDistOwnerLabels = null;
+        teammateHelperBadges = badges;
+        teammateHelperCards = cards;
+        teammateHelperLeader = leader;
+
+        root.getChildren().add(row);
+        return root;
+    }
+
+    /** 리더의 도우미 선택 프리뷰를 팀원 패널에 반영한다. 활성 도우미 패널이 없으면 무시. */
+    private void applyTeammateHelperPreview(List<Integer> roles) {
+        if (teammateHelperBadges == null || teammateHelperCards == null) {
+            return;
+        }
+        int n = Math.min(roles.size(), teammateHelperBadges.size());
+        for (int i = 0; i < n; i++) {
+            int role = roles.get(i);
+            Label badge = teammateHelperBadges.get(i);
+            StackPane card = teammateHelperCards.get(i);
+            card.getStyleClass().removeAll("helper-pick-mine", "helper-pick-mate");
+            badge.getStyleClass().removeAll("helper-pick-badge-mine", "helper-pick-badge-mate");
+            if (role == 1) {            // 리더 몫
+                card.getStyleClass().add("helper-pick-mate");
+                badge.getStyleClass().add("helper-pick-badge-mate");
+                badge.setText(teammateHelperLeader != null ? teammateHelperLeader.name() : "리더");
+            } else if (role == 2) {     // 팀원(나) 몫
+                card.getStyleClass().add("helper-pick-mine");
+                badge.getStyleClass().add("helper-pick-badge-mine");
+                badge.setText("나");
+            } else {
+                badge.setText("미선택");
+            }
+        }
     }
 
     /** 1인 팀(또는 1장 선택): 후보 중 {@code chooseCount} 장만 고른다. */
@@ -1426,11 +1642,13 @@ public final class GameBoardController implements GameListener, Initializable {
                 }
                 state.put(helper, next);
                 refresh.run();
+                broadcastHelperSelectionPreview(rolesList(options, state)); // 팀원 화면 동기화
             });
             cardOf.put(helper, card);
             row.getChildren().add(card);
         }
         refresh.run();
+        broadcastHelperSelectionPreview(rolesList(options, state)); // 초기 상태(전부 미선택) 동기화
 
         boolean[] submitted = {false};
         done.setOnAction(e -> {
@@ -1457,6 +1675,108 @@ public final class GameBoardController implements GameListener, Initializable {
             }
         }
         return null;
+    }
+
+    /** 도우미 선택 상태 맵을 후보 순서의 역할 리스트로 변환(프리뷰 전송용). 값: 0=미선택,1=리더,2=팀원. */
+    private List<Integer> rolesList(List<HelperCard> options, Map<HelperCard, Integer> state) {
+        List<Integer> list = new ArrayList<>(options.size());
+        for (HelperCard h : options) {
+            list.add(state.getOrDefault(h, 0));
+        }
+        return list;
+    }
+
+    /** 팀원 읽기 전용(분배·도우미) 패널의 라이브 동기화 참조를 모두 비운다. */
+    private void clearTeammatePanelState() {
+        teammateDistMembers = null;
+        teammateDistOwnerLabels = null;
+        teammateHelperBadges = null;
+        teammateHelperCards = null;
+        teammateHelperLeader = null;
+    }
+
+    // ── 리더 선택 진행 상태 송신(같은 팀 팀원 화면 동기화) ─────────────────
+
+    /** 리더의 팀 분배 진행 상태를 팀원에게 보낸다. 호스트는 직접 중계, 클라이언트는 호스트로 전송. */
+    private void broadcastTeamDistributionPreview(List<Integer> assignment) {
+        switch (mode) {
+            case HOST -> {
+                if (broadcaster != null) broadcaster.broadcastTeamDistributionPreview(localPlayer, assignment);
+            }
+            case CLIENT -> sendClientPreview(new NetMessage.DistributionPreview(assignment));
+            case OFFLINE -> { /* 화면을 공유하는 원격 팀원이 없다 */ }
+        }
+    }
+
+    /** 리더의 도우미 선택 진행 상태를 팀원에게 보낸다. */
+    private void broadcastHelperSelectionPreview(List<Integer> roles) {
+        switch (mode) {
+            case HOST -> {
+                if (broadcaster != null) broadcaster.broadcastHelperSelectionPreview(localPlayer, roles);
+            }
+            case CLIENT -> sendClientPreview(new NetMessage.HelperPreview(roles));
+            case OFFLINE -> { }
+        }
+    }
+
+    /** 내(리더)가 분배를 확정했음을 같은 팀 팀원에게 알린다(팀원 화면을 상대 대기로 전환). */
+    private void broadcastTeamDistributionDone() {
+        switch (mode) {
+            case HOST -> {
+                if (broadcaster != null) broadcaster.broadcastTeamDistributionDone(localPlayer);
+            }
+            case CLIENT -> sendClientPreview(new NetMessage.DistributionDone());
+            case OFFLINE -> { }
+        }
+    }
+
+    /** 읽기 전용 분배 패널을 보던 팀원이 우리 팀 분배 완료 후 상대 대기 화면으로 전환한다. */
+    private void switchTeammateToOpponentWaiting() {
+        if (teammateDistOwnerLabels != null) {   // 분배 읽기 전용 패널이 떠 있을 때만 전환
+            clearTeammatePanelState();
+            setWaiting("상대 팀이 카드를 분배하는 중입니다");
+        }
+    }
+
+    private void sendClientPreview(NetMessage msg) {
+        if (client == null) return;
+        try {
+            client.send(msg);
+        } catch (java.io.IOException ignored) {
+            // 끊기면 reader 가 처리 — 진행 상태 동기화는 유실돼도 무방하다.
+        }
+    }
+
+    /**
+     * 호스트가 받은 클라이언트 리더의 진행 상태 메시지를 처리한다(서버 reader 스레드에서 호출).
+     * 같은 팀의 다른 클라이언트로 중계하고, 호스트 자신이 그 팀의 팀원이면 화면도 갱신한다.
+     */
+    private void handleClientPreview(int clientId, NetMessage msg) {
+        if (server == null || broadcaster == null) return;
+        var session = server.session(clientId);
+        if (session == null || session.player() == null) return;
+        NetworkPlayer actor = session.player();
+        switch (msg) {
+            case NetMessage.DistributionPreview m -> {
+                broadcaster.broadcastTeamDistributionPreview(actor, m.assignment());
+                if (isAlly(actor)) {
+                    Platform.runLater(() -> applyTeammateDistributionPreview(m.assignment()));
+                }
+            }
+            case NetMessage.HelperPreview m -> {
+                broadcaster.broadcastHelperSelectionPreview(actor, m.roles());
+                if (isAlly(actor)) {
+                    Platform.runLater(() -> applyTeammateHelperPreview(m.roles()));
+                }
+            }
+            case NetMessage.DistributionDone m -> {
+                broadcaster.broadcastTeamDistributionDone(actor);
+                if (isAlly(actor)) {
+                    Platform.runLater(this::switchTeammateToOpponentWaiting);
+                }
+            }
+            default -> { /* 게임 중 그 외 비결정 메시지는 무시 */ }
+        }
     }
 
     /** 환금 행동 한 건을 큐에 제출한다. onCashTurn 콜백이 패널을 증분 갱신한다. */
@@ -1918,11 +2238,11 @@ public final class GameBoardController implements GameListener, Initializable {
         }
     }
 
-    private void setWaitingChoiceIfCurrent(int phaseToken, GameListener.BundlePair bundles) {
+    private void setWaitingChoiceIfCurrent(int phaseToken, GameListener.BundlePair bundles, String title) {
         if (phaseToken != phaseRevision) {
             return;
         }
-        setCenterAnimated(buildWaitingChoicePanel(bundles), true);
+        setCenterAnimated(buildWaitingChoicePanel(bundles, title), true);
     }
 
     // ===== BoardAnimator 위임 (기존 호출부를 유지) =====
@@ -2043,19 +2363,20 @@ public final class GameBoardController implements GameListener, Initializable {
         fieldBCountLabel.setVisible(showFieldUI);
         if (fieldASortBox != null) fieldASortBox.setVisible(showFieldUI);
         if (fieldBSortBox != null) fieldBSortBox.setVisible(showFieldUI);
-        renderField(fieldATitleLabel, fieldAOfficerLabel, fieldAOfficerEffectLabel, fieldACoinsLabel,
-                fieldACountLabel, fieldAStage, fieldAFlow, fieldAHelperFlow, teamA, "내 필드", sortModeA);
-        renderField(fieldBTitleLabel, fieldBOfficerLabel, fieldBOfficerEffectLabel, fieldBCoinsLabel,
-                fieldBCountLabel, fieldBStage, fieldBFlow, fieldBHelperFlow, teamB, "상대 필드", sortModeB);
+        renderField(fieldATitleLabel, fieldAOfficerLabel, fieldAOfficerEffectLabel, fieldAOfficerPortrait,
+                fieldACoinsLabel, fieldACountLabel, fieldAStage, fieldAFlow, fieldAHelperFlow, teamA, "내 필드", sortModeA);
+        renderField(fieldBTitleLabel, fieldBOfficerLabel, fieldBOfficerEffectLabel, fieldBOfficerPortrait,
+                fieldBCoinsLabel, fieldBCountLabel, fieldBStage, fieldBFlow, fieldBHelperFlow, teamB, "상대 필드", sortModeB);
     }
 
     private void renderField(Label titleLabel, Label officerLabel, Label officerEffectLabel,
-            Label coinsLabel, Label countLabel, StackPane stage, FlowPane field, VBox helpers, Team team,
-            String fallback, Comparator<Card> sortOrder) {
+            VBox officerPortrait, Label coinsLabel, Label countLabel, StackPane stage, FlowPane field,
+            VBox helpers, Team team, String fallback, Comparator<Card> sortOrder) {
         if (team == null) {
             titleLabel.setText(fallback);
             officerLabel.setText("간부 없음");
             officerEffectLabel.setText("");
+            if (officerPortrait != null) { officerPortrait.setVisible(true); officerPortrait.setManaged(true); }
             coinsLabel.setText("0 코인");
             countLabel.setText("");
             field.getChildren().clear();
@@ -2065,12 +2386,19 @@ public final class GameBoardController implements GameListener, Initializable {
         List<Player> members = team.members();
         Player leader = team.leader();
         titleLabel.setText(fallback + " · " + memberNames(members));
-        if (leader.officer() != null) {
-            officerLabel.setText(leader.officer().korean());
-            officerEffectLabel.setText(leader.officer().effectText());
-        } else {
-            officerLabel.setText("간부 없음");
-            officerEffectLabel.setText("");
+        boolean multiMember = members.size() > 1;
+        if (officerPortrait != null) {
+            officerPortrait.setVisible(!multiMember);
+            officerPortrait.setManaged(!multiMember);
+        }
+        if (!multiMember) {
+            if (leader.officer() != null) {
+                officerLabel.setText(leader.officer().korean());
+                officerEffectLabel.setText(leader.officer().effectText());
+            } else {
+                officerLabel.setText("간부 없음");
+                officerEffectLabel.setText("");
+            }
         }
         coinsLabel.setText(team.coins() + " 코인");
         boolean hideDetails = introPhase || gameOver; // 인트로·게임 종료 화면에선 보유 수/빈 필드 안내를 숨긴다
@@ -2126,14 +2454,38 @@ public final class GameBoardController implements GameListener, Initializable {
                 .collect(java.util.stream.Collectors.joining("   "));
     }
 
-    /** 다인 팀 카드 영역에서 멤버 구분용 칩. 환금 중인 로컬 멤버는 강조한다. */
+    /**
+     * 다인 팀 카드 영역에서 멤버 구분용 칩. 환금 중인 로컬 멤버는 강조, 완료 멤버는 ✓ 표시.
+     * 간부가 있으면 칩에 간부명을 함께 보여주고, 마우스를 올리면 간부 효과 툴팁을 띄운다
+     * (다인 모드에선 사이드바 간부 포트레이트가 숨겨지므로 효과를 볼 수 있는 유일한 경로).
+     */
     private Node memberChip(Player member, int cardCount) {
-        Label chip = new Label(member.name() + " · " + cardCount + "장");
+        boolean done = cashDonePlayers.contains(member);
+        String officerPart = member.officer() != null ? " · " + member.officer().korean() : "";
+        String text = member.name() + officerPart + " · " + cardCount + "장" + (done ? " ✓" : "");
+        Label chip = new Label(text);
         chip.getStyleClass().add("field-member-chip");
         if (isLocalActor(member)) {
             chip.getStyleClass().add("field-member-chip-local");
         }
+        if (done) {
+            chip.getStyleClass().add("field-member-chip-done");
+        }
+        installOfficerTooltip(chip, member);
         return chip;
+    }
+
+    /** 간부가 있으면 노드에 간부명+효과 툴팁을 설치한다(빠른 표시 지연). */
+    private void installOfficerTooltip(Node node, Player member) {
+        if (member.officer() == null) {
+            return;
+        }
+        Tooltip tip = new Tooltip(member.officer().korean() + "\n" + member.officer().effectText());
+        tip.setWrapText(true);
+        tip.setMaxWidth(260);
+        tip.setShowDelay(Duration.millis(200));
+        tip.setShowDuration(Duration.seconds(30));
+        Tooltip.install(node, tip);
     }
 
     private Map<Card, Bounds> cardBoundsByScene(FlowPane field) {
@@ -2230,14 +2582,37 @@ public final class GameBoardController implements GameListener, Initializable {
 
     private void renderSidebarHelpers(VBox target, List<Player> members) {
         target.getChildren().clear();
-        for (Player member : members) {
-            // 우리 팀(아군)의 도우미는 항상 공개한다. 상대 팀은 사용 완료된 것만 공개.
+        boolean multi = members.size() > 1;
+        for (int i = 0; i < members.size(); i++) {
+            Player member = members.get(i);
             boolean ally = isAlly(member);
+            if (multi) {
+                target.getChildren().add(buildSidebarMemberChip(member));
+            }
+            // 우리 팀(아군)의 도우미는 항상 공개한다. 상대 팀은 사용 완료된 것만 공개.
             for (HelperCard helper : member.helpers()) {
                 boolean faceUp = ally || helper.isUsed();
                 target.getChildren().add(buildSidebarHelperCard(helper, faceUp));
             }
+            if (multi && i < members.size() - 1) {
+                Region divider = new Region();
+                divider.getStyleClass().add("sidebar-member-divider");
+                target.getChildren().add(divider);
+            }
         }
+    }
+
+    private Node buildSidebarMemberChip(Player member) {
+        String officerPart = member.officer() != null ? " · " + member.officer().korean() : "";
+        Label chip = new Label(member.name() + officerPart);
+        chip.setMaxWidth(Double.MAX_VALUE);
+        chip.setWrapText(true);
+        chip.getStyleClass().add("sidebar-member-chip");
+        if (isAlly(member)) {
+            chip.getStyleClass().add("sidebar-member-chip-ally");
+        }
+        installOfficerTooltip(chip, member);
+        return chip;
     }
 
     private Node buildSidebarHelperCard(HelperCard helper, boolean faceUp) {

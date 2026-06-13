@@ -25,7 +25,7 @@
                                 <Region styleClass="info-divider" />
                                 <VBox fx:id="fieldBHelperFlow" styleClass="sidebar-helper-flow" spacing="6.0" />
                                 <Region styleClass="info-divider" />
-                                <VBox styleClass="officer-portrait" spacing="3.0">
+                                <VBox fx:id="fieldBOfficerPortrait" styleClass="officer-portrait" spacing="3.0">
                                     <children>
                                         <Label fx:id="fieldBOfficerLabel" styleClass="officer-name" wrapText="true" />
                                         <Label fx:id="fieldBOfficerEffectLabel" styleClass="officer-effect" wrapText="true" />
@@ -42,7 +42,7 @@
                         <VBox styleClass="info-card mine-card" spacing="6.0">
                             <children>
                                 <Label fx:id="fieldACoinsLabel" styleClass="info-coins" maxWidth="Infinity" />
-                                <VBox styleClass="officer-portrait" spacing="3.0">
+                                <VBox fx:id="fieldAOfficerPortrait" styleClass="officer-portrait" spacing="3.0">
                                     <children>
                                         <Label fx:id="fieldAOfficerLabel" styleClass="officer-name" wrapText="true" />
                                         <Label fx:id="fieldAOfficerEffectLabel" styleClass="officer-effect" wrapText="true" />

@@ -370,6 +370,36 @@
     -fx-text-alignment: center;
 }
 
+/* 사이드바 2인 팀 멤버 구분 칩 */
+.sidebar-member-chip {
+    -fx-text-fill: #e8f1ed;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-background-radius: 6;
+    -fx-border-color: rgba(255, 255, 255, 0.15);
+    -fx-border-radius: 6;
+    -fx-border-width: 1;
+    -fx-padding: 3 8;
+    -fx-alignment: center-left;
+}
+
+.sidebar-member-chip-ally {
+    -fx-text-fill: #f2d36b;
+    -fx-background-color: rgba(242, 211, 107, 0.10);
+    -fx-border-color: rgba(242, 211, 107, 0.35);
+}
+
+/* 2인 팀 멤버 사이 구분선 */
+.sidebar-member-divider {
+    -fx-background-color: rgba(255, 255, 255, 0.12);
+    -fx-pref-height: 1;
+    -fx-max-height: 1;
+    -fx-min-height: 1;
+    -fx-padding: 4 0;
+}
+
+
 .info-coins {
     -fx-text-fill: #f2d36b;
     -fx-font-size: 26px;
@@ -463,6 +493,12 @@
     -fx-text-fill: #f2d36b;
     -fx-background-color: rgba(242, 211, 107, 0.14);
     -fx-border-color: rgba(242, 211, 107, 0.55);
+}
+
+.field-member-chip-done {
+    -fx-text-fill: #7dd8a8;
+    -fx-background-color: rgba(60, 160, 100, 0.18);
+    -fx-border-color: rgba(60, 160, 100, 0.45);
 }
 
 /* 팀 내 분배 패널에서 카드별 보관자 이름 라벨 */

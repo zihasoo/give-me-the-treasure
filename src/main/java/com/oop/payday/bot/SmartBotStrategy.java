@@ -10,7 +10,6 @@ import com.oop.payday.decision.ChoiceView;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
-import com.oop.payday.model.helper.HelperKind;
 
 /**
  * 점수 기반 봇 전략. 기존 규칙 기반 전략의 안정성은 유지하되, 환금 조합 최적화와

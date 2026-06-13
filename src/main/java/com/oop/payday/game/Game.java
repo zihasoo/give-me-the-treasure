@@ -171,21 +171,22 @@ public final class Game {
 
         listener.onDistributed(index, chooseTeam, chosen, splitTeam, other);
 
-        // 가져간 카드를 팀원끼리 나눠 보관하고, 슬쩍하기가 있으면 즉시 처리(규칙서 §6-2).
-        distributeWithinTeam(chooseTeam, chosen);
-        distributeWithinTeam(splitTeam, other);
+        // 슬쩍하기는 덱 조작이므로 순차 처리 (스레드 비안전)
+        List<Card> chooseCards = resolveBundleSteals(chooseTeam, chosen);
+        List<Card> splitCards  = resolveBundleSteals(splitTeam, other);
+
+        // 팀 내 분배는 두 팀 동시 진행 — 각 팀 리더가 독립적으로 결정한다
+        runConcurrently(List.of(
+                () -> assignCardsWithinTeam(chooseTeam, chooseCards),
+                () -> assignCardsWithinTeam(splitTeam, splitCards)));
+        listener.awaitAnimations();
     }
 
     /**
      * 가져간 카드를 팀원끼리 나눠 각자 보관영역에 넣는다(규칙서 §6-2-4).
-     * 1인 팀은 리더가 모두 보관(1v1 동작과 동일). 다인 팀은 리더가 분배를 결정한다.
-     *
-     * <p>슬쩍하기는 <b>묶음을 가져온 즉시</b>(분배 전) 해소한다(규칙서 §6-2-3) →
-     * 팀원은 슬쩍하기가 아닌 대체된 실제 카드를 나눠 갖게 된다.
+     * 1인 팀은 리더가 모두 보관. 다인 팀은 리더가 분배를 결정한다.
      */
-    private void distributeWithinTeam(Team team, List<Card> acquired) {
-        List<Card> cards = resolveBundleSteals(team, acquired);
-
+    private void assignCardsWithinTeam(Team team, List<Card> cards) {
         List<Player> members = team.members();
         if (members.size() == 1) {
             members.get(0).receiveAll(cards);
@@ -200,7 +201,6 @@ public final class Game {
         for (int i = 0; i < members.size(); i++) {
             members.get(i).receiveAll(distribution.byMember().get(i));
         }
-        listener.awaitAnimations();
     }
 
     /**

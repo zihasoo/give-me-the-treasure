@@ -17,7 +17,10 @@ public sealed interface GameEvent extends Serializable
                 GameEvent.CoinsChanged, GameEvent.RoundEnd, GameEvent.GameOver,
                 GameEvent.Message, GameEvent.StealActivated,
                 GameEvent.RequestSplit, GameEvent.RequestChoice, GameEvent.RequestHelpers,
-                GameEvent.RequestTeamDistribution {
+                GameEvent.RequestTeamDistribution, GameEvent.HelperSelectionNotified,
+                GameEvent.DistributionSelectionNotified,
+                GameEvent.TeamDistributionPreview, GameEvent.HelperSelectionPreview,
+                GameEvent.TeamDistributionDone {
 
     record PhaseChanged(Phase phase, int round, int splitTeamId) implements GameEvent {}
 
@@ -74,4 +77,25 @@ public sealed interface GameEvent extends Serializable
     /** 팀 내 분배 요청(다인 팀 리더) — 리더(클라이언트)에게만 전달. requestId 는 응답 상관관계용. */
     record RequestTeamDistribution(long requestId, int leaderId, int teamId,
                                    List<CardDto> acquired) implements GameEvent {}
+
+    /** 도우미 선택 진행 알림 — 같은 팀 팀원(클라이언트)에게 전달(응답 불필요). */
+    record HelperSelectionNotified(int leaderId, List<HelperDto> options) implements GameEvent {}
+
+    /** 팀 내 분배 진행 알림 — 같은 팀 팀원(클라이언트)에게 가져온 카드를 보여준다(응답 불필요). */
+    record DistributionSelectionNotified(int leaderId, int teamId, List<CardDto> acquired) implements GameEvent {}
+
+    /**
+     * 리더의 팀 분배 진행 상태 동기화 — 같은 팀 팀원에게 전달.
+     * {@code assignment.get(i)} = 가져온 카드 i 를 배정한 팀 멤버 인덱스.
+     */
+    record TeamDistributionPreview(int leaderId, List<Integer> assignment) implements GameEvent {}
+
+    /**
+     * 리더의 도우미 선택 진행 상태 동기화 — 같은 팀 팀원에게 전달.
+     * {@code roles.get(i)} = 후보 i 의 역할(0=미선택, 1=리더, 2=팀원).
+     */
+    record HelperSelectionPreview(int leaderId, List<Integer> roles) implements GameEvent {}
+
+    /** 리더가 팀 분배를 확정함 — 같은 팀 팀원이 읽기 전용 패널을 상대 대기 화면으로 전환한다. */
+    record TeamDistributionDone(int leaderId) implements GameEvent {}
 }

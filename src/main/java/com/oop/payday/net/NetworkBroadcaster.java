@@ -147,9 +147,8 @@ public final class NetworkBroadcaster implements GameListener {
 
     @Override
     public void onCashDone(Player player) {
-        ClientSession s = sessionFor(player);
-        if (s == null) return;
-        sendTo(s, new GameEvent.CashDone(playerId(player)));
+        // 공개 이벤트: 모든 클라이언트가 각 플레이어(아군·상대)의 환금 완료 배지를 띄울 수 있어야 한다.
+        sendPublic(new GameEvent.CashDone(playerId(player)));
     }
 
     @Override
@@ -177,22 +176,71 @@ public final class NetworkBroadcaster implements GameListener {
 
     @Override
     public void onRequestHelpers(Player player, List<HelperCard> options, int chooseCount) {
-        ClientSession s = sessionFor(player);
-        if (s == null) return;
         List<HelperDto> dtos = options.stream().map(h -> WireCodec.toDto(h, false)).toList();
-        s.player().currentHelperOptions = options;  // requestId 발급 전 저장(onRequestSplit 주석 참고)
-        long rid = s.player().nextRequestId(RequestKind.HELPERS);
-        sendTo(s, new GameEvent.RequestHelpers(rid, playerId(player), dtos, chooseCount));
+        ClientSession s = sessionFor(player);
+        if (s != null) {
+            s.player().currentHelperOptions = options;
+            long rid = s.player().nextRequestId(RequestKind.HELPERS);
+            sendTo(s, new GameEvent.RequestHelpers(rid, playerId(player), dtos, chooseCount));
+        }
+        // 같은 팀 원격 팀원에게 알림 전송 (응답 불필요)
+        Team leaderTeam = teamA.members().contains(player) ? teamA : teamB;
+        for (ClientSession ts : server.sessions()) {
+            if (ts.player() == null) continue;
+            if (s != null && ts == s) continue;
+            if (leaderTeam.members().contains(ts.player())) {
+                sendTo(ts, new GameEvent.HelperSelectionNotified(playerId(player), dtos));
+            }
+        }
     }
 
     @Override
     public void onRequestTeamDistribution(Player leader, Team team, List<Card> acquired) {
+        List<CardDto> dtos = WireCodec.toDtos(acquired);
         ClientSession s = sessionFor(leader);
-        if (s == null) return;
-        s.player().currentAcquired = acquired;  // requestId 발급 전 저장(onRequestSplit 주석 참고)
-        long rid = s.player().nextRequestId(RequestKind.DISTRIBUTION);
-        sendTo(s, new GameEvent.RequestTeamDistribution(
-                rid, playerId(leader), teamId(team), WireCodec.toDtos(acquired)));
+        if (s != null) {
+            s.player().currentAcquired = acquired;  // requestId 발급 전 저장(onRequestSplit 주석 참고)
+            long rid = s.player().nextRequestId(RequestKind.DISTRIBUTION);
+            sendTo(s, new GameEvent.RequestTeamDistribution(
+                    rid, playerId(leader), teamId(team), dtos));
+        }
+        // 같은 팀 원격 팀원에게 가져온 카드 알림 전송(읽기 전용, 응답 불필요)
+        for (ClientSession ts : server.sessions()) {
+            if (ts.player() == null) continue;
+            if (s != null && ts == s) continue;
+            if (team.members().contains(ts.player())) {
+                sendTo(ts, new GameEvent.DistributionSelectionNotified(
+                        playerId(leader), teamId(team), dtos));
+            }
+        }
+    }
+
+    // ── 진행 상태 동기화 (리더 선택을 같은 팀 팀원에게 중계) ───────────────
+
+    /** 리더의 팀 분배 진행 상태를 같은 팀 원격 팀원에게 중계한다. 호스트가 리더이거나 클라이언트 중계 양쪽에서 호출. */
+    public void broadcastTeamDistributionPreview(Player leader, List<Integer> assignment) {
+        relayToTeammates(leader, new GameEvent.TeamDistributionPreview(playerId(leader), assignment));
+    }
+
+    /** 리더의 도우미 선택 진행 상태를 같은 팀 원격 팀원에게 중계한다. */
+    public void broadcastHelperSelectionPreview(Player leader, List<Integer> roles) {
+        relayToTeammates(leader, new GameEvent.HelperSelectionPreview(playerId(leader), roles));
+    }
+
+    /** 리더의 팀 분배 확정을 같은 팀 원격 팀원에게 알린다(팀원 화면을 상대 대기로 전환). */
+    public void broadcastTeamDistributionDone(Player leader) {
+        relayToTeammates(leader, new GameEvent.TeamDistributionDone(playerId(leader)));
+    }
+
+    /** 같은 팀에서 {@code actor} 를 소유한 세션을 제외한 원격 팀원 세션들에 이벤트를 보낸다. */
+    private void relayToTeammates(Player actor, GameEvent event) {
+        Team team = teamA.members().contains(actor) ? teamA : teamB;
+        for (ClientSession s : server.sessions()) {
+            if (s.player() == null || s.player() == actor) continue;
+            if (team.members().contains(s.player())) {
+                sendTo(s, event);
+            }
+        }
     }
 
     @Override

@@ -128,6 +128,27 @@ public interface GameListener {
     }
 
     /**
+     * 팀 분배 진행 상태 동기화(사이드 채널, 게임 로직 외부). 리더가 가져온 카드를 멤버에게 배정하는
+     * 중간 상태를 같은 팀 팀원 화면에 반영한다. {@code assignment.get(i)} = 카드 i 의 멤버 인덱스.
+     */
+    default void onTeamDistributionPreview(List<Integer> assignment) {
+    }
+
+    /**
+     * 도우미 선택 진행 상태 동기화(사이드 채널). {@code roles.get(i)} = 후보 i 의 역할
+     * (0=미선택, 1=리더, 2=팀원). 팀원 화면의 읽기 전용 도우미 패널에 반영한다.
+     */
+    default void onHelperSelectionPreview(List<Integer> roles) {
+    }
+
+    /**
+     * 팀 분배 확정 통지(사이드 채널). 같은 팀 팀원이 읽기 전용 분배 패널을
+     * 상대 팀 분배 대기 화면으로 전환하도록 한다.
+     */
+    default void onTeamDistributionDone(int leaderId) {
+    }
+
+    /**
      * 분할 결과를 뷰로 전달하기 위한 두 묶음 묶음 표현.
      * 각 묶음의 공개 카드와 뒷면 유무를 담는다.
      */

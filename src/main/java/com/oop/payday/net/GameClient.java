@@ -316,6 +316,30 @@ public final class GameClient implements Closeable {
                 listener.onRequestTeamDistribution(
                         mirror.playerById(e.leaderId()), mirror.teamById(e.teamId()), acquired);
             }
+
+            case GameEvent.HelperSelectionNotified e -> {
+                List<HelperCard> opts = e.options().stream()
+                        .<HelperCard>map(h -> mirror.getOrCreateHelper(h))
+                        .toList();
+                // currentRequestId 는 갱신하지 않음 — 팀원은 응답하지 않는다
+                listener.onRequestHelpers(mirror.playerById(e.leaderId()), opts, 0);
+            }
+
+            case GameEvent.DistributionSelectionNotified e -> {
+                List<Card> acquired = e.acquired().stream().map(mirror::getOrCreateCard).toList();
+                // currentRequestId 는 갱신하지 않음 — 팀원은 분배에 응답하지 않는다(읽기 전용).
+                listener.onRequestTeamDistribution(
+                        mirror.playerById(e.leaderId()), mirror.teamById(e.teamId()), acquired);
+            }
+
+            case GameEvent.TeamDistributionPreview e ->
+                    listener.onTeamDistributionPreview(e.assignment());
+
+            case GameEvent.HelperSelectionPreview e ->
+                    listener.onHelperSelectionPreview(e.roles());
+
+            case GameEvent.TeamDistributionDone e ->
+                    listener.onTeamDistributionDone(e.leaderId());
         }
     }
 

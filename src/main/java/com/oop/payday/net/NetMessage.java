@@ -22,7 +22,9 @@ public sealed interface NetMessage extends Serializable
                 NetMessage.LobbyState, NetMessage.LobbyHello, NetMessage.LobbyClosed,
                 NetMessage.SplitDecision, NetMessage.ChoiceDecision,
                 NetMessage.HelpersDecision, NetMessage.CashAction, NetMessage.CashPass,
-                NetMessage.DistributionDecision {
+                NetMessage.DistributionDecision,
+                NetMessage.DistributionPreview, NetMessage.HelperPreview,
+                NetMessage.DistributionDone {
 
     /**
      * 게임 시작 전 호스트→클라이언트 핸드셰이크.
@@ -110,6 +112,19 @@ public sealed interface NetMessage extends Serializable
      * {@code byMemberIds.get(i)} = 팀 멤버 i 에게 줄 카드 id 목록(가져온 카드 기준).
      */
     record DistributionDecision(long requestId, List<List<Integer>> byMemberIds) implements NetMessage {}
+
+    // --- 클라이언트→호스트 진행 상태 동기화(리더 클라이언트, 응답 불필요) ---
+    // 같은 팀 팀원에게 리더의 선택 진행을 보여주기 위한 광고성 메시지. 호스트가 같은 팀의
+    // 다른 클라이언트로 재방송하고, 호스트 자신이 팀원이면 자기 화면도 갱신한다.
+
+    /** {@code assignment.get(i)} = 가져온 카드 i 를 배정한 팀 멤버 인덱스. */
+    record DistributionPreview(List<Integer> assignment) implements NetMessage {}
+
+    /** {@code roles.get(i)} = 도우미 후보 i 의 역할(0=미선택, 1=리더, 2=팀원). */
+    record HelperPreview(List<Integer> roles) implements NetMessage {}
+
+    /** 리더 클라이언트가 팀 분배를 확정함 — 호스트가 같은 팀 팀원에게 대기 전환을 알린다. */
+    record DistributionDone() implements NetMessage {}
 
     /**
      * 대기실 슬롯 하나의 직렬화 가능한 표현(렌더링 전용).
