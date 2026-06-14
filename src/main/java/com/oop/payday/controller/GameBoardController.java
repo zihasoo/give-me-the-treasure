@@ -47,10 +47,14 @@ import com.oop.payday.view.ScoreTableBuilder;
 
 import javafx.animation.FadeTransition;
 import javafx.animation.Interpolator;
+import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
 import javafx.animation.ParallelTransition;
 import javafx.animation.PauseTransition;
 import javafx.animation.ScaleTransition;
+import javafx.animation.Timeline;
 import javafx.animation.TranslateTransition;
+import javafx.scene.transform.Translate;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
@@ -1899,14 +1903,16 @@ public final class GameBoardController implements GameListener, Initializable {
             if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
                 continue;
             }
-            double cssX = view.getTranslateX();
-            double cssY = view.getTranslateY();
-            view.setTranslateX(cssX + dx);
-            view.setTranslateY(cssY + dy);
-            TranslateTransition move = new TranslateTransition(Duration.millis(300), view);
-            move.setToX(cssX);
-            move.setToY(cssY);
-            move.setInterpolator(Interpolator.EASE_BOTH);
+            // CSS translateY (-fx-translate-y: -8 for card-selected) is a StyleableProperty.
+            // Calling setTranslateY() programmatically locks it at USER priority, permanently
+            // blocking CSS from updating it (e.g., when card-selected is toggled later).
+            // Fix: animate a separate Translate transform so CSS keeps full control of the node's own translateX/Y.
+            Translate offset = new Translate(dx, dy);
+            view.getTransforms().add(offset);
+            Timeline move = new Timeline(new KeyFrame(Duration.millis(300),
+                    new KeyValue(offset.xProperty(), 0, Interpolator.EASE_BOTH),
+                    new KeyValue(offset.yProperty(), 0, Interpolator.EASE_BOTH)));
+            move.setOnFinished(e -> view.getTransforms().remove(offset));
             transition.getChildren().add(move);
         }
 
