@@ -86,9 +86,9 @@ public final class MatchSetup {
     }
 
     /** 기본 구성: 1 vs 1 (나 + 스마트 봇). 대기실 진입 시 출발점. */
-    public static MatchSetup defaultSetup() {
+    public static MatchSetup defaultSetup(String hostName) {
         MatchSetup setup = new MatchSetup();
-        setup.teamA.add(Slot.human("플레이어 1"));
+        setup.teamA.add(Slot.human(hostName));
         setup.teamB.add(Slot.bot(BotKind.SMART, "봇 1"));
         return setup;
     }

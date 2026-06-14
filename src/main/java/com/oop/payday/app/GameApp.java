@@ -66,11 +66,11 @@ public class GameApp extends Application {
     }
 
     /** 호스트 대기실 화면으로 전환한다(서버를 열고 접속을 받는다). */
-    public void showLobby() throws IOException {
+    public void showLobby(String hostName) throws IOException {
         FXMLLoader loader = load("lobby.fxml");
         applyScene(loader.getRoot());
         LobbyController controller = loader.getController();
-        controller.initHost();
+        controller.initHost(hostName);
     }
 
     /** 클라이언트 대기실 화면으로 전환한다(호스트 대기실 상태를 받아 표시). */

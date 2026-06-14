@@ -60,6 +60,10 @@ public final class LobbyController implements Initializable {
     private GameClient client;
     private int myClientId = -1;
 
+    // 호스트 교체 선택 상태
+    private List<Slot> swapFrom = null;
+    private int swapFromIndex = -1;
+
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         // 모드별 초기화는 initHost()/initClient() 에서 수행한다(FXML 로드 직후 호출됨).
@@ -70,9 +74,9 @@ public final class LobbyController implements Initializable {
     // ====================================================================
 
     /** 호스트 대기실 시작: 서버를 열고 접속을 받는다. */
-    public void initHost() {
+    public void initHost(String hostName) {
         hostMode = true;
-        setup = MatchSetup.defaultSetup();
+        setup = MatchSetup.defaultSetup(hostName);
         practiceCheck.setSelected(setup.practice());
         practiceCheck.selectedProperty().addListener((obs, was, now) -> {
             if (!hostMode) return;
@@ -95,7 +99,7 @@ public final class LobbyController implements Initializable {
             });
             server.startAccepting();
             roomAddressLabel.setText("방 주소: " + server.localAddress() + ":" + server.port()
-                    + "   ·   상대는 '접속하기'로 이 주소에 입장");
+                    + "   |   '접속하기'로 방에 입장할 수 있습니다");
         } catch (IOException e) {
             server = null;
             roomAddressLabel.setText("방 주소: 사용 불가(포트 점유) — 봇과 오프라인으로만 플레이");
@@ -339,30 +343,70 @@ public final class LobbyController implements Initializable {
                 Button toBot = new Button("봇으로");
                 toBot.getStyleClass().add("lobby-add-button");
                 toBot.setOnAction(e -> {
+                    swapFrom = null; swapFromIndex = -1;
                     slots.set(index, Slot.bot(BotKind.SMART, "봇"));
                     renderHostTeams();
                     broadcastLobby();
                 });
-                row.getChildren().addAll(tag, toBot, removeButton(slots, index));
+                row.getChildren().add(tag);
+                if (swapFrom != null && swapFrom != slots) {
+                    row.getChildren().add(swapTargetButton(slots, index));
+                }
+                row.getChildren().addAll(toBot, removeButton(slots, index));
             }
         }
         return row;
     }
 
-    /** 슬롯을 반대 팀으로 옮기는 버튼(반대 팀에 자리가 있을 때만 활성). */
+    /**
+     * 슬롯을 반대 팀으로 옮기는 버튼.
+     * 반대 팀에 빈자리가 있으면 바로 이동, 꽉 찼으면 교체 선택 모드로 진입한다.
+     */
     private Button moveButton(List<Slot> from, int index) {
         List<Slot> to = (from == setup.teamA()) ? setup.teamB() : setup.teamA();
+        boolean toFull = to.size() >= MatchSetup.MAX_TEAM_SIZE;
+
+        // 이 슬롯이 교체 선택된 상태 — 다시 클릭하면 취소
+        if (swapFrom == from && swapFromIndex == index) {
+            Button cancel = new Button("⇄");
+            cancel.getStyleClass().add("lobby-move-button-selected");
+            cancel.setOnAction(e -> { swapFrom = null; swapFromIndex = -1; renderHostTeams(); });
+            return cancel;
+        }
+
+        // 반대 팀에 교체 대기 슬롯이 있음 — 이 슬롯이 교체 목표
+        if (swapFrom == to) {
+            return swapTargetButton(from, index);
+        }
+
+        // 일반 이동 또는 교체 선택 진입
         Button move = new Button("⇄");
         move.getStyleClass().add("lobby-move-button");
-        move.setDisable(to.size() >= MatchSetup.MAX_TEAM_SIZE);
-        move.setOnAction(e -> {
-            if (to.size() >= MatchSetup.MAX_TEAM_SIZE || index >= from.size()) return;
-            Slot moved = from.remove(index);
-            to.add(moved);
-            renderHostTeams();
-            broadcastLobby();
-        });
+        if (!toFull) {
+            move.setOnAction(e -> {
+                Slot moved = from.remove(index);
+                to.add(moved);
+                swapFrom = null; swapFromIndex = -1;
+                renderHostTeams(); broadcastLobby();
+            });
+        } else {
+            move.setOnAction(e -> { swapFrom = from; swapFromIndex = index; renderHostTeams(); });
+        }
         return move;
+    }
+
+    private Button swapTargetButton(List<Slot> targetTeam, int targetIndex) {
+        Button btn = new Button("↔");
+        btn.getStyleClass().add("lobby-move-button");
+        btn.setOnAction(e -> {
+            Slot a = swapFrom.get(swapFromIndex);
+            Slot b = targetTeam.get(targetIndex);
+            swapFrom.set(swapFromIndex, b);
+            targetTeam.set(targetIndex, a);
+            swapFrom = null; swapFromIndex = -1;
+            renderHostTeams(); broadcastLobby();
+        });
+        return btn;
     }
 
     private Button removeButton(List<Slot> slots, int index) {
@@ -370,6 +414,7 @@ public final class LobbyController implements Initializable {
         remove.getStyleClass().add("lobby-icon-button");
         remove.setDisable(setup.activeCount(slots) <= 1 && countTotalActive() <= 2);
         remove.setOnAction(e -> {
+            swapFrom = null; swapFromIndex = -1;
             slots.remove(index);
             renderHostTeams();
             broadcastLobby();

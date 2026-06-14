@@ -61,6 +61,23 @@
     -fx-font-weight: bold;
 }
 
+.menu-text-field {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-text-fill: #d0e4ec;
+    -fx-prompt-text-fill: #4a6a7a;
+    -fx-border-color: rgba(100, 160, 180, 0.28);
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-border-width: 1;
+    -fx-font-size: 14px;
+    -fx-padding: 6 10 6 10;
+}
+
+.menu-text-field:focused {
+    -fx-border-color: rgba(100, 180, 220, 0.55);
+    -fx-background-color: rgba(255, 255, 255, 0.09);
+}
+
 .menu-mode-button {
     -fx-font-size: 17px;
     -fx-font-weight: bold;
@@ -216,6 +233,29 @@
 
 .lobby-move-button:disabled {
     -fx-opacity: 0.35;
+}
+
+/* 교체 선택 중인 슬롯 강조 버튼 */
+.lobby-move-button-selected {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(255, 180, 50, 0.22);
+    -fx-text-fill: #f0c040;
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(255, 180, 50, 0.50);
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-padding: 0;
+    -fx-cursor: hand;
+    -fx-min-width: 38;
+    -fx-pref-width: 38;
+    -fx-max-width: 38;
+    -fx-min-height: 38;
+    -fx-pref-height: 38;
+}
+
+.lobby-move-button-selected:hover {
+    -fx-background-color: rgba(255, 180, 50, 0.38);
 }
 
 .lobby-add-button {

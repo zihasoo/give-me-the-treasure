@@ -560,7 +560,7 @@ final class BoardAnimator {
             }
         });
         seq.getChildren().add(reveal);
-        seq.getChildren().add(new PauseTransition(Duration.millis(5000))); // 뒤집힌 뒤 총 유지 시간이 약 5.5초가 되도록 조정
+        seq.getChildren().add(new PauseTransition(Duration.millis(4700))); // 뒤집힌 뒤 총 유지 시간이 약 5초가 되도록 조정
         seq.getChildren().add(fade(host, 1, 0, 240));
         seq.setOnFinished(e -> {
             globalOverlay.getChildren().remove(host);

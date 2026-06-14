@@ -26,15 +26,28 @@ import javafx.scene.layout.VBox;
  */
 public class MainMenuController {
 
+    private static String savedNickname = null;
+
     @FXML private StackPane menuOverlay;
+    @FXML private TextField nicknameField;
 
     private Node cachedScoreTablePanel;
     private Node cachedRulebookPanel;
 
     @FXML
+    private void initialize() {
+        String initial = savedNickname != null ? savedNickname : System.getProperty("user.name", "");
+        nicknameField.setText(initial);
+        nicknameField.textProperty().addListener((obs, old, val) -> savedNickname = val);
+        nicknameField.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+            if (isFocused) Platform.runLater(nicknameField::deselect);
+        });
+    }
+
+    @FXML
     private void onStartGame() {
         try {
-            GameApp.get().showLobby();
+            GameApp.get().showLobby(nickname());
         } catch (IOException ignored) {
         }
     }
@@ -42,6 +55,11 @@ public class MainMenuController {
     @FXML
     private void onJoinGame() {
         showJoinInput();
+    }
+
+    private String nickname() {
+        String text = nicknameField.getText().trim();
+        return text.isEmpty() ? System.getProperty("user.name", "플레이어") : text;
     }
 
     @FXML
@@ -77,11 +95,6 @@ public class MainMenuController {
         TextField ipField = new TextField("127.0.0.1");
         ipField.setMaxWidth(300);
 
-        Label nameHint = new Label("대기실에 표시할 이름:");
-        nameHint.getStyleClass().add("preview");
-        TextField nameField = new TextField(System.getProperty("user.name", ""));
-        nameField.setMaxWidth(300);
-
         Label connectStatus = new Label();
         connectStatus.getStyleClass().add("status");
 
@@ -98,7 +111,7 @@ public class MainMenuController {
         });
 
         connectBtn.setOnAction(e -> doConnect(
-                ipField.getText().trim(), nameField.getText().trim(),
+                ipField.getText().trim(), nickname(),
                 connectStatus, connectBtn, cancelled));
 
         HBox btnRow = new HBox(12, cancelBtn, connectBtn);
@@ -106,7 +119,7 @@ public class MainMenuController {
 
         Label title = new Label("네트워크 접속");
         title.getStyleClass().add("lobby-title");
-        panel.getChildren().addAll(title, hint, ipField, nameHint, nameField, connectStatus, btnRow);
+        panel.getChildren().addAll(title, hint, ipField, connectStatus, btnRow);
         showOverlayPanel(panel);
     }
 
