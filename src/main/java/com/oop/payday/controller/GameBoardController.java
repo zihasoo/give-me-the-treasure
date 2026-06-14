@@ -143,7 +143,7 @@ public final class GameBoardController implements GameListener, Initializable {
     private VBox activeBundle0;
     private VBox activeBundle1;
     private int phaseRevision;
-    private Node opponentCashDoneBadge;
+
     private final Set<Player> cashDonePlayers = new HashSet<>();
     private final Set<Card> newlyReceivedCards = new HashSet<>();
     private final Set<Card> newlyReceivedOpponentCards = new HashSet<>();
@@ -749,7 +749,6 @@ public final class GameBoardController implements GameListener, Initializable {
             introPhase = false;
             int phaseToken = ++phaseRevision;
             currentSplitTeam = splitTeam;
-            clearOpponentCashDoneBadge();
             cashDonePlayers.clear();
             if (phase == Phase.CASH_IN && !newlyReceivedCards.isEmpty()) {
                 PauseTransition clearNew = new PauseTransition(Duration.seconds(5));
@@ -996,28 +995,8 @@ public final class GameBoardController implements GameListener, Initializable {
         } else {
             Platform.runLater(() -> {
                 cashDonePlayers.add(player);
-                // 1인 상대 팀: 기존 스테이지 배지 표시
-                if (teamFor(player) == teamB && teamB != null && teamB.members().size() == 1) {
-                    showOpponentCashDoneBadge();
-                }
-                updateBoardStatus(); // 다인 팀: memberChip 재렌더로 배지 표시
+                updateBoardStatus();
             });
-        }
-    }
-
-    private void showOpponentCashDoneBadge() {
-        if (opponentCashDoneBadge != null) return;
-        Label badge = new Label("환금 완료 ✓");
-        badge.getStyleClass().add("cash-done-badge");
-        StackPane.setAlignment(badge, Pos.CENTER);
-        opponentCashDoneBadge = badge;
-        fieldBStage.getChildren().add(badge);
-    }
-
-    private void clearOpponentCashDoneBadge() {
-        if (opponentCashDoneBadge != null) {
-            fieldBStage.getChildren().remove(opponentCashDoneBadge);
-            opponentCashDoneBadge = null;
         }
     }
 
@@ -1848,8 +1827,6 @@ public final class GameBoardController implements GameListener, Initializable {
         if (hideDetails) {
             return;
         }
-        // 다인 팀이면 멤버별로 카드 묶음을 나눠 그린다(멤버 사이에 이름 칩을 끼움).
-        boolean multi = members.size() > 1;
         Map<Card, CardView> currentViews = new HashMap<>();
         for (Player member : members) {
             boolean cashSelectable = cashPanel.isFieldSelectable(team == teamA, member == localPlayer);
@@ -1857,9 +1834,7 @@ public final class GameBoardController implements GameListener, Initializable {
                     ? new ArrayList<>(cashPanel.selectableCards())
                     : new ArrayList<>(member.holdings());
             cards.sort(sortOrder);
-            if (multi) {
-                field.getChildren().add(memberChip(member, cards.size()));
-            }
+            field.getChildren().add(memberChip(member, cards.size()));
             for (Card card : cards) {
                 CardView cardView = new CardView(card, true);
                 if (cashPanel.isSelected(card)) {
@@ -1882,7 +1857,7 @@ public final class GameBoardController implements GameListener, Initializable {
 
     private Node memberChip(Player member, int cardCount) {
         boolean done = cashDonePlayers.contains(member);
-        String text = member.name() + " · " + cardCount + "장" + (done ? " ✓" : "");
+        String text = member.name() + " · " + cardCount + "/" + member.holdLimit() + "장" + (done ? " ✓" : "");
         Label chip = new Label(text);
         chip.getStyleClass().add("field-member-chip");
         if (isLocalActor(member)) chip.getStyleClass().add("field-member-chip-local");
