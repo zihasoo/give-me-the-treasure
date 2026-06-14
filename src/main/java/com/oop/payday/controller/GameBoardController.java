@@ -69,7 +69,6 @@ import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
-import javafx.scene.control.Tooltip;
 import javafx.geometry.Bounds;
 import javafx.scene.image.WritableImage;
 import javafx.scene.SnapshotParameters;
@@ -99,18 +98,8 @@ import javafx.util.Duration;
  */
 public final class GameBoardController implements GameListener, Initializable {
 
-    @FXML private Label fieldATitleLabel;
-    @FXML private Label fieldAOfficerLabel;
-    @FXML private Label fieldAOfficerEffectLabel;
-    @FXML private VBox fieldAOfficerPortrait;
     @FXML private Label fieldACoinsLabel;
-    @FXML private Label fieldACountLabel;
-    @FXML private Label fieldBTitleLabel;
-    @FXML private Label fieldBOfficerLabel;
-    @FXML private Label fieldBOfficerEffectLabel;
-    @FXML private VBox fieldBOfficerPortrait;
     @FXML private Label fieldBCoinsLabel;
-    @FXML private Label fieldBCountLabel;
     @FXML private StackPane fieldAStage;
     @FXML private StackPane fieldBStage;
     @FXML private Pane globalOverlay;
@@ -694,8 +683,23 @@ public final class GameBoardController implements GameListener, Initializable {
             currentSplitTeam = splitTeam;
             clearOpponentCashDoneBadge();
             cashDonePlayers.clear();
-            newlyReceivedCards.clear();
-            newlyReceivedOpponentCards.clear();
+            if (phase == Phase.CASH_IN && !newlyReceivedCards.isEmpty()) {
+                PauseTransition clearNew = new PauseTransition(Duration.seconds(5));
+                clearNew.setOnFinished(e -> {
+                    newlyReceivedCards.clear();
+                    newlyReceivedOpponentCards.clear();
+                    for (Node node : fieldAFlow.getChildren()) {
+                        if (node instanceof CardView cv) cv.setNewlyReceived(false);
+                    }
+                    for (Node node : fieldBFlow.getChildren()) {
+                        if (node instanceof CardView cv) cv.setNewlyReceived(false);
+                    }
+                });
+                clearNew.play();
+            } else {
+                newlyReceivedCards.clear();
+                newlyReceivedOpponentCards.clear();
+            }
             clearTeammatePanelState();
             clearCenterIfOpponentWaiting();
             turnLabel.setText(phase.korean());
@@ -763,18 +767,6 @@ public final class GameBoardController implements GameListener, Initializable {
                 newlyReceivedOpponentCards.clear();
                 newlyReceivedOpponentCards.addAll(opponentCards);
                 updateBoardStatus();
-                PauseTransition clearNew = new PauseTransition(Duration.seconds(6));
-                clearNew.setOnFinished(e -> {
-                    newlyReceivedCards.clear();
-                    newlyReceivedOpponentCards.clear();
-                    for (Node node : fieldAFlow.getChildren()) {
-                        if (node instanceof CardView cv) cv.setNewlyReceived(false);
-                    }
-                    for (Node node : fieldBFlow.getChildren()) {
-                        if (node instanceof CardView cv) cv.setNewlyReceived(false);
-                    }
-                });
-                clearNew.play();
             });
             // 내 팀이 분배에 관여하지 않는(1인 팀) 경우, 상대 다인 팀의 분배를 기다리는 동안 빈 화면이
             // 되지 않도록 대기 안내를 띄운다. 다인 팀이면 분배/읽기전용 패널이 대신 표시된다.
@@ -1769,7 +1761,7 @@ public final class GameBoardController implements GameListener, Initializable {
                     Platform.runLater(() -> applyTeammateHelperPreview(m.roles()));
                 }
             }
-            case NetMessage.DistributionDone m -> {
+            case NetMessage.DistributionDone _ -> {
                 broadcaster.broadcastTeamDistributionDone(actor);
                 if (isAlly(actor)) {
                     Platform.runLater(this::switchTeammateToOpponentWaiting);
@@ -2359,50 +2351,23 @@ public final class GameBoardController implements GameListener, Initializable {
             return;
         }
         boolean showFieldUI = !introPhase && !gameOver;
-        fieldACountLabel.setVisible(showFieldUI);
-        fieldBCountLabel.setVisible(showFieldUI);
         if (fieldASortBox != null) fieldASortBox.setVisible(showFieldUI);
         if (fieldBSortBox != null) fieldBSortBox.setVisible(showFieldUI);
-        renderField(fieldATitleLabel, fieldAOfficerLabel, fieldAOfficerEffectLabel, fieldAOfficerPortrait,
-                fieldACoinsLabel, fieldACountLabel, fieldAStage, fieldAFlow, fieldAHelperFlow, teamA, "내 필드", sortModeA);
-        renderField(fieldBTitleLabel, fieldBOfficerLabel, fieldBOfficerEffectLabel, fieldBOfficerPortrait,
-                fieldBCoinsLabel, fieldBCountLabel, fieldBStage, fieldBFlow, fieldBHelperFlow, teamB, "상대 필드", sortModeB);
+        renderField(fieldACoinsLabel, fieldAStage, fieldAFlow, fieldAHelperFlow, teamA, sortModeA);
+        renderField(fieldBCoinsLabel, fieldBStage, fieldBFlow, fieldBHelperFlow, teamB, sortModeB);
     }
 
-    private void renderField(Label titleLabel, Label officerLabel, Label officerEffectLabel,
-            VBox officerPortrait, Label coinsLabel, Label countLabel, StackPane stage, FlowPane field,
-            VBox helpers, Team team, String fallback, Comparator<Card> sortOrder) {
+    private void renderField(Label coinsLabel, StackPane stage, FlowPane field,
+            VBox helpers, Team team, Comparator<Card> sortOrder) {
         if (team == null) {
-            titleLabel.setText(fallback);
-            officerLabel.setText("간부 없음");
-            officerEffectLabel.setText("");
-            if (officerPortrait != null) { officerPortrait.setVisible(true); officerPortrait.setManaged(true); }
             coinsLabel.setText("0 코인");
-            countLabel.setText("");
             field.getChildren().clear();
             helpers.getChildren().clear();
             return;
         }
         List<Player> members = team.members();
-        Player leader = team.leader();
-        titleLabel.setText(fallback + " · " + memberNames(members));
-        boolean multiMember = members.size() > 1;
-        if (officerPortrait != null) {
-            officerPortrait.setVisible(!multiMember);
-            officerPortrait.setManaged(!multiMember);
-        }
-        if (!multiMember) {
-            if (leader.officer() != null) {
-                officerLabel.setText(leader.officer().korean());
-                officerEffectLabel.setText(leader.officer().effectText());
-            } else {
-                officerLabel.setText("간부 없음");
-                officerEffectLabel.setText("");
-            }
-        }
         coinsLabel.setText(team.coins() + " 코인");
-        boolean hideDetails = introPhase || gameOver; // 인트로·게임 종료 화면에선 보유 수/빈 필드 안내를 숨긴다
-        countLabel.setText(hideDetails ? "" : holdingSummary(members));
+        boolean hideDetails = introPhase || gameOver;
         renderSidebarHelpers(helpers, members);
         Map<Card, Bounds> previousBounds = hideDetails ? Map.of() : cardBoundsByScene(field);
         field.getChildren().clear();
@@ -2439,53 +2404,15 @@ public final class GameBoardController implements GameListener, Initializable {
         playFieldReflowTransition(stage, field, previousBounds, currentViews);
     }
 
-    private static String memberNames(List<Player> members) {
-        return members.stream().map(Player::name)
-                .collect(java.util.stream.Collectors.joining(", "));
-    }
 
-    private static String holdingSummary(List<Player> members) {
-        if (members.size() == 1) {
-            Player p = members.get(0);
-            return "보유 " + p.holdingCount() + " / " + p.holdLimit();
-        }
-        return members.stream()
-                .map(p -> p.name() + " " + p.holdingCount() + "/" + p.holdLimit())
-                .collect(java.util.stream.Collectors.joining("   "));
-    }
-
-    /**
-     * 다인 팀 카드 영역에서 멤버 구분용 칩. 환금 중인 로컬 멤버는 강조, 완료 멤버는 ✓ 표시.
-     * 간부가 있으면 칩에 간부명을 함께 보여주고, 마우스를 올리면 간부 효과 툴팁을 띄운다
-     * (다인 모드에선 사이드바 간부 포트레이트가 숨겨지므로 효과를 볼 수 있는 유일한 경로).
-     */
     private Node memberChip(Player member, int cardCount) {
         boolean done = cashDonePlayers.contains(member);
-        String officerPart = member.officer() != null ? " · " + member.officer().korean() : "";
-        String text = member.name() + officerPart + " · " + cardCount + "장" + (done ? " ✓" : "");
+        String text = member.name() + " · " + cardCount + "장" + (done ? " ✓" : "");
         Label chip = new Label(text);
         chip.getStyleClass().add("field-member-chip");
-        if (isLocalActor(member)) {
-            chip.getStyleClass().add("field-member-chip-local");
-        }
-        if (done) {
-            chip.getStyleClass().add("field-member-chip-done");
-        }
-        installOfficerTooltip(chip, member);
+        if (isLocalActor(member)) chip.getStyleClass().add("field-member-chip-local");
+        if (done) chip.getStyleClass().add("field-member-chip-done");
         return chip;
-    }
-
-    /** 간부가 있으면 노드에 간부명+효과 툴팁을 설치한다(빠른 표시 지연). */
-    private void installOfficerTooltip(Node node, Player member) {
-        if (member.officer() == null) {
-            return;
-        }
-        Tooltip tip = new Tooltip(member.officer().korean() + "\n" + member.officer().effectText());
-        tip.setWrapText(true);
-        tip.setMaxWidth(260);
-        tip.setShowDelay(Duration.millis(200));
-        tip.setShowDuration(Duration.seconds(30));
-        Tooltip.install(node, tip);
     }
 
     private Map<Card, Bounds> cardBoundsByScene(FlowPane field) {
@@ -2582,19 +2509,16 @@ public final class GameBoardController implements GameListener, Initializable {
 
     private void renderSidebarHelpers(VBox target, List<Player> members) {
         target.getChildren().clear();
-        boolean multi = members.size() > 1;
         for (int i = 0; i < members.size(); i++) {
             Player member = members.get(i);
             boolean ally = isAlly(member);
-            if (multi) {
-                target.getChildren().add(buildSidebarMemberChip(member));
-            }
+            target.getChildren().add(buildSidebarMemberChip(member));
             // 우리 팀(아군)의 도우미는 항상 공개한다. 상대 팀은 사용 완료된 것만 공개.
             for (HelperCard helper : member.helpers()) {
                 boolean faceUp = ally || helper.isUsed();
                 target.getChildren().add(buildSidebarHelperCard(helper, faceUp));
             }
-            if (multi && i < members.size() - 1) {
+            if (i < members.size() - 1) {
                 Region divider = new Region();
                 divider.getStyleClass().add("sidebar-member-divider");
                 target.getChildren().add(divider);
@@ -2603,15 +2527,24 @@ public final class GameBoardController implements GameListener, Initializable {
     }
 
     private Node buildSidebarMemberChip(Player member) {
-        String officerPart = member.officer() != null ? " · " + member.officer().korean() : "";
-        Label chip = new Label(member.name() + officerPart);
+        String officerPart = member.officer() != null ? " | " + member.officer().korean() : "";
+
+        Label nameLine = new Label(member.name() + officerPart);
+        nameLine.setWrapText(true);
+        nameLine.getStyleClass().add("sidebar-member-chip-name");
+
+        VBox chip = new VBox(2);
         chip.setMaxWidth(Double.MAX_VALUE);
-        chip.setWrapText(true);
         chip.getStyleClass().add("sidebar-member-chip");
-        if (isAlly(member)) {
-            chip.getStyleClass().add("sidebar-member-chip-ally");
+        if (isAlly(member)) chip.getStyleClass().add("sidebar-member-chip-ally");
+        chip.getChildren().add(nameLine);
+
+        if (member.officer() != null) {
+            Label effectLine = new Label(member.officer().effectText());
+            effectLine.setWrapText(true);
+            effectLine.getStyleClass().add("sidebar-member-chip-effect");
+            chip.getChildren().add(effectLine);
         }
-        installOfficerTooltip(chip, member);
         return chip;
     }
 

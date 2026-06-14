@@ -21,16 +21,7 @@
                     <children>
                         <VBox styleClass="info-card opponent-card" spacing="6.0">
                             <children>
-                                <Label fx:id="fieldBTitleLabel" styleClass="info-card-title" wrapText="true" />
-                                <Region styleClass="info-divider" />
                                 <VBox fx:id="fieldBHelperFlow" styleClass="sidebar-helper-flow" spacing="6.0" />
-                                <Region styleClass="info-divider" />
-                                <VBox fx:id="fieldBOfficerPortrait" styleClass="officer-portrait" spacing="3.0">
-                                    <children>
-                                        <Label fx:id="fieldBOfficerLabel" styleClass="officer-name" wrapText="true" />
-                                        <Label fx:id="fieldBOfficerEffectLabel" styleClass="officer-effect" wrapText="true" />
-                                    </children>
-                                </VBox>
                                 <Label fx:id="fieldBCoinsLabel" styleClass="info-coins" maxWidth="Infinity" />
                             </children>
                         </VBox>
@@ -42,16 +33,7 @@
                         <VBox styleClass="info-card mine-card" spacing="6.0">
                             <children>
                                 <Label fx:id="fieldACoinsLabel" styleClass="info-coins" maxWidth="Infinity" />
-                                <VBox fx:id="fieldAOfficerPortrait" styleClass="officer-portrait" spacing="3.0">
-                                    <children>
-                                        <Label fx:id="fieldAOfficerLabel" styleClass="officer-name" wrapText="true" />
-                                        <Label fx:id="fieldAOfficerEffectLabel" styleClass="officer-effect" wrapText="true" />
-                                    </children>
-                                </VBox>
-                                <Region styleClass="info-divider" />
                                 <VBox fx:id="fieldAHelperFlow" styleClass="sidebar-helper-flow" spacing="6.0" />
-                                <Region styleClass="info-divider" />
-                                <Label fx:id="fieldATitleLabel" styleClass="info-card-title" wrapText="true" />
                             </children>
                         </VBox>
                     </children>
@@ -64,11 +46,6 @@
                                    minHeight="168.0" prefHeight="168.0" maxHeight="168.0" maxWidth="Infinity">
                             <children>
                                 <FlowPane fx:id="fieldBFlow" alignment="CENTER" hgap="8.0" vgap="8.0" maxWidth="Infinity" />
-                                <Label fx:id="fieldBCountLabel" styleClass="field-count-label" StackPane.alignment="TOP_RIGHT">
-                                    <StackPane.margin>
-                                        <Insets top="6.0" right="10.0" />
-                                    </StackPane.margin>
-                                </Label>
                             </children>
                         </StackPane>
 
@@ -83,11 +60,6 @@
                                    minHeight="168.0" prefHeight="168.0" maxHeight="168.0" maxWidth="Infinity">
                             <children>
                                 <FlowPane fx:id="fieldAFlow" alignment="CENTER" hgap="8.0" vgap="8.0" maxWidth="Infinity" />
-                                <Label fx:id="fieldACountLabel" styleClass="field-count-label" StackPane.alignment="TOP_RIGHT">
-                                    <StackPane.margin>
-                                        <Insets top="6.0" right="10.0" />
-                                    </StackPane.margin>
-                                </Label>
                             </children>
                         </StackPane>
 

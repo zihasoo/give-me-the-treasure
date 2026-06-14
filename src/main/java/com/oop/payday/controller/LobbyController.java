@@ -263,31 +263,26 @@ public final class LobbyController implements Initializable {
         for (int i = 0; i < slots.size(); i++) {
             box.getChildren().add(hostSlotRow(slots, i));
         }
-
-        if (slots.size() < MatchSetup.MAX_TEAM_SIZE) {
-            HBox adders = new HBox(8);
-            adders.setAlignment(Pos.CENTER);
-            Button addBot = new Button("+ 봇 추가");
-            addBot.getStyleClass().add("lobby-add-button");
-            HBox.setHgrow(addBot, Priority.ALWAYS);
-            addBot.setMaxWidth(Double.MAX_VALUE);
-            addBot.setOnAction(e -> {
-                slots.add(Slot.bot(BotKind.SMART, "봇"));
-                renderHostTeams();
-                broadcastLobby();
-            });
-            Button addSeat = new Button("+ 빈 자리");
-            addSeat.getStyleClass().add("lobby-add-button");
-            HBox.setHgrow(addSeat, Priority.ALWAYS);
-            addSeat.setMaxWidth(Double.MAX_VALUE);
-            addSeat.setOnAction(e -> {
-                slots.add(Slot.empty());
-                renderHostTeams();
-                broadcastLobby();
-            });
-            adders.getChildren().addAll(addBot, addSeat);
-            box.getChildren().add(adders);
+        for (int i = slots.size(); i < MatchSetup.MAX_TEAM_SIZE; i++) {
+            box.getChildren().add(placeholderRow(slots));
         }
+    }
+
+    private Node placeholderRow(List<Slot> slots) {
+        HBox row = new HBox();
+        row.setAlignment(Pos.CENTER);
+        row.getStyleClass().add("lobby-slot");
+        row.setMaxWidth(Double.MAX_VALUE);
+
+        Button addBot = new Button("+ 봇 추가");
+        addBot.getStyleClass().add("lobby-add-button");
+        addBot.setOnAction(e -> {
+            slots.add(Slot.bot(BotKind.SMART, "봇"));
+            renderHostTeams();
+            broadcastLobby();
+        });
+        row.getChildren().add(addBot);
+        return row;
     }
 
     private Node hostSlotRow(List<Slot> slots, int index) {
@@ -357,8 +352,8 @@ public final class LobbyController implements Initializable {
     /** 슬롯을 반대 팀으로 옮기는 버튼(반대 팀에 자리가 있을 때만 활성). */
     private Button moveButton(List<Slot> from, int index) {
         List<Slot> to = (from == setup.teamA()) ? setup.teamB() : setup.teamA();
-        Button move = new Button("팀 이동");
-        move.getStyleClass().add("lobby-remove-button");
+        Button move = new Button("⇄");
+        move.getStyleClass().add("lobby-move-button");
         move.setDisable(to.size() >= MatchSetup.MAX_TEAM_SIZE);
         move.setOnAction(e -> {
             if (to.size() >= MatchSetup.MAX_TEAM_SIZE || index >= from.size()) return;
@@ -371,8 +366,8 @@ public final class LobbyController implements Initializable {
     }
 
     private Button removeButton(List<Slot> slots, int index) {
-        Button remove = new Button("제거");
-        remove.getStyleClass().add("lobby-remove-button");
+        Button remove = new Button("✕");
+        remove.getStyleClass().add("lobby-icon-button");
         remove.setDisable(setup.activeCount(slots) <= 1 && countTotalActive() <= 2);
         remove.setOnAction(e -> {
             slots.remove(index);

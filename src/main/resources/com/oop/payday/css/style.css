@@ -101,9 +101,9 @@
     -fx-border-radius: 16;
     -fx-border-width: 1;
     -fx-padding: 16 18 18 18;
-    /* 봇 추가/제거로 행 수가 바뀌어도 세로 레이아웃이 흔들리지 않도록 높이 고정(2슬롯 기준). */
     -fx-min-height: 220;
     -fx-pref-height: 220;
+    -fx-max-height: 220;
 }
 
 .lobby-team-title {
@@ -164,6 +164,60 @@
     -fx-background-color: rgba(255, 115, 115, 0.28);
 }
 
+/* 제거(✕) 소형 버튼 */
+.lobby-icon-button {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(255, 115, 115, 0.14);
+    -fx-text-fill: #ffb4a9;
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(255, 143, 143, 0.28);
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-padding: 0;
+    -fx-cursor: hand;
+    -fx-min-width: 38;
+    -fx-pref-width: 38;
+    -fx-max-width: 38;
+    -fx-min-height: 38;
+    -fx-pref-height: 38;
+}
+
+.lobby-icon-button:hover {
+    -fx-background-color: rgba(255, 115, 115, 0.26);
+}
+
+.lobby-icon-button:disabled {
+    -fx-opacity: 0.35;
+}
+
+/* 팀 이동(⇄) 소형 버튼 */
+.lobby-move-button {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-background-color: rgba(100, 180, 220, 0.14);
+    -fx-text-fill: #7ecfe0;
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(100, 180, 220, 0.30);
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-padding: 0;
+    -fx-cursor: hand;
+    -fx-min-width: 38;
+    -fx-pref-width: 38;
+    -fx-max-width: 38;
+    -fx-min-height: 38;
+    -fx-pref-height: 38;
+}
+
+.lobby-move-button:hover {
+    -fx-background-color: rgba(100, 180, 220, 0.26);
+}
+
+.lobby-move-button:disabled {
+    -fx-opacity: 0.35;
+}
+
 .lobby-add-button {
     -fx-font-size: 15px;
     -fx-font-weight: bold;
@@ -173,11 +227,10 @@
     -fx-border-color: rgba(242, 211, 107, 0.42);
     -fx-border-radius: 10;
     -fx-border-width: 1.2;
-    -fx-padding: 11 16;
+    -fx-padding: 5 20;
     -fx-cursor: hand;
-    /* 봇 카드(슬롯 행)와 같은 높이로 맞춤. */
-    -fx-min-height: 60;
-    -fx-pref-height: 60;
+    -fx-min-height: 40;
+    -fx-pref-height: 40;
 }
 
 .lobby-add-button:hover {
@@ -372,7 +425,6 @@
 
 /* 사이드바 2인 팀 멤버 구분 칩 */
 .sidebar-member-chip {
-    -fx-text-fill: #e8f1ed;
     -fx-font-size: 12px;
     -fx-font-weight: bold;
     -fx-background-color: rgba(255, 255, 255, 0.06);
@@ -384,8 +436,21 @@
     -fx-alignment: center-left;
 }
 
-.sidebar-member-chip-ally {
+.sidebar-member-chip-name {
+    -fx-text-fill: #e8f1ed;
+}
+
+.sidebar-member-chip-ally .sidebar-member-chip-name {
     -fx-text-fill: #f2d36b;
+}
+
+.sidebar-member-chip-effect {
+    -fx-text-fill: #91dfc0;
+    -fx-font-size: 11px;
+    -fx-font-weight: normal;
+}
+
+.sidebar-member-chip-ally {
     -fx-background-color: rgba(242, 211, 107, 0.10);
     -fx-border-color: rgba(242, 211, 107, 0.35);
 }
@@ -476,7 +541,7 @@
     -fx-font-size: 13px;
 }
 
-/* 다인 팀 필드에서 멤버 구분 칩(예: "봇 · 2장") */
+/* 다인 팀 필드에서 멤버 구분 칩 */
 .field-member-chip {
     -fx-text-fill: #e8f1ed;
     -fx-font-size: 13px;
