@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.oop.payday.bot.HeuristicBotStrategy;
-import com.oop.payday.bot.SmartBotStrategy;
+import com.oop.payday.bot.S1BotStrategy;
 import com.oop.payday.game.Game;
 import com.oop.payday.game.GameConfig;
 import com.oop.payday.game.GameListener;
@@ -66,7 +66,7 @@ final class NetworkMultiClientGameTest {
             // 팀 구성: 리더=봇, 멤버=원격. allPlayers 순서 = teamA(리더,멤버) + teamB(리더,멤버).
             NetworkPlayer npA = new NetworkPlayer("원격 A");
             NetworkPlayer npB = new NetworkPlayer("원격 B");
-            Team teamA = new Team("팀 A", List.of(BotPlayer.test(new SmartBotStrategy()), npA));
+            Team teamA = new Team("팀 A", List.of(BotPlayer.test(new S1BotStrategy()), npA));
             Team teamB = new Team("팀 B", List.of(BotPlayer.test(new HeuristicBotStrategy()), npB));
             List<Player> allPlayers = new ArrayList<>(teamA.members());
             allPlayers.addAll(teamB.members());

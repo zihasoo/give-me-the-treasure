@@ -26,7 +26,7 @@ public enum BotKind {
 
     public BotStrategy create() {
         return switch (this) {
-            case SMART -> new SmartBotStrategy();
+            case SMART -> new S1BotStrategy();
             case HEURISTIC -> new HeuristicBotStrategy();
         };
     }

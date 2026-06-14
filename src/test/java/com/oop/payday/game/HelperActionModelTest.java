@@ -12,7 +12,7 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 import com.oop.payday.bot.HeuristicBotStrategy;
-import com.oop.payday.bot.SmartBotStrategy;
+import com.oop.payday.bot.S1BotStrategy;
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.model.card.Card;
@@ -38,9 +38,9 @@ final class HelperActionModelTest {
                 new TreasureCard(302, CardColor.RED, 3),
                 new TreasureCard(303, CardColor.BLUE, 5),
                 new TreasureCard(304, CardColor.TEAL, 5));
-        CashInContext context = new CashInContext(holdings, List.of(), List.of(), List.of(), 0, 10);
+        CashInContext context = new CashInContext(holdings, List.of(), List.of(), List.of(), 0, 10, 30);
 
-        List<CashInAction> actions = new SmartBotStrategy().planCashIn(context);
+        List<CashInAction> actions = new S1BotStrategy().planCashIn(context);
 
         long cashActions = actions.stream()
                 .filter(action -> action instanceof CashInAction.Cash
@@ -53,9 +53,9 @@ final class HelperActionModelTest {
     void smartBotDiscardsCursedCardBeforeLowPotentialSpecialCard() {
         CursedCard cursed = new CursedCard(400, 2);
         StealCard steal = new StealCard(401);
-        CashInContext context = new CashInContext(List.of(cursed, steal), List.of(), List.of(), List.of(), 0, 1);
+        CashInContext context = new CashInContext(List.of(cursed, steal), List.of(), List.of(), List.of(), 0, 1, 30);
 
-        List<CashInAction> actions = new SmartBotStrategy().planCashIn(context);
+        List<CashInAction> actions = new S1BotStrategy().planCashIn(context);
 
         CashInAction.Discard discard = assertInstanceOf(CashInAction.Discard.class, actions.get(0));
         assertSame(cursed, discard.card());
@@ -70,7 +70,7 @@ final class HelperActionModelTest {
                 new TreasureCard(102, CardColor.RED, 3),
                 new TreasureCard(103, CardColor.RED, 4),
                 new TreasureCard(104, CardColor.RED, 5));
-        CashInContext context = new CashInContext(sameColorRun, List.of(lucky), List.of(), List.of(), 0, 5);
+        CashInContext context = new CashInContext(sameColorRun, List.of(lucky), List.of(), List.of(), 0, 5, 30);
 
         List<CashInAction> actions = new HeuristicBotStrategy().planCashIn(context);
 
@@ -83,7 +83,7 @@ final class HelperActionModelTest {
     void crocBrothersActionKeepsSelectedCopyTarget() {
         HelperCard croc = helper(HelperKind.CROC_BROTHERS);
         HelperCard tusker = helper(HelperKind.TUSKER);
-        CashInContext context = new CashInContext(List.of(), List.of(croc), List.of(tusker), List.of(), 0, 5);
+        CashInContext context = new CashInContext(List.of(), List.of(croc), List.of(tusker), List.of(), 0, 5, 30);
 
         List<CashInAction> actions = new HeuristicBotStrategy().planCashIn(context);
 

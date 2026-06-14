@@ -12,14 +12,14 @@ import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
 
 /**
- * 점수 기반 봇 전략. 기존 규칙 기반 전략의 안정성은 유지하되, 환금 조합 최적화와
- * 카드 잠재력 평가를 적극적으로 반영한다.
+ * 점수 기반 봇 전략(S1). 기존 규칙 기반 전략의 안정성은 유지하되, 환금 조합 최적화와
+ * 카드 잠재력 평가를 적극적으로 반영한다. {@link S2BotStrategy} 의 기준선(baseline) 전략이다.
  */
-public final class SmartBotStrategy implements BotStrategy {
+public final class S1BotStrategy implements BotStrategy {
 
     @Override
     public String displayName() {
-        return "점수 기반";
+        return "S1";
     }
 
     @Override

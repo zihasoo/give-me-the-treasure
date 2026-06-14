@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.oop.payday.bot.HeuristicBotStrategy;
-import com.oop.payday.bot.SmartBotStrategy;
+import com.oop.payday.bot.S1BotStrategy;
 import com.oop.payday.player.BotPlayer;
 
 /**
@@ -25,10 +25,10 @@ final class MultiplayerBotGameTest {
     @Test
     void fourPlayerTwoVsTwoFinishes() {
         Team alpha = new Team("팀 A", List.of(
-                BotPlayer.test(new SmartBotStrategy()),
+                BotPlayer.test(new S1BotStrategy()),
                 BotPlayer.test(new HeuristicBotStrategy())));
         Team beta = new Team("팀 B", List.of(
-                BotPlayer.test(new SmartBotStrategy()),
+                BotPlayer.test(new S1BotStrategy()),
                 BotPlayer.test(new HeuristicBotStrategy())));
         assertGameFinishes(alpha, beta);
     }
@@ -36,9 +36,9 @@ final class MultiplayerBotGameTest {
     @Tag("integration")
     @Test
     void threePlayerOneVsTwoFinishes() {
-        Team solo = new Team("팀 A", List.of(BotPlayer.test(new SmartBotStrategy())));
+        Team solo = new Team("팀 A", List.of(BotPlayer.test(new S1BotStrategy())));
         Team duo = new Team("팀 B", List.of(
-                BotPlayer.test(new SmartBotStrategy()),
+                BotPlayer.test(new S1BotStrategy()),
                 BotPlayer.test(new HeuristicBotStrategy())));
         assertGameFinishes(solo, duo);
     }

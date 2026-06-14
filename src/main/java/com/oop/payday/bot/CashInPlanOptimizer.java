@@ -23,12 +23,26 @@ import com.oop.payday.model.set.TreasureSet;
  */
 final class CashInPlanOptimizer {
 
+    /** 보유 카드를 와일드로 채워 환금할 때 무는 기본 페널티(잠재 와일드 보존을 위해). */
+    private static final int WILD_PENALTY = 35;
+    /** 남은 카드 잠재력을 환금 점수에 섞을 때의 축소 비율(코인이 승패를 지배하도록). */
+    private static final int POTENTIAL_DIVISOR = 4;
+
     private CashInPlanOptimizer() {
     }
 
     static List<CashInAction> plan(CashInContext context) {
-        List<SetCandidate> candidates = enumerateCandidates(context.holdings(), context.helpers());
-        Plan best = findBestPlan(candidates, context.holdings());
+        return plan(context, false);
+    }
+
+    /**
+     * @param winAware 승리 임박 상황을 반영할지 여부. {@code true} 이고 팀이 승리 코인에 가까우면
+     *                 와일드 보존 페널티와 미래 잠재력 가중치를 빼고 즉시 환금 코인을 최대화한다.
+     */
+    static List<CashInAction> plan(CashInContext context, boolean winAware) {
+        boolean winNow = winAware && isImminent(context);
+        List<SetCandidate> candidates = enumerateCandidates(context.holdings(), context.helpers(), winNow);
+        Plan best = findBestPlan(candidates, context.holdings(), winNow);
         List<CashInAction> actions = new ArrayList<>();
         List<Card> remaining = new ArrayList<>(context.holdings());
         Set<HelperCard> queuedHelpers = new HashSet<>();
@@ -49,13 +63,20 @@ final class CashInPlanOptimizer {
         return actions;
     }
 
-    private static List<SetCandidate> enumerateCandidates(List<Card> holdings, List<HelperCard> helpers) {
+    /** 팀이 승리 코인의 70% 이상에 도달했으면 승리 임박으로 본다. */
+    private static boolean isImminent(CashInContext context) {
+        return context.winningCoins() > 0
+                && context.teamCoins() * 10 >= context.winningCoins() * 7;
+    }
+
+    private static List<SetCandidate> enumerateCandidates(List<Card> holdings, List<HelperCard> helpers,
+            boolean winNow) {
         List<Card> usable = holdings.stream()
                 .filter(card -> card.canFormSet() || card.isWild())
                 .toList();
         List<SetCandidate> candidates = new ArrayList<>();
         for (int size = 2; size <= 5; size++) {
-            collectCandidates(usable, holdings, helpers, size, 0, new ArrayList<>(), candidates);
+            collectCandidates(usable, holdings, helpers, size, 0, new ArrayList<>(), candidates, winNow);
         }
         candidates.sort(Comparator.comparingInt(SetCandidate::score).reversed());
         if (candidates.size() > 120) {
@@ -65,16 +86,16 @@ final class CashInPlanOptimizer {
     }
 
     private static void collectCandidates(List<Card> usable, List<Card> holdings, List<HelperCard> helpers,
-            int targetSize, int start, List<Card> picked, List<SetCandidate> result) {
+            int targetSize, int start, List<Card> picked, List<SetCandidate> result, boolean winNow) {
         if (picked.size() == targetSize) {
             CashInEvaluator.evaluate(picked)
                     .map(evaluation -> withMatchingCurses(evaluation.set(), holdings))
-                    .ifPresent(setCards -> result.add(toCandidate(setCards, helpers, holdings)));
+                    .ifPresent(setCards -> result.add(toCandidate(setCards, helpers, holdings, winNow)));
             return;
         }
         for (int i = start; i <= usable.size() - (targetSize - picked.size()); i++) {
             picked.add(usable.get(i));
-            collectCandidates(usable, holdings, helpers, targetSize, i + 1, picked, result);
+            collectCandidates(usable, holdings, helpers, targetSize, i + 1, picked, result, winNow);
             picked.remove(picked.size() - 1);
         }
     }
@@ -89,7 +110,8 @@ final class CashInPlanOptimizer {
         return selected;
     }
 
-    private static SetCandidate toCandidate(List<Card> selectedCards, List<HelperCard> helpers, List<Card> holdings) {
+    private static SetCandidate toCandidate(List<Card> selectedCards, List<HelperCard> helpers, List<Card> holdings,
+            boolean winNow) {
         var evaluation = CashInEvaluator.evaluate(selectedCards).orElseThrow();
         TreasureSet set = evaluation.set();
         int helperBonus = helpers.stream()
@@ -98,23 +120,25 @@ final class CashInPlanOptimizer {
                 .sum();
         int curseValue = evaluation.freeCursedCards().size() * 8;
         // preserveValue는 여기서 제거 — search()에서 한 번만 더한다(이중 계산 방지)
-        int wildPenalty = (int) selectedCards.stream().filter(Card::isWild).count() * 35;
+        // 승리 임박 시에는 와일드를 아끼지 않고 즉시 환금하므로 보존 페널티를 없앤다.
+        int wildPenalty = winNow ? 0 : (int) selectedCards.stream().filter(Card::isWild).count() * WILD_PENALTY;
         int score = set.coin() * 100 + helperBonus * 100 + curseValue - wildPenalty;
         return new SetCandidate(set, selectedCards, score);
     }
 
-    private static Plan findBestPlan(List<SetCandidate> candidates, List<Card> holdings) {
+    private static Plan findBestPlan(List<SetCandidate> candidates, List<Card> holdings, boolean winNow) {
         // "아무것도 환금 안 함" 기준점 = 0 (코인 환금은 항상 이득이므로 항상 양수여야 함)
         Plan best = new Plan(List.of(), 0);
-        return search(candidates, 0, new HashSet<>(), new ArrayList<>(), best, holdings);
+        return search(candidates, 0, new HashSet<>(), new ArrayList<>(), best, holdings, winNow);
     }
 
     private static Plan search(List<SetCandidate> candidates, int index, Set<Card> used, List<SetCandidate> picked,
-            Plan best, List<Card> holdings) {
+            Plan best, List<Card> holdings, boolean winNow) {
         if (!picked.isEmpty()) {
-            // 잠재력은 tiebreaker 역할로 축소(/ 4): 코인이 승패를 결정하므로 coin*100이 지배
-            int score = picked.stream().mapToInt(SetCandidate::score).sum()
-                    + remainingPotentialAfter(holdings, used.stream().toList()) / 4;
+            // 잠재력은 tiebreaker 역할로 축소(/ 4): 코인이 승패를 결정하므로 coin*100이 지배.
+            // 승리 임박 시에는 미래를 따지지 않고 지금 모을 수 있는 코인만 본다(잠재력 가중치 0).
+            int potential = winNow ? 0 : remainingPotentialAfter(holdings, used.stream().toList()) / POTENTIAL_DIVISOR;
+            int score = picked.stream().mapToInt(SetCandidate::score).sum() + potential;
             if (score > best.score()) {
                 best = new Plan(List.copyOf(picked), score);
             }
@@ -127,7 +151,7 @@ final class CashInPlanOptimizer {
             }
             used.addAll(candidate.selectedCards());
             picked.add(candidate);
-            best = search(candidates, i + 1, used, picked, best, holdings);
+            best = search(candidates, i + 1, used, picked, best, holdings, winNow);
             picked.remove(picked.size() - 1);
             used.removeAll(candidate.selectedCards());
         }

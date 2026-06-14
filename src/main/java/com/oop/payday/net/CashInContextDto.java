@@ -10,4 +10,5 @@ public record CashInContextDto(
         List<HelperDto> usedHelpers,
         List<CardDto> discardPile,
         int teamCoins,
-        int holdLimit) implements Serializable {}
+        int holdLimit,
+        int winningCoins) implements Serializable {}

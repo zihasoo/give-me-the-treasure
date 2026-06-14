@@ -253,7 +253,8 @@ public final class NetworkBroadcaster implements GameListener {
                 snapshot.usedHelpers().stream().map(h -> WireCodec.toDto(h, false)).toList(),
                 WireCodec.toDtos(snapshot.discardPile()),
                 snapshot.teamCoins(),
-                snapshot.holdLimit());
+                snapshot.holdLimit(),
+                snapshot.winningCoins());
         long rid = s.player().nextRequestId(RequestKind.CASH);
         sendTo(s, new GameEvent.CashTurn(playerId(player), rid, ctx));
     }
