@@ -65,6 +65,7 @@ import javafx.scene.control.ToggleGroup;
 import javafx.geometry.Bounds;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
+import javafx.scene.shape.Rectangle;
 
 import java.util.concurrent.CountDownLatch;
 import javafx.scene.input.KeyCode;
@@ -205,14 +206,99 @@ public final class GameBoardController implements GameListener, Initializable {
         fieldBSortBox = addSortButtons(fieldBStage, false);
     }
 
+    /** 필드 가로 padding(CSS center-field-stage padding: 12 32 → 좌우 32+32). */
+    private static final double FIELD_HPAD = 64;
+    /** 카드 기본 폭 + 정상 카드 간격. 겹치지 않을 때 카드 1장당 전진폭. */
+    private static final double NORMAL_STEP = CardView.WIDTH + 8;
+    /**
+     * 카드를 겹칠 때 한 장이 최소한 전진해야 하는 폭. CardView 좌상단 숫자
+     * (코너 margin 8 + minW 18 + 테두리 insets ~3 ≈ 30)가 항상 보이도록 하한.
+     */
+    private static final double MIN_STEP = 28;
+    /** 멤버 칩 앞 간격, 칩과 첫 카드 사이 간격(겹침과 무관한 고정 간격). */
+    private static final double CHIP_GAP = 14;
+    private static final double CARD_AFTER_CHIP_GAP = 6;
+
     /**
      * 필드 스테이지는 카드 수와 무관하게 항상 보드 가로폭을 채우도록 강제한다.
      * 그렇지 않으면 VBox 안에서 자식 선호폭만큼만 줄어들어 외곽선이 카드 뒤에 묻힐 수 있다.
+     * 또한 줄바꿈을 꺼서 카드가 절대 둘째 줄로 내려가지 않게 하고(간격은 margin으로 제어),
+     * 카드가 많으면 applyFieldOverlap가 음수 margin으로 부채꼴처럼 겹쳐 한 줄을 유지한다.
      */
     private void configureFieldStage(StackPane stage, FlowPane flow) {
         stage.setMaxWidth(Double.MAX_VALUE);
         flow.setMaxWidth(Double.MAX_VALUE);
-        flow.prefWrapLengthProperty().bind(stage.widthProperty().subtract(64));
+        flow.prefWrapLengthProperty().unbind();
+        flow.setPrefWrapLength(Double.MAX_VALUE);
+        flow.setHgap(0);
+        flow.setVgap(0);
+
+        // 극단적으로 카드가 많아 MIN_STEP에서도 넘치면 가장자리만 잘리고 레이아웃은 유지.
+        Rectangle clip = new Rectangle();
+        clip.widthProperty().bind(stage.widthProperty());
+        clip.heightProperty().bind(stage.heightProperty());
+        stage.setClip(clip);
+
+        // 폭이 바뀌면(리사이즈/최대화) 겹침 폭을 다시 계산한다(리빌드·애니메이션 없음).
+        stage.widthProperty().addListener((obs, o, n) -> applyFieldOverlap(stage, flow));
+    }
+
+    /**
+     * 필드 카드들을 한 줄에 담기 위해 카드 1장당 전진폭(step)을 계산해 FlowPane margin으로 적용한다.
+     * 정상 폭에 들어가면 기존과 동일한 간격을, 넘치면 후속 카드에 음수 left margin을 줘
+     * 부채꼴처럼 겹친다(자식 추가 순서 = z-순서 → 뒤 카드가 위로, 각 카드 좌상단 숫자는 노출).
+     * step은 좌상단 숫자가 항상 보이도록 MIN_STEP 이상으로 유지한다.
+     */
+    private void applyFieldOverlap(StackPane stage, FlowPane field) {
+        var children = field.getChildren();
+        if (children.isEmpty()) {
+            return;
+        }
+        // 1) 겹침이 없을 때(정상 간격)의 합계 폭과 "후속 카드" 수를 측정한다.
+        double naturalWidth = 0;
+        int followerCards = 0; // 그룹의 첫 카드 뒤에 오는 카드(겹칠 수 있는 대상) 수
+        boolean prevWasCard = false;
+        for (int i = 0; i < children.size(); i++) {
+            Node node = children.get(i);
+            boolean first = (i == 0);
+            if (node instanceof CardView) {
+                if (prevWasCard) {
+                    naturalWidth += NORMAL_STEP;
+                    followerCards++;
+                } else {
+                    naturalWidth += CardView.WIDTH + (first ? 0 : CARD_AFTER_CHIP_GAP);
+                }
+                prevWasCard = true;
+            } else { // 멤버 칩(Label)
+                node.applyCss();
+                naturalWidth += node.prefWidth(-1) + (first ? 0 : CHIP_GAP);
+                prevWasCard = false;
+            }
+        }
+
+        // 2) 사용 가능한 폭에 맞춰 step을 구한다.
+        double available = stage.getWidth() - FIELD_HPAD;
+        double step = NORMAL_STEP;
+        if (available > 0 && followerCards > 0 && naturalWidth > available) {
+            step = NORMAL_STEP + (available - naturalWidth) / followerCards;
+            step = Math.max(MIN_STEP, Math.min(NORMAL_STEP, step));
+        }
+
+        // 3) step으로 각 자식의 left margin을 적용한다(후속 카드만 겹침).
+        prevWasCard = false;
+        for (int i = 0; i < children.size(); i++) {
+            Node node = children.get(i);
+            boolean first = (i == 0);
+            double left;
+            if (node instanceof CardView) {
+                left = prevWasCard ? (step - CardView.WIDTH) : (first ? 0 : CARD_AFTER_CHIP_GAP);
+                prevWasCard = true;
+            } else {
+                left = first ? 0 : CHIP_GAP;
+                prevWasCard = false;
+            }
+            FlowPane.setMargin(node, new Insets(0, 0, 0, left));
+        }
     }
 
     private HBox addSortButtons(StackPane stage, boolean isFieldA) {
@@ -325,7 +411,8 @@ public final class GameBoardController implements GameListener, Initializable {
     }
 
     private static String teamName(List<Player> players, String fallback) {
-        return players.isEmpty() ? fallback : players.get(0).name();
+        if (players.isEmpty()) return fallback;
+        return players.stream().map(Player::name).collect(java.util.stream.Collectors.joining(" & "));
     }
 
     /** 호스트 모드: 대기실 구성(원격 슬롯 포함)으로 권위 Game 을 실행한다. */
@@ -1788,6 +1875,7 @@ public final class GameBoardController implements GameListener, Initializable {
                 currentViews.put(card, cardView);
             }
         }
+        applyFieldOverlap(stage, field);
         playFieldReflowTransition(stage, field, previousBounds, currentViews);
     }
 
