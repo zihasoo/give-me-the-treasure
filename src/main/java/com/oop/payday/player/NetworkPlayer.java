@@ -7,7 +7,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
-import com.oop.payday.decision.ChoiceView;
+import com.oop.payday.decision.ChoiceContext;
+import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.game.NetworkDisconnectedException;
@@ -67,13 +68,13 @@ public final class NetworkPlayer extends Player {
     }
 
     @Override
-    public SplitDecision decideSplit(List<Card> hand) {
-        this.currentHand = hand;
+    public SplitDecision decideSplit(SplitContext context) {
+        this.currentHand = context.hand();
         return splitChannel.take();
     }
 
     @Override
-    public int decideChoice(ChoiceView view) {
+    public int decideChoice(ChoiceContext context) {
         return choiceChannel.take();
     }
 
@@ -90,7 +91,8 @@ public final class NetworkPlayer extends Player {
     }
 
     @Override
-    public void beginCashIn(CashInContext snapshot, CashSink sink) {
+    public void beginCashIn(CashInContext snapshot, int opponentCoins, CashSink sink) {
+        // opponentCoins 는 봇 전용 신호라 원격 사람 대리자는 무시한다.
         this.cashSink = sink;
     }
 

@@ -8,7 +8,8 @@ import com.oop.payday.bot.BotStrategy;
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
-import com.oop.payday.decision.ChoiceView;
+import com.oop.payday.decision.ChoiceContext;
+import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.model.card.Card;
@@ -67,15 +68,15 @@ public final class BotPlayer extends Player {
     }
 
     @Override
-    public SplitDecision decideSplit(List<Card> hand) {
+    public SplitDecision decideSplit(SplitContext context) {
         think();
-        return strategy.decideSplit(hand);
+        return strategy.decideSplit(context);
     }
 
     @Override
-    public int decideChoice(ChoiceView view) {
+    public int decideChoice(ChoiceContext context) {
         think();
-        return strategy.decideChoice(view);
+        return strategy.decideChoice(context);
     }
 
     @Override
@@ -95,11 +96,11 @@ public final class BotPlayer extends Player {
     }
 
     @Override
-    public void beginCashIn(CashInContext snapshot, CashSink sink) {
+    public void beginCashIn(CashInContext snapshot, int opponentCoins, CashSink sink) {
         // 봇은 자기 가상 스레드에서 계획을 세워 페이스대로 하나씩 제출하고 마지막에 패스한다.
         // 게임 스레드를 막지 않으므로 think/페이싱을 봇이 직접 소유한다(엔진은 큐만 기다린다).
         Thread.ofVirtual().name("bot-cash-" + name()).start(() -> {
-            List<CashInAction> plan = strategy.planCashIn(snapshot);
+            List<CashInAction> plan = strategy.planCashIn(snapshot, opponentCoins);
             for (CashInAction action : plan) {
                 pause(nextCashPaceMillis());
                 sink.submit(action);

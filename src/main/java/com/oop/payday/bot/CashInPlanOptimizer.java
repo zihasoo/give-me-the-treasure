@@ -31,16 +31,30 @@ final class CashInPlanOptimizer {
     private CashInPlanOptimizer() {
     }
 
+    /** S1: 승리 임박을 보지 않는 기본 계획. */
     static List<CashInAction> plan(CashInContext context) {
-        return plan(context, false);
+        return planWith(context, false);
     }
 
     /**
-     * @param winAware 승리 임박 상황을 반영할지 여부. {@code true} 이고 팀이 승리 코인에 가까우면
-     *                 와일드 보존 페널티와 미래 잠재력 가중치를 빼고 즉시 환금 코인을 최대화한다.
+     * S2: 자기 팀 코인 기준 승리 임박을 반영한다.
+     *
+     * @param winAware {@code true} 이고 팀이 승리 코인에 가까우면 와일드 보존 페널티와 미래 잠재력
+     *                 가중치를 빼고 즉시 환금 코인을 최대화한다.
      */
     static List<CashInAction> plan(CashInContext context, boolean winAware) {
-        boolean winNow = winAware && isImminent(context);
+        return planWith(context, winAware && isImminent(context));
+    }
+
+    /**
+     * S3: 자기 팀과 상대 팀 코인을 함께 본다. 어느 한쪽이라도 승리에 임박하면(목표의 70% 이상)
+     * 게임이 곧 끝날 수 있으므로 보존·잠재력을 버리고 지금 모을 수 있는 코인을 최대화한다.
+     */
+    static List<CashInAction> plan(CashInContext context, int opponentCoins) {
+        return planWith(context, isEndgame(context, opponentCoins));
+    }
+
+    private static List<CashInAction> planWith(CashInContext context, boolean winNow) {
         List<SetCandidate> candidates = enumerateCandidates(context.holdings(), context.helpers(), winNow);
         Plan best = findBestPlan(candidates, context.holdings(), winNow);
         List<CashInAction> actions = new ArrayList<>();
@@ -67,6 +81,21 @@ final class CashInPlanOptimizer {
     private static boolean isImminent(CashInContext context) {
         return context.winningCoins() > 0
                 && context.teamCoins() * 10 >= context.winningCoins() * 7;
+    }
+
+    /**
+     * 종반 판정: 우리 팀 또는 상대 팀 중 하나라도 승리 코인의 70% 이상이면 게임이 곧 끝날 수 있다.
+     * 가장 적게 남은 쪽(={@code min(myNeed, oppNeed)})이 목표의 30% 이하인지로 본다.
+     */
+    private static boolean isEndgame(CashInContext context, int opponentCoins) {
+        int winning = context.winningCoins();
+        if (winning <= 0) {
+            return false;
+        }
+        int myNeed = winning - context.teamCoins();
+        int oppNeed = winning - opponentCoins;
+        int closest = Math.min(myNeed, oppNeed);
+        return closest * 10 <= winning * 3;
     }
 
     private static List<SetCandidate> enumerateCandidates(List<Card> holdings, List<HelperCard> helpers,

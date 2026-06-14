@@ -40,7 +40,7 @@ final class HelperActionModelTest {
                 new TreasureCard(304, CardColor.TEAL, 5));
         CashInContext context = new CashInContext(holdings, List.of(), List.of(), List.of(), 0, 10, 30);
 
-        List<CashInAction> actions = new S1BotStrategy().planCashIn(context);
+        List<CashInAction> actions = new S1BotStrategy().planCashIn(context, 0);
 
         long cashActions = actions.stream()
                 .filter(action -> action instanceof CashInAction.Cash
@@ -55,7 +55,7 @@ final class HelperActionModelTest {
         StealCard steal = new StealCard(401);
         CashInContext context = new CashInContext(List.of(cursed, steal), List.of(), List.of(), List.of(), 0, 1, 30);
 
-        List<CashInAction> actions = new S1BotStrategy().planCashIn(context);
+        List<CashInAction> actions = new S1BotStrategy().planCashIn(context, 0);
 
         CashInAction.Discard discard = assertInstanceOf(CashInAction.Discard.class, actions.get(0));
         assertSame(cursed, discard.card());
@@ -72,7 +72,7 @@ final class HelperActionModelTest {
                 new TreasureCard(104, CardColor.RED, 5));
         CashInContext context = new CashInContext(sameColorRun, List.of(lucky), List.of(), List.of(), 0, 5, 30);
 
-        List<CashInAction> actions = new HeuristicBotStrategy().planCashIn(context);
+        List<CashInAction> actions = new HeuristicBotStrategy().planCashIn(context, 0);
 
         CashInAction.CashWithHelpers action = assertInstanceOf(CashInAction.CashWithHelpers.class, actions.get(0));
         assertEquals(sameColorRun.size(), action.cards().size());
@@ -85,7 +85,7 @@ final class HelperActionModelTest {
         HelperCard tusker = helper(HelperKind.TUSKER);
         CashInContext context = new CashInContext(List.of(), List.of(croc), List.of(tusker), List.of(), 0, 5, 30);
 
-        List<CashInAction> actions = new HeuristicBotStrategy().planCashIn(context);
+        List<CashInAction> actions = new HeuristicBotStrategy().planCashIn(context, 0);
 
         CashInAction.UseHelper action = assertInstanceOf(CashInAction.UseHelper.class, actions.get(0));
         assertSame(croc, action.helper());

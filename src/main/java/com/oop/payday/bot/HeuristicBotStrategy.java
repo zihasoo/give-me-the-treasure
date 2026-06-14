@@ -9,7 +9,9 @@ import java.util.Set;
 
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
+import com.oop.payday.decision.ChoiceContext;
 import com.oop.payday.decision.ChoiceView;
+import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.card.CursedCard;
@@ -42,7 +44,8 @@ public final class HeuristicBotStrategy implements BotStrategy {
     }
 
     @Override
-    public SplitDecision decideSplit(List<Card> hand) {
+    public SplitDecision decideSplit(SplitContext context) {
+        List<Card> hand = context.hand();
         SplitDecision best = null;
         long bestScore = Long.MIN_VALUE;
 
@@ -101,7 +104,8 @@ public final class HeuristicBotStrategy implements BotStrategy {
     }
 
     @Override
-    public int decideChoice(ChoiceView view) {
+    public int decideChoice(ChoiceContext context) {
+        ChoiceView view = context.view();
         int best = 0;
         int bestValue = Integer.MIN_VALUE;
         int bestSize = -1;
@@ -140,7 +144,7 @@ public final class HeuristicBotStrategy implements BotStrategy {
     }
 
     @Override
-    public List<CashInAction> planCashIn(CashInContext context) {
+    public List<CashInAction> planCashIn(CashInContext context, int opponentCoins) {
         List<CashInAction> actions = new ArrayList<>();
         List<Card> remaining = new ArrayList<>(context.holdings());
         Set<HelperCard> queuedHelpers = new HashSet<>();

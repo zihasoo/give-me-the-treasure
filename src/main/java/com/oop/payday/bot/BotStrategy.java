@@ -5,7 +5,8 @@ import java.util.List;
 
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
-import com.oop.payday.decision.ChoiceView;
+import com.oop.payday.decision.ChoiceContext;
+import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.model.card.Card;
@@ -23,11 +24,11 @@ import com.oop.payday.model.helper.HelperCard;
  */
 public interface BotStrategy {
 
-    /** 꾀부리기: 손에 든 5장으로 분할 결정을 만든다. */
-    SplitDecision decideSplit(List<Card> hand);
+    /** 꾀부리기: 손패 5장과 코인 상황으로 분할 결정을 만든다. */
+    SplitDecision decideSplit(SplitContext context);
 
     /** 분배: 두 묶음 중 가져갈 인덱스(0 또는 1). */
-    int decideChoice(ChoiceView view);
+    int decideChoice(ChoiceContext context);
 
     /**
      * 분배(다인 팀): 팀이 가져간 카드({@code acquired})를 팀원끼리 나눈다(규칙서 §6-2-4).
@@ -61,8 +62,12 @@ public interface BotStrategy {
     /** 준비: 도우미 후보 중 사용할 카드를 고른다. */
     List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount);
 
-    /** 환금 시작 시점의 snapshot으로 이번 환금 단계에서 시도할 행동 계획을 만든다. */
-    List<CashInAction> planCashIn(CashInContext context);
+    /**
+     * 환금 시작 시점의 snapshot으로 이번 환금 단계에서 시도할 행동 계획을 만든다.
+     * {@code opponentCoins} 는 상대 팀 코인으로, 상대 승리 임박 시 즉시 환금 같은 종반 판단에 쓴다.
+     * (네트워크 미러를 오염시키지 않도록 {@link CashInContext} 에 넣지 않고 별도 인자로 전달한다.)
+     */
+    List<CashInAction> planCashIn(CashInContext context, int opponentCoins);
 
     /** 화면/로그 표기에 쓰일 전략 이름(예: "규칙 기반"). */
     default String displayName() {

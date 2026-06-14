@@ -4,9 +4,9 @@ import java.util.List;
 
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
-import com.oop.payday.decision.ChoiceView;
+import com.oop.payday.decision.ChoiceContext;
+import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
-import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
 
 /**
@@ -20,12 +20,12 @@ public final class MirrorPlayer extends Player {
     }
 
     @Override
-    public SplitDecision decideSplit(List<Card> hand) {
+    public SplitDecision decideSplit(SplitContext context) {
         throw new UnsupportedOperationException("클라이언트 측에서 호출 불가");
     }
 
     @Override
-    public int decideChoice(ChoiceView view) {
+    public int decideChoice(ChoiceContext context) {
         throw new UnsupportedOperationException("클라이언트 측에서 호출 불가");
     }
 
@@ -35,7 +35,7 @@ public final class MirrorPlayer extends Player {
     }
 
     @Override
-    public void beginCashIn(CashInContext snapshot, CashSink sink) {
+    public void beginCashIn(CashInContext snapshot, int opponentCoins, CashSink sink) {
         throw new UnsupportedOperationException("클라이언트 측에서 호출 불가");
     }
 

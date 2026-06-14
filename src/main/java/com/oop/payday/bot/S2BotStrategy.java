@@ -6,7 +6,9 @@ import java.util.List;
 
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
+import com.oop.payday.decision.ChoiceContext;
 import com.oop.payday.decision.ChoiceView;
+import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.helper.HelperCard;
@@ -36,7 +38,8 @@ public final class S2BotStrategy implements BotStrategy {
     }
 
     @Override
-    public SplitDecision decideSplit(List<Card> hand) {
+    public SplitDecision decideSplit(SplitContext context) {
+        List<Card> hand = context.hand();
         SplitDecision best = null;
         long bestScore = Long.MIN_VALUE;
         int n = hand.size();
@@ -66,7 +69,8 @@ public final class S2BotStrategy implements BotStrategy {
     }
 
     @Override
-    public int decideChoice(ChoiceView view) {
+    public int decideChoice(ChoiceContext context) {
+        ChoiceView view = context.view();
         int best = 0;
         int bestScore = Integer.MIN_VALUE;
         int bestSize = -1;
@@ -94,7 +98,8 @@ public final class S2BotStrategy implements BotStrategy {
     }
 
     @Override
-    public List<CashInAction> planCashIn(CashInContext context) {
+    public List<CashInAction> planCashIn(CashInContext context, int opponentCoins) {
+        // S2는 자기 팀 코인 기준 승리 임박만 본다(상대 코인 활용은 S3로 분리).
         return CashInPlanOptimizer.plan(context, true);
     }
 

@@ -6,7 +6,8 @@ import java.util.concurrent.SynchronousQueue;
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
-import com.oop.payday.decision.ChoiceView;
+import com.oop.payday.decision.ChoiceContext;
+import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.game.GameAbortedException;
@@ -35,12 +36,12 @@ public final class HumanPlayer extends Player {
     }
 
     @Override
-    public SplitDecision decideSplit(List<Card> hand) {
+    public SplitDecision decideSplit(SplitContext context) {
         return take(splitChannel);
     }
 
     @Override
-    public int decideChoice(ChoiceView view) {
+    public int decideChoice(ChoiceContext context) {
         return take(choiceChannel);
     }
 
@@ -55,8 +56,9 @@ public final class HumanPlayer extends Player {
     }
 
     @Override
-    public void beginCashIn(CashInContext snapshot, CashSink sink) {
+    public void beginCashIn(CashInContext snapshot, int opponentCoins, CashSink sink) {
         // 사람은 즉시 제출하지 않는다. sink를 보관해 두고 UI 입력이 올 때 submitCash/passCash로 제출한다.
+        // opponentCoins 는 봇 전용 신호라 사람은 무시한다.
         this.cashSink = sink;
     }
 

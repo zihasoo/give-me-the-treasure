@@ -19,7 +19,9 @@ import com.oop.payday.decision.BundleView;
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
+import com.oop.payday.decision.ChoiceContext;
 import com.oop.payday.decision.ChoiceView;
+import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.model.Deck;
@@ -135,7 +137,9 @@ public final class Game {
         listener.onHandDealt(splitter, hand);
 
         listener.onRequestSplit(splitter, hand);
-        SplitDecision decision = splitter.decideSplit(hand);
+        SplitContext splitContext = new SplitContext(hand, splitter.holdings(),
+                splitTeam.coins(), chooseTeam.coins(), config.winningCoins());
+        SplitDecision decision = splitter.decideSplit(splitContext);
         if (!decision.isValid()) {
             throw new IllegalStateException("잘못된 분할 결정: " + splitTeam.name());
         }
@@ -161,7 +165,9 @@ public final class Game {
         Player chooser = chooseTeam.leader();
         ChoiceView choiceView = new ChoiceView(List.of(viewA, viewB));
         listener.onRequestChoice(chooser, choiceView);
-        int index = chooser.decideChoice(choiceView);
+        ChoiceContext choiceContext = new ChoiceContext(choiceView, chooser.holdings(),
+                chooseTeam.coins(), splitTeam.coins(), config.winningCoins());
+        int index = chooser.decideChoice(choiceContext);
         if (index != 0 && index != 1) {
             throw new IllegalStateException("잘못된 선택 인덱스: " + index);
         }
@@ -296,7 +302,8 @@ public final class Game {
         // 모든 참가자에게 환금 시작을 알린다(봇은 자기 스레드에서, 사람은 UI 입력으로 sink에 제출).
         // 스냅샷은 게임 스레드(여기)에서 생성 → CashInContext가 불변 복사하므로 봇 스레드가 읽어도 안전.
         for (Player p : players) {
-            p.beginCashIn(snapshotFor(p, playerTeam.get(p)), sinkFor(p));
+            Team team = playerTeam.get(p);
+            p.beginCashIn(snapshotFor(p, team), opponentCoinsOf(team), sinkFor(p));
         }
         broadcastCashTurn(players, passed);        // 사람들에게 초기 패널을 띄운다.
 
@@ -362,6 +369,11 @@ public final class Game {
 
     private Team teamOf(Player player) {
         return splitTeam.members().contains(player) ? splitTeam : chooseTeam;
+    }
+
+    /** 두 팀 중 주어진 팀의 상대 팀 코인. 봇 환금 종반 판단(상대 임박 시 즉시 환금)에 쓰인다. */
+    private int opponentCoinsOf(Team team) {
+        return (team == splitTeam ? chooseTeam : splitTeam).coins();
     }
 
     /** 큐에서 꺼낸 행동 하나를 적용한다. */

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import com.oop.payday.bot.BotStrategy;
 import com.oop.payday.bot.S1BotStrategy;
 import com.oop.payday.bot.S2BotStrategy;
+import com.oop.payday.bot.S3BotStrategy;
+import com.oop.payday.bot.S3BotStrategy.S3Tuning;
 import com.oop.payday.model.Deck;
 import com.oop.payday.player.BotPlayer;
 import com.oop.payday.player.Player;
@@ -59,32 +62,99 @@ final class HeadlessBotGameTest {
     @Tag("integration")
     @Test
     void S1vsS2SeedReport() {
+        runSeedReport("S2", S2BotStrategy::new, "S1", S1BotStrategy::new);
+    }
+
+    /**
+     * 상황 컨텍스트 확장 전략({@link S3BotStrategy}, S3)을 직전 버전({@link S2BotStrategy}, S2)과 맞붙여
+     * A/B 측정한다. 시너지·적응형 선택자·승리 확정 분할·상대 임박 환금의 효과를 동일 seed 로 비교하고,
+     * 무효 환금 견고성(게임당 평균)이 유지되는지 함께 확인한다.
+     */
+    @Tag("integration")
+    @Test
+    void S2vsS3SeedReport() {
+        runSeedReport("S3", S3BotStrategy::new, "S2", S2BotStrategy::new);
+    }
+
+    /**
+     * S3 파라미터 <b>자기복제 스윕</b>: 기본 S3({@link S3Tuning#DEFAULT}) 대비 각 변형의 승률을 같은
+     * seed 표본으로 잰다. 순진한 S2가 아니라 동급(강한) 상대에게 통하는 방향을 찾기 위함이다(사람 상대 프록시).
+     * 첫 줄(DEFAULT vs DEFAULT)은 노이즈 바닥(≈50%) 대조군. 실제 튜닝은 {@code -DbotSeedCount} 로 표본을 키워 본다.
+     */
+    @Tag("integration")
+    @Test
+    void S3ParamSweep() {
+        List<S3Tuning> variants = List.of(
+                S3Tuning.DEFAULT,                  // 대조군 — ≈50% 여야 함(노이즈 바닥)
+                new S3Tuning(20, 40, 0, 100),      // 종반 구간 ↓
+                new S3Tuning(25, 40, 0, 100),
+                new S3Tuning(40, 40, 0, 100),      // 종반 구간 ↑
+                new S3Tuning(50, 40, 0, 100),
+                new S3Tuning(30, 0, 0, 100),       // 블러핑 끄기
+                new S3Tuning(30, 80, 0, 100),      // 블러핑 ↑
+                new S3Tuning(30, 120, 0, 100),
+                new S3Tuning(30, 40, 50, 100),     // maximin 견고성(종반) ↑
+                new S3Tuning(30, 40, 100, 100),
+                new S3Tuning(30, 40, 0, 0),        // 견제 끄기
+                new S3Tuning(30, 40, 0, 200));     // 견제 ↑
+
+        int seeds = Integer.getInteger("botSeedCount", 20);
+        int games = seeds * 2;
+        long totalInvalid = 0;
+        System.out.printf("%nS3 self-play sweep vs DEFAULT (seeds=%d, games/variant=%d)%n", seeds, games);
+        for (S3Tuning v : variants) {
+            int wins = 0;
+            int invalid = 0;
+            for (int seed = 1; seed <= seeds; seed++) {
+                MatchResult a = playSeededMatch(seed, true, () -> new S3BotStrategy(v), S3BotStrategy::new);
+                MatchResult b = playSeededMatch(seed, false, () -> new S3BotStrategy(v), S3BotStrategy::new);
+                wins += (a.challengerWon() ? 1 : 0) + (b.challengerWon() ? 1 : 0);
+                invalid += a.invalidCashes() + b.invalidCashes();
+            }
+            totalInvalid += invalid;
+            System.out.printf("(end=%2d lure=%3d mm=%3d deny=%3d)  win=%3d/%-3d %5.1f%%  invalid=%d%n",
+                    v.endzonePct(), v.lureWeight(), v.maximinWeight(), v.denyWeight(),
+                    wins, games, wins * 100.0 / games, invalid);
+        }
+        assertTrue(totalInvalid / (double) (variants.size() * (long) games) < 1.0,
+                "스윕 전반 무효 환금이 게임당 평균 1회 미만이어야 한다.");
+    }
+
+    /**
+     * {@code challenger} 전략을 {@code baseline} 전략과 같은 seed 표본 40판(선후공 교대)으로 맞붙여
+     * 승률·평균 코인·무효 환금을 보고한다. 기준선 회귀(무효 환금 급증)를 잡는 안전망이기도 하다.
+     */
+    private static void runSeedReport(String challengerName, Supplier<BotStrategy> challenger,
+            String baselineName, Supplier<BotStrategy> baseline) {
         List<MatchResult> results = new ArrayList<>();
-        for (int seed = 1; seed <= 20; seed++) {
-            results.add(playSeededStandard(seed, true));
-            results.add(playSeededStandard(seed, false));
+        int seedCount = Integer.getInteger("botSeedCount", 20);
+        for (int seed = 1; seed <= seedCount; seed++) {
+            results.add(playSeededMatch(seed, true, challenger, baseline));
+            results.add(playSeededMatch(seed, false, challenger, baseline));
         }
 
-        long s2Wins = results.stream().filter(MatchResult::s2Won).count();
-        long s1Wins = results.size() - s2Wins;
+        long challengerWins = results.stream().filter(MatchResult::challengerWon).count();
+        long baselineWins = results.size() - challengerWins;
         double averageRounds = results.stream().mapToInt(MatchResult::rounds).average().orElse(0.0);
-        double s2AverageCoins = results.stream().mapToInt(MatchResult::s2Coins).average().orElse(0.0);
-        double s1AverageCoins = results.stream().mapToInt(MatchResult::s1Coins).average().orElse(0.0);
+        double challengerCoins = results.stream().mapToInt(MatchResult::challengerCoins).average().orElse(0.0);
+        double baselineCoins = results.stream().mapToInt(MatchResult::baselineCoins).average().orElse(0.0);
         long totalInvalid = results.stream().mapToInt(MatchResult::invalidCashes).sum();
         double invalidPerGame = totalInvalid / (double) results.size();
 
-        System.out.printf("%nS2 vs S1 standard seeded report%n");
-        System.out.printf("games=%d s2Wins=%d s1Wins=%d s2WinRate=%.1f%%%n",
-                results.size(), s2Wins, s1Wins, s2Wins * 100.0 / results.size());
-        System.out.printf("avgRounds=%.2f avgS2Coins=%.2f avgS1Coins=%.2f%n",
-                averageRounds, s2AverageCoins, s1AverageCoins);
+        System.out.printf("%n%s vs %s standard seeded report%n", challengerName, baselineName);
+        System.out.printf("games=%d %sWins=%d %sWins=%d %sWinRate=%.1f%%%n",
+                results.size(), challengerName, challengerWins, baselineName, baselineWins,
+                challengerName, challengerWins * 100.0 / results.size());
+        System.out.printf("avgRounds=%.2f avg%sCoins=%.2f avg%sCoins=%.2f%n",
+                averageRounds, challengerName, challengerCoins, baselineName, baselineCoins);
         System.out.printf("invalidCashes total=%d perGame=%.3f%n", totalInvalid, invalidPerGame);
         results.forEach(result -> System.out.printf(
-                "seed=%02d s2First=%-5s winner=%-2s rounds=%02d s2=%02d s1=%02d invalid=%d%n",
-                result.seed(), result.s2First(), result.s2Won() ? "S2" : "S1",
-                result.rounds(), result.s2Coins(), result.s1Coins(), result.invalidCashes()));
+                "seed=%02d chFirst=%-5s winner=%-2s rounds=%02d %s=%02d %s=%02d invalid=%d%n",
+                result.seed(), result.challengerFirst(), result.challengerWon() ? challengerName : baselineName,
+                result.rounds(), challengerName, result.challengerCoins(),
+                baselineName, result.baselineCoins(), result.invalidCashes()));
 
-        assertTrue(results.size() == 40, "seed 표본 40판을 모두 실행해야 한다.");
+        assertTrue(results.size() == seedCount * 2, "seed 표본(선후공 교대) 전부를 실행해야 한다.");
         assertTrue(results.stream().allMatch(result -> result.rounds() > 0),
                 "모든 seed 게임은 최소 1라운드 이상 진행되어야 한다.");
         assertTrue(invalidPerGame < 1.0,
@@ -96,11 +166,14 @@ final class HeadlessBotGameTest {
         return new Team(name, List.of(bot));
     }
 
-    private static MatchResult playSeededStandard(int seed, boolean s2First) {
-        BotStrategy s2 = new S2BotStrategy();
-        BotStrategy s1 = new S1BotStrategy();
-        Team first = strategyTeam(s2First ? "S2" : "S1", s2First ? s2 : s1);
-        Team second = strategyTeam(s2First ? "S1" : "S2", s2First ? s1 : s2);
+    private static MatchResult playSeededMatch(int seed, boolean challengerFirst,
+            Supplier<BotStrategy> challenger, Supplier<BotStrategy> baseline) {
+        BotStrategy challengerStrategy = challenger.get();
+        BotStrategy baselineStrategy = baseline.get();
+        Team first = strategyTeam(challengerFirst ? "CH" : "BA",
+                challengerFirst ? challengerStrategy : baselineStrategy);
+        Team second = strategyTeam(challengerFirst ? "BA" : "CH",
+                challengerFirst ? baselineStrategy : challengerStrategy);
         AtomicReference<Team> winnerRef = new AtomicReference<>();
         AtomicInteger invalidCashes = new AtomicInteger();
         int[] rounds = {0};
@@ -126,12 +199,12 @@ final class HeadlessBotGameTest {
 
         assertTimeoutPreemptively(Duration.ofSeconds(5), game::play);
 
-        Team s2Team = s2First ? first : second;
-        Team s1Team = s2First ? second : first;
+        Team challengerTeam = challengerFirst ? first : second;
+        Team baselineTeam = challengerFirst ? second : first;
         Team winner = winnerRef.get();
         assertNotNull(winner, "seed " + seed + " 게임은 승자를 내야 한다.");
-        return new MatchResult(seed, s2First, winner == s2Team, rounds[0],
-                s2Team.coins(), s1Team.coins(), invalidCashes.get());
+        return new MatchResult(seed, challengerFirst, winner == challengerTeam, rounds[0],
+                challengerTeam.coins(), baselineTeam.coins(), invalidCashes.get());
     }
 
     private static Team strategyTeam(String name, BotStrategy strategy) {
@@ -164,7 +237,7 @@ final class HeadlessBotGameTest {
         field.set(target, value);
     }
 
-    private record MatchResult(int seed, boolean s2First, boolean s2Won, int rounds,
-            int s2Coins, int s1Coins, int invalidCashes) {
+    private record MatchResult(int seed, boolean challengerFirst, boolean challengerWon, int rounds,
+            int challengerCoins, int baselineCoins, int invalidCashes) {
     }
 }

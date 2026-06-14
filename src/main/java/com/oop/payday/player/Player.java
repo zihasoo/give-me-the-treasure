@@ -7,7 +7,8 @@ import java.util.List;
 
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
-import com.oop.payday.decision.ChoiceView;
+import com.oop.payday.decision.ChoiceContext;
+import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.model.card.Card;
@@ -121,10 +122,10 @@ public abstract class Player {
     // --- 의사결정 (다형성) ---
 
     /** 꾀부리기: 손에 든 5장을 두 묶음으로 나누고 1장을 뒷면으로 둔다. */
-    public abstract SplitDecision decideSplit(List<Card> hand);
+    public abstract SplitDecision decideSplit(SplitContext context);
 
     /** 분배: 두 묶음 중 가져갈 묶음의 인덱스(0 또는 1)를 고른다. */
-    public abstract int decideChoice(ChoiceView view);
+    public abstract int decideChoice(ChoiceContext context);
 
     /**
      * 분배(다인 팀): 팀이 가져간 카드를 팀원끼리 나눈다(규칙서 §6-2-4). 1인 팀은 호출되지 않는다.
@@ -141,8 +142,11 @@ public abstract class Player {
      * 환금 단계 시작. 이 플레이어는 {@code snapshot} 을 보고 자기 방식으로 행동을 {@code sink} 에
      * 제출한 뒤 마지막에 {@link CashSink#pass()} 한다(봇은 자기 스레드, 사람은 UI 입력, 네트워크는 원격 응답).
      * 게임 스레드에서 호출되므로 오래 블록하면 안 된다 — 봇은 별도 스레드로 위임한다.
+     *
+     * <p>{@code opponentCoins} 는 상대 팀 코인으로 봇 종반 판단에만 쓰인다(사람·네트워크는 무시).
+     * 네트워크/UI 미러인 {@link CashInContext} 를 오염시키지 않으려고 별도 인자로 전달한다.
      */
-    public abstract void beginCashIn(CashInContext snapshot, CashSink sink);
+    public abstract void beginCashIn(CashInContext snapshot, int opponentCoins, CashSink sink);
 
     public abstract boolean isBot();
 
