@@ -128,7 +128,7 @@ public sealed interface NetMessage extends Serializable
 
     /**
      * 대기실 슬롯 하나의 직렬화 가능한 표현(렌더링 전용).
-     * {@code kind} ∈ {"HUMAN","BOT","REMOTE","EMPTY"}, {@code detail} 은 봇 전략 표시명 등.
+     * {@code kind} ∈ {"HUMAN","BOT","REMOTE"}, {@code detail} 은 봇 전략 표시명 등.
      * {@code clientId} 는 원격 점유 슬롯의 클라이언트 id(그 외 -1).
      */
     record LobbySlotView(int teamId, int seatIndex, String kind, String name,

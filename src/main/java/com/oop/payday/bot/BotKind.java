@@ -5,28 +5,26 @@ package com.oop.payday.bot;
  */
 public enum BotKind {
 
-    SMART("스마트 봇", "조합 최적화까지 고려하는 강한 전략"),
-    HEURISTIC("기본 봇", "규칙 기반의 무난한 전략");
+    S1("S1 봇"),
+    S2("S2 봇"),
+    S3("S3 봇"),
+    HEURISTIC("기본 봇");
 
     private final String displayName;
-    private final String description;
 
-    BotKind(String displayName, String description) {
+    BotKind(String displayName) {
         this.displayName = displayName;
-        this.description = description;
     }
 
     public String displayName() {
         return displayName;
     }
 
-    public String description() {
-        return description;
-    }
-
     public BotStrategy create() {
         return switch (this) {
-            case SMART -> new S1BotStrategy();
+            case S1 -> new S1BotStrategy();
+            case S2 -> new S2BotStrategy();
+            case S3 -> new S3BotStrategy();
             case HEURISTIC -> new HeuristicBotStrategy();
         };
     }

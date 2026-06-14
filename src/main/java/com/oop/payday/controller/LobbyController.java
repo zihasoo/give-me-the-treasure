@@ -135,10 +135,9 @@ public final class LobbyController implements Initializable {
 
     // ── 자리 배정 ────────────────────────────────────────────────────
 
-    /** 접속한 클라이언트를 빈자리→봇자리→새 좌석 순으로 배정한다. 자리가 없으면 false. */
+    /** 접속한 클라이언트를 봇자리→새 좌석 순으로 배정한다. 자리가 없으면 false. */
     private boolean assignSeat(int clientId) {
         String name = "플레이어 " + (clientId + 1);
-        if (fillFirst(SlotKind.EMPTY, clientId, name)) return true;
         if (fillFirst(SlotKind.BOT, clientId, name)) return true;
         return addRemoteSeat(clientId, name);
     }
@@ -163,7 +162,7 @@ public final class LobbyController implements Initializable {
         boolean bRoom = b.size() < MatchSetup.MAX_TEAM_SIZE;
         List<Slot> target;
         if (aRoom && bRoom) {
-            target = setup.activeCount(a) <= setup.activeCount(b) ? a : b;
+            target = a.size() <= b.size() ? a : b;
         } else if (aRoom) {
             target = a;
         } else if (bRoom) {
@@ -175,13 +174,13 @@ public final class LobbyController implements Initializable {
         return true;
     }
 
-    /** 클라이언트가 점유한 원격 좌석을 빈자리로 되돌린다. */
+    /** 클라이언트가 점유한 원격 좌석을 제거한다. */
     private boolean freeSeat(int clientId) {
         for (List<Slot> team : teams()) {
             for (int i = 0; i < team.size(); i++) {
                 Slot s = team.get(i);
                 if (s.kind() == SlotKind.REMOTE && s.clientId() == clientId) {
-                    team.set(i, Slot.empty());
+                    team.remove(i);
                     return true;
                 }
             }
@@ -229,7 +228,6 @@ public final class LobbyController implements Initializable {
                 case HUMAN_LOCAL -> "HUMAN";
                 case BOT -> "BOT";
                 case REMOTE -> "REMOTE";
-                case EMPTY -> "EMPTY";
             };
             String detail = (s.kind() == SlotKind.BOT && s.botKind() != null) ? s.botKind().displayName() : "";
             views.add(new LobbySlotView(teamId, i, kind, s.name(), detail, s.clientId()));
@@ -281,7 +279,7 @@ public final class LobbyController implements Initializable {
         Button addBot = new Button("+ 봇 추가");
         addBot.getStyleClass().add("lobby-add-button");
         addBot.setOnAction(e -> {
-            slots.add(Slot.bot(BotKind.SMART, "봇"));
+            slots.add(Slot.bot(BotKind.S1, "봇"));
             renderHostTeams();
             broadcastLobby();
         });
@@ -312,7 +310,7 @@ public final class LobbyController implements Initializable {
                 ComboBox<BotKind> strategy = new ComboBox<>();
                 strategy.getStyleClass().add("lobby-combo");
                 strategy.getItems().setAll(BotKind.values());
-                strategy.setValue(slot.botKind() != null ? slot.botKind() : BotKind.SMART);
+                strategy.setValue(slot.botKind() != null ? slot.botKind() : BotKind.S1);
                 strategy.setConverter(botKindConverter());
                 strategy.setButtonCell(botKindCell());
                 strategy.setCellFactory(list -> botKindCell());
@@ -333,26 +331,6 @@ public final class LobbyController implements Initializable {
                 HBox.setHgrow(tag, Priority.ALWAYS);
                 tag.setMaxWidth(Double.MAX_VALUE);
                 row.getChildren().addAll(tag, moveButton(slots, index));
-            }
-            case EMPTY -> {
-                Label tag = new Label("빈 자리 (대기 중…)");
-                tag.getStyleClass().add("lobby-slot-tag");
-                HBox.setHgrow(tag, Priority.ALWAYS);
-                tag.setMaxWidth(Double.MAX_VALUE);
-
-                Button toBot = new Button("봇으로");
-                toBot.getStyleClass().add("lobby-add-button");
-                toBot.setOnAction(e -> {
-                    swapFrom = null; swapFromIndex = -1;
-                    slots.set(index, Slot.bot(BotKind.SMART, "봇"));
-                    renderHostTeams();
-                    broadcastLobby();
-                });
-                row.getChildren().add(tag);
-                if (swapFrom != null && swapFrom != slots) {
-                    row.getChildren().add(swapTargetButton(slots, index));
-                }
-                row.getChildren().addAll(toBot, removeButton(slots, index));
             }
         }
         return row;
@@ -412,7 +390,7 @@ public final class LobbyController implements Initializable {
     private Button removeButton(List<Slot> slots, int index) {
         Button remove = new Button("✕");
         remove.getStyleClass().add("lobby-icon-button");
-        remove.setDisable(setup.activeCount(slots) <= 1 && countTotalActive() <= 2);
+        remove.setDisable(slots.size() <= 1 && setup.teamA().size() + setup.teamB().size() <= 2);
         remove.setOnAction(e -> {
             swapFrom = null; swapFromIndex = -1;
             slots.remove(index);
@@ -420,10 +398,6 @@ public final class LobbyController implements Initializable {
             broadcastLobby();
         });
         return remove;
-    }
-
-    private long countTotalActive() {
-        return setup.activeCount(setup.teamA()) + setup.activeCount(setup.teamB());
     }
 
     // ── 클라이언트 모드 ──────────────────────────────────────────────
@@ -511,7 +485,7 @@ public final class LobbyController implements Initializable {
     }
 
     private boolean canStart() {
-        return setup.activeCount(setup.teamA()) >= 1 && setup.activeCount(setup.teamB()) >= 1;
+        return !setup.teamA().isEmpty() && !setup.teamB().isEmpty();
     }
 
     private void refreshStartEnabled() {

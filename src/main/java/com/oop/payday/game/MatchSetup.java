@@ -7,7 +7,7 @@ import com.oop.payday.bot.BotKind;
 
 /**
  * 대기실에서 구성하는 한 판의 자리 배치. 항상 2팀이며 각 팀은 1~2개의 슬롯을 갖는다
- * (규칙서 §2: 2인=1v1, 3인=1v2, 4인=2v2). 슬롯은 사람·봇·원격·빈자리 중 하나다.
+ * (규칙서 §2: 2인=1v1, 3인=1v2, 4인=2v2). 슬롯은 사람·봇·원격 중 하나다.
  *
  * <p>순수 데이터 컨테이너로, 실제 {@link com.oop.payday.player.Player}/{@link Team} 생성은
  * 게임 보드 컨트롤러가 슬롯을 순회하며 수행한다(로컬 플레이어 추적이 필요하므로).
@@ -23,9 +23,7 @@ public final class MatchSetup {
         /** 봇이 채우는 자리. */
         BOT,
         /** 원격 클라이언트가 채울 자리(2단계 네트워크). */
-        REMOTE,
-        /** 비어 있어 게임 시작에서 제외되는 자리. */
-        EMPTY
+        REMOTE
     }
 
     /** 점유한 원격 클라이언트가 없는 슬롯의 clientId 표식. */
@@ -50,9 +48,6 @@ public final class MatchSetup {
             return new Slot(SlotKind.REMOTE, null, name, clientId);
         }
 
-        public static Slot empty() {
-            return new Slot(SlotKind.EMPTY, null, "빈 자리", NO_CLIENT);
-        }
     }
 
     private final List<Slot> teamA = new ArrayList<>();
@@ -80,16 +75,11 @@ public final class MatchSetup {
         return practice ? GameConfig.practice(true) : GameConfig.standard(true);
     }
 
-    /** 게임 시작에 포함되는(빈자리가 아닌) 슬롯만 센다. */
-    public long activeCount(List<Slot> team) {
-        return team.stream().filter(s -> s.kind() != SlotKind.EMPTY).count();
-    }
-
     /** 기본 구성: 1 vs 1 (나 + 스마트 봇). 대기실 진입 시 출발점. */
     public static MatchSetup defaultSetup(String hostName) {
         MatchSetup setup = new MatchSetup();
         setup.teamA.add(Slot.human(hostName));
-        setup.teamB.add(Slot.bot(BotKind.SMART, "봇 1"));
+        setup.teamB.add(Slot.bot(BotKind.S3, "봇 1"));
         return setup;
     }
 }

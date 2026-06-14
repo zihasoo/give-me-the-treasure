@@ -408,7 +408,6 @@ public final class GameBoardController implements GameListener, Initializable {
                     if (remotes != null) remotes.add(new RemoteBinding(slot.clientId(), np));
                     players.add(np);
                 }
-                case EMPTY -> { /* 빈 자리는 게임에서 제외 */ }
             }
         }
         return players;
