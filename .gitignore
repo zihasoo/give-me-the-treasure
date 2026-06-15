@@ -18,6 +18,9 @@ build/
 bin/
 out/
 
+# 플레이 로그(분석용, 커밋하지 않음)
+logs/
+
 # OS
 .DS_Store
 Thumbs.db

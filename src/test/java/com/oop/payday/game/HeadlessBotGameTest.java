@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
+import java.io.StringWriter;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.Duration;
@@ -25,6 +26,8 @@ import com.oop.payday.bot.S3BotStrategy;
 import com.oop.payday.bot.S3BotStrategy.S3Tuning;
 import com.oop.payday.bot.S4BotStrategy;
 import com.oop.payday.bot.S5BotStrategy;
+import com.oop.payday.bot.S6BotStrategy;
+import com.oop.payday.log.PlayLogWriter;
 import com.oop.payday.model.Deck;
 import com.oop.payday.player.BotPlayer;
 import com.oop.payday.player.Player;
@@ -55,6 +58,31 @@ final class HeadlessBotGameTest {
         assertTrue(winner == alpha || winner == beta, "승자는 참가 팀 중 하나여야 한다.");
         assertTrue(winner.coins() >= GameConfig.PRACTICE_WIN,
                 "승자는 연습 룰 승리 코인 이상을 보유해야 한다.");
+    }
+
+    /**
+     * 플레이 로그({@link PlayLogWriter})가 한 판을 끝까지 잘 기록하는지 검증한다.
+     * 메모리 {@link StringWriter} 로 받아 헤더·라운드·환금·종료 마커가 모두 남는지 확인 — 사용자 분석
+     * 워크플로(사람이 플레이 → 로그 분석)가 의존하는 출력 형식의 회귀를 잡는 안전망이다.
+     */
+    @Tag("integration")
+    @Test
+    void playLogCapturesFullGame() {
+        GameConfig config = GameConfig.practice(true);
+        Team a = new Team("우리 팀", List.of(BotPlayer.test(new S6BotStrategy())));
+        Team b = new Team("상대 팀", List.of(BotPlayer.test(new S5BotStrategy())));
+        StringWriter buffer = new StringWriter();
+        PlayLogWriter log = PlayLogWriter.to(buffer, config, a, b, a, b);
+
+        Game game = new Game(config, a, b, log);
+        assertTimeoutPreemptively(Duration.ofSeconds(5), game::play);
+
+        String text = buffer.toString();
+        assertTrue(text.contains("도적단의 월급날 — 플레이 로그"), "헤더가 있어야 한다.");
+        assertTrue(text.contains("(S6)") && text.contains("(S5)"), "플레이어 전략명이 기록돼야 한다.");
+        assertTrue(text.contains("라운드 1"), "라운드 진행이 기록돼야 한다.");
+        assertTrue(text.contains("[환금]"), "환금 페이즈가 기록돼야 한다.");
+        assertTrue(text.contains("게임 종료 — 승리:"), "게임 종료가 기록돼야 한다.");
     }
 
     /**
@@ -99,6 +127,18 @@ final class HeadlessBotGameTest {
     @Test
     void S4vsS5SeedReport() {
         runSeedReport("S5", S5BotStrategy::new, "S4", S4BotStrategy::new);
+    }
+
+    /**
+     * 실험 전략({@link S6BotStrategy}, S6)을 직전 버전({@link S5BotStrategy}, S5)과 맞붙인다.
+     * S6는 현실적 선택자 모델·상시 maximin·저주 라우팅·환금 도우미 강화를 추가한 버전이다.
+     * 봇끼리 승률은 더 이상 "사람 상대 강함"의 척도가 아니므로(문서 §4.3) 이 리포트는 <b>회귀 안전망</b>
+     * — 봇이 크래시 없이 게임을 끝내고 무효 환금이 게임당 평균 1회 미만인지 검증 — 으로만 둔다.
+     */
+    @Tag("integration")
+    @Test
+    void S5vsS6SeedReport() {
+        runSeedReport("S6", S6BotStrategy::new, "S5", S5BotStrategy::new);
     }
 
     /**

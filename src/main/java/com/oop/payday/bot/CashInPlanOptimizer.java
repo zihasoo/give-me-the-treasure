@@ -1,8 +1,10 @@
 package com.oop.payday.bot;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -12,6 +14,7 @@ import com.oop.payday.model.card.Card;
 import com.oop.payday.model.card.CardColor;
 import com.oop.payday.model.card.CursedCard;
 import com.oop.payday.model.card.TreasureCard;
+import com.oop.payday.model.card.WildCard;
 import com.oop.payday.model.helper.HelperCard;
 import com.oop.payday.model.helper.HelperKind;
 import com.oop.payday.model.helper.HelperRules;
@@ -72,7 +75,7 @@ final class CashInPlanOptimizer {
             remaining.removeAll(candidate.selectedCards());
         }
 
-        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, !best.candidates().isEmpty());
+        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, !best.candidates().isEmpty(), false);
         if (!isTuskerQueued(actions)) {
             discardDownToLimit(actions, remaining, context.holdLimit());
         }
@@ -243,13 +246,13 @@ final class CashInPlanOptimizer {
     }
 
     private static void addUsefulStandaloneHelper(List<CashInAction> actions, CashInContext context,
-            List<Card> remaining, Set<HelperCard> queuedHelpers, boolean alreadyCashed) {
+            List<Card> remaining, Set<HelperCard> queuedHelpers, boolean alreadyCashed, boolean s6) {
         HelperChoice best = null;
         for (HelperCard helper : context.helpers()) {
             if (helper.isUsed() || queuedHelpers.contains(helper) || HelperRules.isCashReaction(helper.kind())) {
                 continue;
             }
-            HelperChoice choice = standaloneChoice(helper, context, remaining, alreadyCashed);
+            HelperChoice choice = standaloneChoice(helper, context, remaining, alreadyCashed, s6);
             if (choice != null && (best == null || choice.score() > best.score())) {
                 best = choice;
             }
@@ -261,7 +264,7 @@ final class CashInPlanOptimizer {
     }
 
     private static HelperChoice standaloneChoice(HelperCard helper, CashInContext context, List<Card> remaining,
-            boolean alreadyCashed) {
+            boolean alreadyCashed, boolean s6) {
         return switch (helper.kind()) {
             case VIPER -> {
                 long curses = remaining.stream().filter(CursedCard.class::isInstance).count();
@@ -274,12 +277,32 @@ final class CashInPlanOptimizer {
                         : null; // 한도 초과 아닐 때는 낭비 방지
             }
             case DOUG -> dougChoice(helper, remaining);
-            case JUNK_DEALER -> !alreadyCashed && context.discardPile().stream().anyMatch(Card::isWild)
-                    ? new HelperChoice(helper, null, List.of(), 18)
-                    : null;
-            case CROC_BROTHERS -> crocChoice(helper, context, remaining, alreadyCashed);
+            case JUNK_DEALER -> {
+                if (alreadyCashed || context.discardPile().stream().noneMatch(Card::isWild)) {
+                    yield null;
+                }
+                yield new HelperChoice(helper, null, List.of(), junkDealerScore(remaining, s6));
+            }
+            case CROC_BROTHERS -> crocChoice(helper, context, remaining, alreadyCashed, s6);
             default -> null;
         };
+    }
+
+    /**
+     * 버림 더미에서 와일드를 회수하는 가치. S6는 회수한 와일드가 현재 보관 카드와 만들 수 있는
+     * 빌드 잠재력(특히 색 연속 완성)에 비례해 점수를 올린다 — JUNK_DEALER 는 이번 라운드 환금을
+     * 막으므로 "와일드로 대박 세트를 노릴 수 있을 때"만 적극적으로 쓰게 한다.
+     */
+    private static int junkDealerScore(List<Card> remaining, boolean s6) {
+        if (!s6) {
+            return 18;
+        }
+        List<Card> withWild = new ArrayList<>(remaining);
+        withWild.add(new WildCard(-1)); // 평가 전용 프록시(보관/액션에 들어가지 않음)
+        // 잠재력 증분에서 와일드 자체의 고정 보너스(38)를 빼 "구멍을 메우는 조합 가치"만 본다.
+        int combinatorialGain = BotCardEvaluator.potentialScore(withWild)
+                - BotCardEvaluator.potentialScore(remaining) - 38;
+        return 24 + Math.max(0, Math.min(48, combinatorialGain));
     }
 
     private static HelperChoice dougChoice(HelperCard helper, List<Card> remaining) {
@@ -294,13 +317,13 @@ final class CashInPlanOptimizer {
     }
 
     private static HelperChoice crocChoice(HelperCard helper, CashInContext context, List<Card> remaining,
-            boolean alreadyCashed) {
+            boolean alreadyCashed, boolean s6) {
         HelperChoice best = null;
         for (HelperCard target : context.usedHelpers()) {
             if (target.kind() == HelperKind.CROC_BROTHERS) {
                 continue;
             }
-            HelperChoice copied = standaloneChoice(target, context, remaining, alreadyCashed);
+            HelperChoice copied = standaloneChoice(target, context, remaining, alreadyCashed, s6);
             if (copied == null) {
                 continue;
             }
@@ -378,7 +401,7 @@ final class CashInPlanOptimizer {
         boolean anyCashed = held == null
                 ? !best.candidates().isEmpty()
                 : best.candidates().size() > 1;
-        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, anyCashed);
+        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, anyCashed, false);
         if (!isTuskerQueued(actions)) {
             discardDownToLimit(actions, remaining, context.holdLimit());
         }
@@ -536,18 +559,33 @@ final class CashInPlanOptimizer {
      * {@link #isEndgame}이면 {@link #planWithHold}와 동일하게 즉시 환금한다.
      */
     static List<CashInAction> planWithHoldS5(CashInContext context, int opponentCoins) {
+        return assembleHoldPlan(context, opponentCoins, false);
+    }
+
+    /**
+     * S6: S5 의 성장 기대값 보류를 <b>다중 세트 보류</b>로 확장하고(작은 세트를 자잘하게 내지 않고
+     * 한도가 허락하는 한 여러 개를 키운다 — {@link #pickSetsToHoldS6}), 환금 단계 도우미 활용을 강화한다
+     * (JUNK_DEALER 와일드 회수 가치를 손패 빌드 잠재력에 비례시킴).
+     */
+    static List<CashInAction> planWithHoldS6(CashInContext context, int opponentCoins) {
+        return assembleHoldPlan(context, opponentCoins, true);
+    }
+
+    private static List<CashInAction> assembleHoldPlan(CashInContext context, int opponentCoins, boolean s6) {
         boolean winNow = isEndgame(context, opponentCoins);
         List<SetCandidate> candidates = enumerateCandidates(context.holdings(), context.helpers(), winNow);
         Plan best = findBestPlan(candidates, context.holdings(), winNow);
 
-        SetCandidate held = winNow ? null : pickBestToHoldS5(best, context);
+        Set<SetCandidate> held = winNow ? identitySet()
+                : s6 ? pickSetsToHoldS6(best, context)
+                     : singletonIdentity(pickBestToHoldS5(best, context));
 
         List<CashInAction> actions = new ArrayList<>();
         List<Card> remaining = new ArrayList<>(context.holdings());
         Set<HelperCard> queuedHelpers = new HashSet<>();
 
         for (SetCandidate candidate : best.candidates()) {
-            if (candidate == held) continue;
+            if (held.contains(candidate)) continue;
             List<HelperCard> helpers = usefulConditionalHelpers(context.helpers(), queuedHelpers, candidate.set());
             actions.add(helpers.isEmpty()
                     ? new CashInAction.Cash(candidate.selectedCards())
@@ -556,10 +594,8 @@ final class CashInPlanOptimizer {
             remaining.removeAll(candidate.selectedCards());
         }
 
-        boolean anyCashed = held == null
-                ? !best.candidates().isEmpty()
-                : best.candidates().size() > 1;
-        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, anyCashed);
+        boolean anyCashed = best.candidates().size() > held.size();
+        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, anyCashed, s6);
         if (!isTuskerQueued(actions)) {
             discardDownToLimit(actions, remaining, context.holdLimit());
         }
@@ -596,6 +632,53 @@ final class CashInPlanOptimizer {
             }
         }
         return bestHold;
+    }
+
+    /** 성장 기대값이 이 값(코인/예상턴) 이상인 세트만 보류 대상으로 본다(작은 성장은 그냥 환금). */
+    private static final double HOLD_GROWTH_THRESHOLD = 0.8;
+
+    /**
+     * S6 다중 세트 보류: 베스트 플랜의 세트들 중 성장 기대값({@link #growthValue})이 큰 순으로,
+     * 보유 한도가 허락하는 한 <b>여러 개</b>를 이번 턴 환금에서 제외한다. S5({@link #pickBestToHoldS5})는
+     * 최대 한 개만 보류해 작은 세트를 자잘하게 냈지만, S6는 키울 수 있는 세트를 모아 크게 낸다.
+     * 승리 세트(코인 ≥ 필요량)와 성장 기대값이 임계 미만인 세트는 즉시 환금한다.
+     */
+    private static Set<SetCandidate> pickSetsToHoldS6(Plan best, CashInContext context) {
+        Set<SetCandidate> held = identitySet();
+        if (best.candidates().isEmpty()) return held;
+        int myNeed = context.winningCoins() - context.teamCoins();
+        if (myNeed <= 0) return held;
+
+        int totalCards = context.holdings().size();
+        int totalCashCards = best.candidates().stream().mapToInt(c -> c.selectedCards().size()).sum();
+        int remainingAfterAllCash = totalCards - totalCashCards;
+
+        List<SetCandidate> byGrowth = new ArrayList<>(best.candidates());
+        byGrowth.sort(Comparator.comparingDouble((SetCandidate c) -> growthValue(c.set(),
+                context.holdings(), context.discardPile(), context.opponentHoldings())).reversed());
+
+        int heldCards = 0;
+        for (SetCandidate candidate : byGrowth) {
+            if (candidate.set().coin() >= myNeed) continue; // 승리 세트는 즉시 환금
+            double value = growthValue(candidate.set(), context.holdings(),
+                    context.discardPile(), context.opponentHoldings());
+            if (value < HOLD_GROWTH_THRESHOLD) continue;
+            int projected = remainingAfterAllCash + heldCards + candidate.selectedCards().size();
+            if (projected > context.holdLimit()) continue; // 한도 초과면 보류 불가
+            held.add(candidate);
+            heldCards += candidate.selectedCards().size();
+        }
+        return held;
+    }
+
+    private static Set<SetCandidate> identitySet() {
+        return Collections.newSetFromMap(new IdentityHashMap<>());
+    }
+
+    private static Set<SetCandidate> singletonIdentity(SetCandidate candidate) {
+        Set<SetCandidate> set = identitySet();
+        if (candidate != null) set.add(candidate);
+        return set;
     }
 
     /**

@@ -10,6 +10,7 @@ public enum BotKind {
     S3("S3 봇"),
     S4("S4 봇"),
     S5("S5 봇"),
+    S6("S6 봇"),
     HEURISTIC("기본 봇");
 
     private final String displayName;
@@ -29,6 +30,7 @@ public enum BotKind {
             case S3 -> new S3BotStrategy();
             case S4 -> new S4BotStrategy();
             case S5 -> new S5BotStrategy();
+            case S6 -> new S6BotStrategy();
             case HEURISTIC -> new HeuristicBotStrategy();
         };
     }

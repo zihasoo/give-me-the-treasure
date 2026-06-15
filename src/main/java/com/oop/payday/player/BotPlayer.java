@@ -59,6 +59,11 @@ public final class BotPlayer extends Player {
         return new BotPlayer(name, strategy, 2000, 4000, 850, 800, 1400);
     }
 
+    /** 이 봇이 위임하는 전략의 표기 이름(예: "S6"). 플레이 로그 헤더에 쓴다. */
+    public String strategyName() {
+        return strategy.displayName();
+    }
+
     @Override
     public int revealPaceMillis() { return pace; }
 
