@@ -12,21 +12,25 @@ import com.oop.payday.model.card.Card;
  * 코인 상황({@code myCoins}/{@code opponentCoins}/{@code winningCoins})과 보유 카드({@code holdings})를
  * 함께 보면 묶음과 기존 패의 시너지·승리 임박·견제 같은 상황형 분할을 세울 수 있다.
  *
- * @param hand          이번에 나눠야 할 손패 5장
- * @param holdings      분할자(리더)의 현재 보관 카드 — 묶음과의 시너지 평가용
- * @param myCoins       내 팀 코인
- * @param opponentCoins 상대 팀 코인
- * @param winningCoins  승리 목표 코인
+ * @param hand              이번에 나눠야 할 손패 5장
+ * @param holdings          분할자(리더)의 현재 보관 카드 — 묶음과의 시너지 평가용
+ * @param myCoins           내 팀 코인
+ * @param opponentCoins     상대 팀 코인
+ * @param winningCoins      승리 목표 코인
+ * @param opponentHoldings  상대 팀 전원의 보관 카드(규칙상 앞면 공개) — 봇 견제 평가용.
+ *                          도우미(비공개)는 포함하지 않는다.
  */
 public record SplitContext(
         List<Card> hand,
         List<Card> holdings,
         int myCoins,
         int opponentCoins,
-        int winningCoins) {
+        int winningCoins,
+        List<Card> opponentHoldings) {
 
     public SplitContext {
         hand = List.copyOf(hand);
         holdings = List.copyOf(holdings);
+        opponentHoldings = List.copyOf(opponentHoldings);
     }
 }

@@ -55,4 +55,7 @@ tasks.register('integrationTest', Test) {
     // 봇 A/B 표본 수를 CLI 로 조절: -DbotSeedCount=300 (기본 20). 큰 표본으로 승률 신호를 확인할 때 쓴다.
     systemProperty 'botSeedCount', System.getProperty('botSeedCount', '20')
     shouldRunAfter test
+    testLogging {
+        showStandardStreams = true
+    }
 }

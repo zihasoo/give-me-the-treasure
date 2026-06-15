@@ -18,10 +18,12 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.oop.payday.bot.BotStrategy;
+import com.oop.payday.bot.HeuristicBotStrategy;
 import com.oop.payday.bot.S1BotStrategy;
 import com.oop.payday.bot.S2BotStrategy;
 import com.oop.payday.bot.S3BotStrategy;
 import com.oop.payday.bot.S3BotStrategy.S3Tuning;
+import com.oop.payday.bot.S4BotStrategy;
 import com.oop.payday.model.Deck;
 import com.oop.payday.player.BotPlayer;
 import com.oop.payday.player.Player;
@@ -74,6 +76,17 @@ final class HeadlessBotGameTest {
     @Test
     void S2vsS3SeedReport() {
         runSeedReport("S3", S3BotStrategy::new, "S2", S2BotStrategy::new);
+    }
+
+    /**
+     * 실험 전략({@link S4BotStrategy}, S4)을 직전 버전({@link S3BotStrategy}, S3)과 맞붙여 A/B 측정한다.
+     * S4는 환금 보류(§4.1)와 상대 holdings 견제(§4.2)를 추가한 버전이다.
+     * 무효 환금 견고성이 유지되는지(게임당 평균 1회 미만)도 함께 확인한다.
+     */
+    @Tag("integration")
+    @Test
+    void S3vsS4SeedReport() {
+        runSeedReport("S4", S4BotStrategy::new, "S3", S3BotStrategy::new);
     }
 
     /**
@@ -148,11 +161,11 @@ final class HeadlessBotGameTest {
         System.out.printf("avgRounds=%.2f avg%sCoins=%.2f avg%sCoins=%.2f%n",
                 averageRounds, challengerName, challengerCoins, baselineName, baselineCoins);
         System.out.printf("invalidCashes total=%d perGame=%.3f%n", totalInvalid, invalidPerGame);
-        results.forEach(result -> System.out.printf(
-                "seed=%02d chFirst=%-5s winner=%-2s rounds=%02d %s=%02d %s=%02d invalid=%d%n",
-                result.seed(), result.challengerFirst(), result.challengerWon() ? challengerName : baselineName,
-                result.rounds(), challengerName, result.challengerCoins(),
-                baselineName, result.baselineCoins(), result.invalidCashes()));
+        // results.forEach(result -> System.out.printf(
+        //         "seed=%02d chFirst=%-5s winner=%-2s rounds=%02d %s=%02d %s=%02d invalid=%d%n",
+        //         result.seed(), result.challengerFirst(), result.challengerWon() ? challengerName : baselineName,
+        //         result.rounds(), challengerName, result.challengerCoins(),
+        //         baselineName, result.baselineCoins(), result.invalidCashes()));
 
         assertTrue(results.size() == seedCount * 2, "seed 표본(선후공 교대) 전부를 실행해야 한다.");
         assertTrue(results.stream().allMatch(result -> result.rounds() > 0),

@@ -138,7 +138,8 @@ public final class Game {
 
         listener.onRequestSplit(splitter, hand);
         SplitContext splitContext = new SplitContext(hand, splitter.holdings(),
-                splitTeam.coins(), chooseTeam.coins(), config.winningCoins());
+                splitTeam.coins(), chooseTeam.coins(), config.winningCoins(),
+                teamHoldings(chooseTeam));
         SplitDecision decision = splitter.decideSplit(splitContext);
         if (!decision.isValid()) {
             throw new IllegalStateException("잘못된 분할 결정: " + splitTeam.name());
@@ -166,7 +167,8 @@ public final class Game {
         ChoiceView choiceView = new ChoiceView(List.of(viewA, viewB));
         listener.onRequestChoice(chooser, choiceView);
         ChoiceContext choiceContext = new ChoiceContext(choiceView, chooser.holdings(),
-                chooseTeam.coins(), splitTeam.coins(), config.winningCoins());
+                chooseTeam.coins(), splitTeam.coins(), config.winningCoins(),
+                teamHoldings(splitTeam));
         int index = chooser.decideChoice(choiceContext);
         if (index != 0 && index != 1) {
             throw new IllegalStateException("잘못된 선택 인덱스: " + index);
@@ -713,6 +715,13 @@ public final class Game {
 
     private Team opponentOf(Team team) {
         return team == splitTeam ? chooseTeam : splitTeam;
+    }
+
+    /** 한 팀 전원의 보관 카드(공개 정보). 봇 견제 평가용 — 도우미(비공개)는 포함하지 않는다. */
+    private List<Card> teamHoldings(Team team) {
+        List<Card> all = new ArrayList<>();
+        for (Player p : team.members()) all.addAll(p.holdings());
+        return all;
     }
 
     private Player leaderOf(Team team) {
