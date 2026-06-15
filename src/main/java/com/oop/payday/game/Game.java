@@ -413,7 +413,8 @@ public final class Game {
     private CashInContext snapshotFor(Player player, Team team) {
         int limit = player.isHoldLimitSuspended() ? Integer.MAX_VALUE : player.holdLimit();
         return new CashInContext(player.holdings(), player.helpers(), usedHelpers,
-                deck.discardView(), team.coins(), limit, config.winningCoins());
+                deck.discardView(), team.coins(), limit, config.winningCoins(),
+                teamHoldings(opponentOf(team)));
     }
 
     private TreasureSet applyCash(Player player, Team team, List<Card> cards) {

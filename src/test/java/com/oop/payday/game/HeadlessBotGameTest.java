@@ -24,6 +24,7 @@ import com.oop.payday.bot.S2BotStrategy;
 import com.oop.payday.bot.S3BotStrategy;
 import com.oop.payday.bot.S3BotStrategy.S3Tuning;
 import com.oop.payday.bot.S4BotStrategy;
+import com.oop.payday.bot.S5BotStrategy;
 import com.oop.payday.model.Deck;
 import com.oop.payday.player.BotPlayer;
 import com.oop.payday.player.Player;
@@ -87,6 +88,17 @@ final class HeadlessBotGameTest {
     @Test
     void S3vsS4SeedReport() {
         runSeedReport("S4", S4BotStrategy::new, "S3", S3BotStrategy::new);
+    }
+
+    /**
+     * 실험 전략({@link S5BotStrategy}, S5)을 직전 버전({@link S4BotStrategy}, S4)과 맞붙여 A/B 측정한다.
+     * S5는 보류 판단을 "성장 코인 증분(이진)" 에서 "예상 획득 턴 당 기대 코인 증분(연속 점수)"으로 개선했다.
+     * 상대 손패가 opponentHoldings를 통해 expectedStepTurns에 반영된다.
+     */
+    @Tag("integration")
+    @Test
+    void S4vsS5SeedReport() {
+        runSeedReport("S5", S5BotStrategy::new, "S4", S4BotStrategy::new);
     }
 
     /**

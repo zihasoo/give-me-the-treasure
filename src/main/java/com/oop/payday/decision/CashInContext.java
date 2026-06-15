@@ -18,12 +18,14 @@ public record CashInContext(
         List<Card> discardPile,
         int teamCoins,
         int holdLimit,
-        int winningCoins) {
+        int winningCoins,
+        List<Card> opponentHoldings) {
 
     public CashInContext {
         holdings = List.copyOf(holdings);
         helpers = List.copyOf(helpers);
         usedHelpers = List.copyOf(usedHelpers);
         discardPile = List.copyOf(discardPile);
+        opponentHoldings = List.copyOf(opponentHoldings);
     }
 }

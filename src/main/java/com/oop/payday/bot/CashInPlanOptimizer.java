@@ -518,4 +518,204 @@ final class CashInPlanOptimizer {
             selectedCards = List.copyOf(selectedCards);
         }
     }
+
+    // ─── S5: 성장 기대값 기반 보류 전략 ─────────────────────────────────────────────
+
+    /** 버림 더미에 있는 카드: 슬쩍하기로 회수 가능 → 낮은 예상 턴. */
+    private static final double DISCARD_TURNS = 1.5;
+    /** 상대 손패에 있는 카드: 상대가 버리거나 환금할 때까지 대기. */
+    private static final double OPP_TURNS = 5.0;
+    /** 라운드당 분배되는 평균 보물 카드 수(5장 중 보물 비율 근사). */
+    private static final double DRAWS_PER_ROUND = 2.5;
+    /** 미지 상태 보물 카드 전체 수 (4색 × 7숫자). */
+    private static final int TOTAL_TREASURE =
+            CardColor.values().length * (TreasureCard.MAX_NUMBER - TreasureCard.MIN_NUMBER + 1);
+
+    /**
+     * S5: 상대 손패를 반영한 성장 기대값 기반 보류 전략.
+     * {@link #isEndgame}이면 {@link #planWithHold}와 동일하게 즉시 환금한다.
+     */
+    static List<CashInAction> planWithHoldS5(CashInContext context, int opponentCoins) {
+        boolean winNow = isEndgame(context, opponentCoins);
+        List<SetCandidate> candidates = enumerateCandidates(context.holdings(), context.helpers(), winNow);
+        Plan best = findBestPlan(candidates, context.holdings(), winNow);
+
+        SetCandidate held = winNow ? null : pickBestToHoldS5(best, context);
+
+        List<CashInAction> actions = new ArrayList<>();
+        List<Card> remaining = new ArrayList<>(context.holdings());
+        Set<HelperCard> queuedHelpers = new HashSet<>();
+
+        for (SetCandidate candidate : best.candidates()) {
+            if (candidate == held) continue;
+            List<HelperCard> helpers = usefulConditionalHelpers(context.helpers(), queuedHelpers, candidate.set());
+            actions.add(helpers.isEmpty()
+                    ? new CashInAction.Cash(candidate.selectedCards())
+                    : new CashInAction.CashWithHelpers(candidate.selectedCards(), helpers));
+            queuedHelpers.addAll(helpers);
+            remaining.removeAll(candidate.selectedCards());
+        }
+
+        boolean anyCashed = held == null
+                ? !best.candidates().isEmpty()
+                : best.candidates().size() > 1;
+        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, anyCashed);
+        if (!isTuskerQueued(actions)) {
+            discardDownToLimit(actions, remaining, context.holdLimit());
+        }
+        return actions;
+    }
+
+    /**
+     * 베스트 플랜 중 "이번 턴 보류"할 최적 후보를 고른다(S5).
+     * {@link #pickBestToHold}와 달리 성장 코인/가능 여부 이진 판단 대신
+     * {@link #growthValue} — 예상 획득 턴 당 기대 코인 증분 — 로 연속 점수화한다.
+     */
+    private static SetCandidate pickBestToHoldS5(Plan best, CashInContext context) {
+        if (best.candidates().isEmpty()) return null;
+        int myNeed = context.winningCoins() - context.teamCoins();
+        if (myNeed <= 0) return null;
+
+        int totalCards = context.holdings().size();
+        int totalCashCards = best.candidates().stream().mapToInt(c -> c.selectedCards().size()).sum();
+        int remainingAfterAllCash = totalCards - totalCashCards;
+
+        SetCandidate bestHold = null;
+        double bestValue = 0;
+
+        for (SetCandidate candidate : best.candidates()) {
+            if (candidate.set().coin() >= myNeed) continue;
+            double value = growthValue(candidate.set(), context.holdings(),
+                    context.discardPile(), context.opponentHoldings());
+            if (value <= 0) continue;
+            int remainingIfHeld = remainingAfterAllCash + candidate.selectedCards().size();
+            if (remainingIfHeld > context.holdLimit()) continue;
+            if (value > bestValue) {
+                bestValue = value;
+                bestHold = candidate;
+            }
+        }
+        return bestHold;
+    }
+
+    /**
+     * 세트의 성장 기대값: (목표 크기까지 코인 증분) / (누적 예상 획득 턴).
+     * 가능한 목표 크기 중 가장 높은 값을 반환한다.
+     * 첫 단계의 {@link #expectedStepTurns}을 전 단계에 동일하게 적용(근사).
+     */
+    private static double growthValue(TreasureSet set, List<Card> holdings,
+            List<Card> discardPile, List<Card> opponentHoldings) {
+        double stepTurns = expectedStepTurns(set, holdings, discardPile, opponentHoldings);
+        if (stepTurns >= Double.MAX_VALUE / 2) return 0;
+
+        int currentCoin = set.coin();
+        double cumTurns = 0;
+        double best = 0;
+        for (int targetSize = set.size() + 1; ; targetSize++) {
+            int targetCoin = set.type().coin(targetSize);
+            if (targetCoin == SetType.INVALID) break;
+            cumTurns += stepTurns;
+            double value = (targetCoin - currentCoin) / cumTurns;
+            if (value > best) best = value;
+        }
+        return best;
+    }
+
+    /**
+     * 세트를 한 장 더 키우는 데 필요한 카드의 예상 획득 턴.
+     * <ul>
+     *   <li>버림 더미: {@link #DISCARD_TURNS} (슬쩍하기로 회수 가능)</li>
+     *   <li>상대 손패: {@link #OPP_TURNS} (상대가 쓸 때까지 대기)</li>
+     *   <li>미지(덱): 미지 보물 장수 / (미지 후보 수 × {@link #DRAWS_PER_ROUND})</li>
+     * </ul>
+     * 여러 후보가 있으면 가장 빠른 경로(min)를 반환한다.
+     */
+    private static double expectedStepTurns(TreasureSet set, List<Card> holdings,
+            List<Card> discardPile, List<Card> opponentHoldings) {
+        List<TargetSpec> targets = nextTargets(set);
+        if (targets.isEmpty()) return Double.MAX_VALUE / 2;
+
+        long knownTreasure = countTreasure(holdings) + countTreasure(discardPile)
+                + countTreasure(opponentHoldings);
+        long unknownTreasure = Math.max(1, TOTAL_TREASURE - knownTreasure);
+
+        boolean anyInDiscard = false;
+        boolean anyInOpp = false;
+        long unknownAlts = 0;
+        for (TargetSpec t : targets) {
+            if (inTargetList(t, discardPile))       anyInDiscard = true;
+            else if (inTargetList(t, opponentHoldings)) anyInOpp = true;
+            else if (!inTargetList(t, holdings))    unknownAlts++;
+        }
+
+        double best = Double.MAX_VALUE / 2;
+        if (anyInDiscard) best = Math.min(best, DISCARD_TURNS);
+        if (anyInOpp)     best = Math.min(best, OPP_TURNS);
+        if (unknownAlts > 0) best = Math.min(best, unknownTreasure / (unknownAlts * DRAWS_PER_ROUND));
+        return best;
+    }
+
+    /** 세트를 한 장 키울 때 필요한 카드 목록(세트 타입별 일반화). */
+    private static List<TargetSpec> nextTargets(TreasureSet set) {
+        return switch (set.type()) {
+            case SAME_NUMBER    -> nextTargetsSameNumber(set);
+            case RUN            -> nextTargetsRun(set);
+            case RUN_SAME_COLOR -> nextTargetsRunColor(set);
+        };
+    }
+
+    private static List<TargetSpec> nextTargetsSameNumber(TreasureSet set) {
+        int number = -1;
+        Set<CardColor> usedColors = new HashSet<>();
+        for (Card card : set.cards()) {
+            if (card instanceof TreasureCard tc) {
+                number = tc.number();
+                usedColors.add(tc.color());
+            }
+        }
+        if (number == -1) return List.of();
+        List<TargetSpec> result = new ArrayList<>();
+        for (CardColor c : CardColor.values()) {
+            if (!usedColors.contains(c)) result.add(new TargetSpec(c, number));
+        }
+        return result;
+    }
+
+    private static List<TargetSpec> nextTargetsRun(TreasureSet set) {
+        int[] range = runRange(set);
+        if (range == null) return List.of();
+        List<TargetSpec> result = new ArrayList<>();
+        if (range[0] > TreasureCard.MIN_NUMBER) {
+            for (CardColor c : CardColor.values()) result.add(new TargetSpec(c, range[0] - 1));
+        }
+        if (range[1] < TreasureCard.MAX_NUMBER) {
+            for (CardColor c : CardColor.values()) result.add(new TargetSpec(c, range[1] + 1));
+        }
+        return result;
+    }
+
+    private static List<TargetSpec> nextTargetsRunColor(TreasureSet set) {
+        int[] range = runRange(set);
+        CardColor color = runColor(set);
+        if (range == null || color == null) return List.of();
+        List<TargetSpec> result = new ArrayList<>();
+        if (range[0] > TreasureCard.MIN_NUMBER) result.add(new TargetSpec(color, range[0] - 1));
+        if (range[1] < TreasureCard.MAX_NUMBER) result.add(new TargetSpec(color, range[1] + 1));
+        return result;
+    }
+
+    private static long countTreasure(List<Card> cards) {
+        long count = 0;
+        for (Card c : cards) if (c instanceof TreasureCard) count++;
+        return count;
+    }
+
+    private static boolean inTargetList(TargetSpec t, List<Card> cards) {
+        for (Card c : cards) {
+            if (c instanceof TreasureCard tc && tc.color() == t.color() && tc.number() == t.number()) return true;
+        }
+        return false;
+    }
+
+    private record TargetSpec(CardColor color, int number) {}
 }

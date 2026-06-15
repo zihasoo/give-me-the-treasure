@@ -249,7 +249,8 @@ public final class GameClient implements Closeable {
                         cards(ctx.discardPile(), mirror),
                         ctx.teamCoins(),
                         ctx.holdLimit(),
-                        ctx.winningCoins());
+                        ctx.winningCoins(),
+                        cards(ctx.opponentHoldings(), mirror));
                 listener.onCashTurn(mirror.playerById(e.playerId()), cashCtx);
             }
 
