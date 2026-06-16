@@ -21,6 +21,7 @@ import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
@@ -59,6 +60,7 @@ public final class LobbyController implements Initializable {
     // 클라이언트 전용
     private GameClient client;
     private int myClientId = -1;
+    private boolean clientLeft = false;
 
     // 호스트 교체 선택 상태
     private List<Slot> swapFrom = null;
@@ -466,7 +468,12 @@ public final class LobbyController implements Initializable {
     }
 
     private void clientLeave(String reason) {
-        roomAddressLabel.setText(reason);
+        if (clientLeft) return;
+        clientLeft = true;
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setHeaderText(null);
+        alert.setContentText(reason);
+        alert.showAndWait();
         try {
             GameApp.get().showScene("main_menu.fxml");
         } catch (IOException ignored) {
@@ -493,6 +500,7 @@ public final class LobbyController implements Initializable {
     }
 
     @FXML
+    @SuppressWarnings("unused")
     private void onStart() {
         if (!hostMode || !canStart()) return;
         boolean hasRemote = hasRemoteSeat();
@@ -511,6 +519,7 @@ public final class LobbyController implements Initializable {
     }
 
     @FXML
+    @SuppressWarnings("unused")
     private void onBack() {
         if (hostMode) {
             if (server != null) {

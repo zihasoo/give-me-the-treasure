@@ -110,7 +110,7 @@ final class CashInPlanOptimizer {
         if (picked.size() == targetSize) {
             CashInEvaluator.evaluate(picked)
                     .map(evaluation -> withMatchingCurses(evaluation.set(), holdings))
-                    .ifPresent(setCards -> result.add(toCandidate(setCards, helpers, holdings, winNow)));
+                    .ifPresent(setCards -> result.add(toCandidate(setCards, helpers, winNow)));
             return;
         }
         for (int i = start; i <= usable.size() - (targetSize - picked.size()); i++) {
@@ -130,8 +130,7 @@ final class CashInPlanOptimizer {
         return selected;
     }
 
-    private static SetCandidate toCandidate(List<Card> selectedCards, List<HelperCard> helpers, List<Card> holdings,
-            boolean winNow) {
+    private static SetCandidate toCandidate(List<Card> selectedCards, List<HelperCard> helpers, boolean winNow) {
         var evaluation = CashInEvaluator.evaluate(selectedCards).orElseThrow();
         TreasureSet set = evaluation.set();
         int helperBonus = helpers.stream()

@@ -155,7 +155,7 @@ final class NetworkMultiClientGameTest {
                         send(new NetMessage.CashPass(ct.requestId()));
                     }
                 }
-            } catch (Exception e) {
+            } catch (IOException | ClassNotFoundException e) {
                 // 연결 종료
             }
         }

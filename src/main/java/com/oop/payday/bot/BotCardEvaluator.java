@@ -29,10 +29,6 @@ final class BotCardEvaluator {
         return SetEvaluator.findBestSet(cards).map(TreasureSet::coin).orElse(0);
     }
 
-    static int bundleScore(List<Card> cards) {
-        return bestCashCoin(cards) * 100 + potentialScore(cards);
-    }
-
     static int potentialScore(List<Card> cards) {
         int score = 0;
         int wild = 0;
@@ -100,7 +96,7 @@ final class BotCardEvaluator {
     }
 
     static int discardLoss(List<Card> cards, Card card) {
-        if (card instanceof CursedCard) {
+        if (card == null || card instanceof CursedCard) {
             return -80;
         }
         List<Card> remaining = new ArrayList<>(cards);
