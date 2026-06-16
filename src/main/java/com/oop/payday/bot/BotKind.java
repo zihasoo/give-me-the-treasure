@@ -5,6 +5,7 @@ package com.oop.payday.bot;
  */
 public enum BotKind {
 
+    S7("S7 봇"),
     S6("S6 봇");
 
     private final String displayName;
@@ -19,6 +20,7 @@ public enum BotKind {
 
     public BotStrategy create() {
         return switch (this) {
+            case S7 -> new S7BotStrategy();
             case S6 -> new S6BotStrategy();
         };
     }

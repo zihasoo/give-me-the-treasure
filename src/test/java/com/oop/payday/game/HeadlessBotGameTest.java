@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.oop.payday.bot.S6BotStrategy;
+import com.oop.payday.bot.S7BotStrategy;
 import com.oop.payday.log.PlayLogWriter;
 import com.oop.payday.player.BotPlayer;
 import com.oop.payday.player.Player;
@@ -69,6 +70,33 @@ final class HeadlessBotGameTest {
         assertTrue(text.contains("라운드 1"), "라운드 진행이 기록돼야 한다.");
         assertTrue(text.contains("[환금]"), "환금 페이즈가 기록돼야 한다.");
         assertTrue(text.contains("게임 종료 — 승리:"), "게임 종료가 기록돼야 한다.");
+    }
+
+    /**
+     * S7(현재 기본 봇)이 한 판을 무효 행동 없이 끝까지 진행하는지 검증한다(회귀 안전망). S7 은 분할자·선택자
+     * 역할을 번갈아 맡으므로 한 판으로 새 선택 모델·저주 부채·환금 보류 경로가 모두 행사된다.
+     */
+    @Tag("integration")
+    @Test
+    void s7BotFinishesPracticeGameWithoutInvalidActions() {
+        AtomicReference<Team> winnerRef = new AtomicReference<>();
+
+        Team alpha = new Team("S7 봇 A", List.of(BotPlayer.test(new S7BotStrategy())));
+        Team beta = new Team("S7 봇 B", List.of(BotPlayer.test(new S7BotStrategy())));
+        Game game = new Game(GameConfig.practice(true), alpha, beta, new GameListener() {
+            @Override
+            public void onGameOver(Team winner) {
+                winnerRef.set(winner);
+            }
+        });
+
+        assertTimeoutPreemptively(Duration.ofSeconds(5), game::play);
+
+        Team winner = winnerRef.get();
+        assertNotNull(winner, "S7 봇 대전은 승자를 내고 종료해야 한다.");
+        assertTrue(winner == alpha || winner == beta, "승자는 참가 팀 중 하나여야 한다.");
+        assertTrue(winner.coins() >= GameConfig.PRACTICE_WIN,
+                "승자는 연습 룰 승리 코인 이상을 보유해야 한다.");
     }
 
     private static Team team(String name) {

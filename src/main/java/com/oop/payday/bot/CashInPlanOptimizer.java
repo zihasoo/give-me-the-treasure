@@ -41,16 +41,26 @@ final class CashInPlanOptimizer {
     }
 
     /**
+     * 환금 계획을 세대별 기본 튜닝({@link Tuning#S6})으로 만든다.
+     */
+    static List<CashInAction> plan(CashInContext context, int opponentCoins) {
+        return plan(context, opponentCoins, Tuning.S6);
+    }
+
+    /**
      * 환금 계획을 만든다. 종반이 아니면 성장 기대값이 큰 세트들을 한도가 허락하는 한 보류해
      * 다음 라운드에 더 크게 키우고, 종반({@link #isEndgame})이면 보존·잠재력을 버리고 즉시 환금한다.
      * {@code opponentCoins} 는 상대 팀 코인으로, 상대 승리 임박 시 즉시 환금(종반 판단)에 쓴다.
+     * {@code tuning} 으로 세대별 보류·도우미·저주 정책을 갈아끼운다.
      */
-    static List<CashInAction> plan(CashInContext context, int opponentCoins) {
+    static List<CashInAction> plan(CashInContext context, int opponentCoins, Tuning tuning) {
         boolean winNow = isEndgame(context, opponentCoins);
-        List<SetCandidate> candidates = enumerateCandidates(context.holdings(), context.helpers(), winNow);
+        boolean overLimit = context.holdings().size() > context.holdLimit();
+        List<SetCandidate> candidates = enumerateCandidates(
+                context.holdings(), context.helpers(), winNow, overLimit, tuning);
         Plan best = findBestPlan(candidates, context.holdings(), winNow);
 
-        Set<SetCandidate> held = winNow ? identitySet() : pickSetsToHold(best, context);
+        Set<SetCandidate> held = winNow ? identitySet() : pickSetsToHold(best, context, tuning);
 
         List<CashInAction> actions = new ArrayList<>();
         List<Card> remaining = new ArrayList<>(context.holdings());
@@ -67,11 +77,41 @@ final class CashInPlanOptimizer {
         }
 
         boolean anyCashed = best.candidates().size() > held.size();
-        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, anyCashed);
+        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, anyCashed, tuning);
         if (!isTuskerQueued(actions)) {
             discardDownToLimit(actions, remaining, context.holdLimit());
         }
         return actions;
+    }
+
+    /**
+     * 환금 계획 튜닝 — 세대별로 다른 보류/도우미/저주 정책을 갈아끼운다.
+     *
+     * @param holdGrowthThreshold   성장 기대값이 이 값 이상인 세트만 보류 대상으로 본다.
+     * @param flushGrowthMultiplier 같은색 연속 세트의 성장 기대값에 곱하는 가중(천장이 가장 높아 키울 값어치 큼).
+     * @param freeCurseDisposalReward 세트에 끼워 저주를 무료 처분할 때 세트 후보 점수에 더하는 저주 1장당 보너스.
+     * @param freeCurseRewardOnlyOverLimit true 면 보유 한도 초과일 때만 위 보너스를 적용한다.
+     *                             <b>한도 여유가 있을 땐</b> 무료 처분은 이득이 아니라 덜 나쁜 손해이므로(저주가
+     *                             보물이었다면 더 크게 냈을 것) 보너스 0 — 저주 털려고 세트를 일찍 내는 왜곡 방지.
+     *                             <b>한도가 넘치면</b> 무료 처분이 2코인 강제 버림을 피하는 실질 이득이라 보너스를 켠다.
+     * @param curseFreeHoldRoom    보류 가능 여부의 보유 한도 계산에서 처분 예정 저주를 제외해 보류 공간을 확보.
+     * @param viperOnlyWhenOverLimit 척후 바이퍼를 보유 한도 초과(환금 뒤에도)일 때만 쓴다. 한도 여유가 있으면
+     *                             저주는 매칭 세트로 무료 처분하거나 더 모았다가 쓰는 게 나아 1회용 바이퍼를 아낀다.
+     */
+    record Tuning(double holdGrowthThreshold, double flushGrowthMultiplier,
+            int freeCurseDisposalReward, boolean freeCurseRewardOnlyOverLimit,
+            boolean curseFreeHoldRoom, boolean viperOnlyWhenOverLimit) {
+
+        /** S6: 과거 동작 보존(보류 임계 0.8, 보정 없음, 무료 처분 보너스 8 무조건, 바이퍼·투스커 기존 로직). */
+        static final Tuning S6 = new Tuning(HOLD_GROWTH_THRESHOLD, 1.0, 8, false, false, false);
+
+        /**
+         * S7: 보류 임계 완화 + 같은색 연속 성장 가중 + 저주를 보유공간 부채로 취급 + 무료 처분은 한도 초과일 때만
+         * 이득으로 봄(2코인 강제 버림 회피) + 바이퍼를 한도 초과 구제용으로만. 사람 vs S6 로그가 짚은 저주 운용
+         * 약점을 교정한다. (TUSKER 로 저주를 보류해 다음 무료 처분을 노리는 것은 합리적이라 S6 그대로 둔다 —
+         * 저주를 그냥 버려도 2코인이 들기 때문.)
+         */
+        static final Tuning S7 = new Tuning(0.5, 2.0, 200, true, true, true);
     }
 
     /**
@@ -90,13 +130,14 @@ final class CashInPlanOptimizer {
     }
 
     private static List<SetCandidate> enumerateCandidates(List<Card> holdings, List<HelperCard> helpers,
-            boolean winNow) {
+            boolean winNow, boolean overLimit, Tuning tuning) {
         List<Card> usable = holdings.stream()
                 .filter(card -> card.canFormSet() || card.isWild())
                 .toList();
         List<SetCandidate> candidates = new ArrayList<>();
         for (int size = 2; size <= 5; size++) {
-            collectCandidates(usable, holdings, helpers, size, 0, new ArrayList<>(), candidates, winNow);
+            collectCandidates(usable, holdings, helpers, size, 0, new ArrayList<>(), candidates,
+                    winNow, overLimit, tuning);
         }
         candidates.sort(Comparator.comparingInt(SetCandidate::score).reversed());
         if (candidates.size() > 120) {
@@ -106,16 +147,18 @@ final class CashInPlanOptimizer {
     }
 
     private static void collectCandidates(List<Card> usable, List<Card> holdings, List<HelperCard> helpers,
-            int targetSize, int start, List<Card> picked, List<SetCandidate> result, boolean winNow) {
+            int targetSize, int start, List<Card> picked, List<SetCandidate> result,
+            boolean winNow, boolean overLimit, Tuning tuning) {
         if (picked.size() == targetSize) {
             CashInEvaluator.evaluate(picked)
                     .map(evaluation -> withMatchingCurses(evaluation.set(), holdings))
-                    .ifPresent(setCards -> result.add(toCandidate(setCards, helpers, winNow)));
+                    .ifPresent(setCards -> result.add(toCandidate(setCards, helpers, winNow, overLimit, tuning)));
             return;
         }
         for (int i = start; i <= usable.size() - (targetSize - picked.size()); i++) {
             picked.add(usable.get(i));
-            collectCandidates(usable, holdings, helpers, targetSize, i + 1, picked, result, winNow);
+            collectCandidates(usable, holdings, helpers, targetSize, i + 1, picked, result,
+                    winNow, overLimit, tuning);
             picked.remove(picked.size() - 1);
         }
     }
@@ -130,14 +173,18 @@ final class CashInPlanOptimizer {
         return selected;
     }
 
-    private static SetCandidate toCandidate(List<Card> selectedCards, List<HelperCard> helpers, boolean winNow) {
+    private static SetCandidate toCandidate(List<Card> selectedCards, List<HelperCard> helpers, boolean winNow,
+            boolean overLimit, Tuning tuning) {
         var evaluation = CashInEvaluator.evaluate(selectedCards).orElseThrow();
         TreasureSet set = evaluation.set();
         int helperBonus = helpers.stream()
                 .filter(helper -> !helper.isUsed())
                 .mapToInt(helper -> reactionBonus(helper.kind(), set))
                 .sum();
-        int curseValue = evaluation.freeCursedCards().size() * 8;
+        // 무료 처분 보너스: 한도 여유가 있을 땐 0(무료 처분은 이득이 아니라 덜 나쁜 손해 — 저주가 보물이었다면
+        // 더 크게 냈을 것이라 일찍 환금하는 왜곡 방지). 한도가 넘치면 2코인 강제 버림을 피하는 실질 이득이라 켠다.
+        int reward = tuning.freeCurseRewardOnlyOverLimit() && !overLimit ? 0 : tuning.freeCurseDisposalReward();
+        int curseValue = evaluation.freeCursedCards().size() * reward;
         // preserveValue는 여기서 제거 — search()에서 한 번만 더한다(이중 계산 방지)
         // 승리 임박 시에는 와일드를 아끼지 않고 즉시 환금하므로 보존 페널티를 없앤다.
         int wildPenalty = winNow ? 0 : (int) selectedCards.stream().filter(Card::isWild).count() * WILD_PENALTY;
@@ -231,13 +278,13 @@ final class CashInPlanOptimizer {
     }
 
     private static void addUsefulStandaloneHelper(List<CashInAction> actions, CashInContext context,
-            List<Card> remaining, Set<HelperCard> queuedHelpers, boolean alreadyCashed) {
+            List<Card> remaining, Set<HelperCard> queuedHelpers, boolean alreadyCashed, Tuning tuning) {
         HelperChoice best = null;
         for (HelperCard helper : context.helpers()) {
             if (helper.isUsed() || queuedHelpers.contains(helper) || HelperRules.isCashReaction(helper.kind())) {
                 continue;
             }
-            HelperChoice choice = standaloneChoice(helper, context, remaining, alreadyCashed);
+            HelperChoice choice = standaloneChoice(helper, context, remaining, alreadyCashed, tuning);
             if (choice != null && (best == null || choice.score() > best.score())) {
                 best = choice;
             }
@@ -249,13 +296,23 @@ final class CashInPlanOptimizer {
     }
 
     private static HelperChoice standaloneChoice(HelperCard helper, CashInContext context, List<Card> remaining,
-            boolean alreadyCashed) {
+            boolean alreadyCashed, Tuning tuning) {
         return switch (helper.kind()) {
             case VIPER -> {
                 long curses = remaining.stream().filter(CursedCard.class::isInstance).count();
-                yield curses > 0 ? new HelperChoice(helper, null, List.of(), (int) curses * 35) : null;
+                if (curses == 0) {
+                    yield null;
+                }
+                // 한도 여유가 있으면 바이퍼를 쓰지 않는다(저주는 매칭 세트로 무료 처분하거나 더 모았다가 씀 —
+                // 1회용 도우미 낭비 방지). 환금 뒤에도 한도가 넘칠 때만 구제책으로 쓴다. — 사용자 피드백.
+                if (tuning.viperOnlyWhenOverLimit() && remaining.size() <= context.holdLimit()) {
+                    yield null;
+                }
+                yield new HelperChoice(helper, null, List.of(), (int) curses * 35);
             }
             case TUSKER -> {
+                // 저주를 그냥 버려도 2코인이 드므로, TUSKER 로 한도를 풀어 다음 라운드 무료 처분을 노리는 것은
+                // 합리적이다(저주가 한도 초과의 원인이어도 마찬가지). 기존 로직 유지.
                 int excess = remaining.size() - context.holdLimit();
                 yield excess > 0
                         ? new HelperChoice(helper, null, List.of(), 40 + excess * 15)
@@ -268,7 +325,7 @@ final class CashInPlanOptimizer {
                 }
                 yield new HelperChoice(helper, null, List.of(), junkDealerScore(remaining));
             }
-            case CROC_BROTHERS -> crocChoice(helper, context, remaining, alreadyCashed);
+            case CROC_BROTHERS -> crocChoice(helper, context, remaining, alreadyCashed, tuning);
             default -> null;
         };
     }
@@ -299,13 +356,13 @@ final class CashInPlanOptimizer {
     }
 
     private static HelperChoice crocChoice(HelperCard helper, CashInContext context, List<Card> remaining,
-            boolean alreadyCashed) {
+            boolean alreadyCashed, Tuning tuning) {
         HelperChoice best = null;
         for (HelperCard target : context.usedHelpers()) {
             if (target.kind() == HelperKind.CROC_BROTHERS) {
                 continue;
             }
-            HelperChoice copied = standaloneChoice(target, context, remaining, alreadyCashed);
+            HelperChoice copied = standaloneChoice(target, context, remaining, alreadyCashed, tuning);
             if (copied == null) {
                 continue;
             }
@@ -386,26 +443,30 @@ final class CashInPlanOptimizer {
      * <b>여러 개</b>를 이번 턴 환금에서 제외(보류)한다. 작은 세트를 자잘하게 내는 대신 키울 수 있는
      * 세트를 모아 크게 낸다. 승리 세트(코인 ≥ 필요량)와 성장 기대값이 임계 미만인 세트는 즉시 환금한다.
      */
-    private static Set<SetCandidate> pickSetsToHold(Plan best, CashInContext context) {
+    private static Set<SetCandidate> pickSetsToHold(Plan best, CashInContext context, Tuning tuning) {
         Set<SetCandidate> held = identitySet();
         if (best.candidates().isEmpty()) return held;
         int myNeed = context.winningCoins() - context.teamCoins();
         if (myNeed <= 0) return held;
 
-        int totalCards = context.holdings().size();
-        int totalCashCards = best.candidates().stream().mapToInt(c -> c.selectedCards().size()).sum();
-        int remainingAfterAllCash = totalCards - totalCashCards;
+        // 보류 후 다음 라운드로 넘어갈 비(非)세트 카드 수. 저주는 처분/버림 예정이므로(S7) 공간 계산에서 제외해
+        // 저주가 보유 한도를 잡아먹어 키울 세트를 즉시 환금하게 되는 문제(사람 vs S6 로그)를 푼다.
+        List<Card> looseCards = new ArrayList<>(context.holdings());
+        for (SetCandidate c : best.candidates()) looseCards.removeAll(c.selectedCards());
+        int remainingAfterAllCash = tuning.curseFreeHoldRoom()
+                ? (int) looseCards.stream().filter(card -> !(card instanceof CursedCard)).count()
+                : looseCards.size();
 
         List<SetCandidate> byGrowth = new ArrayList<>(best.candidates());
         byGrowth.sort(Comparator.comparingDouble((SetCandidate c) -> growthValue(c.set(),
-                context.holdings(), context.discardPile(), context.opponentHoldings())).reversed());
+                context.holdings(), context.discardPile(), context.opponentHoldings(), tuning)).reversed());
 
         int heldCards = 0;
         for (SetCandidate candidate : byGrowth) {
             if (candidate.set().coin() >= myNeed) continue; // 승리 세트는 즉시 환금
             double value = growthValue(candidate.set(), context.holdings(),
-                    context.discardPile(), context.opponentHoldings());
-            if (value < HOLD_GROWTH_THRESHOLD) continue;
+                    context.discardPile(), context.opponentHoldings(), tuning);
+            if (value < tuning.holdGrowthThreshold()) continue;
             int projected = remainingAfterAllCash + heldCards + candidate.selectedCards().size();
             if (projected > context.holdLimit()) continue; // 한도 초과면 보류 불가
             held.add(candidate);
@@ -424,7 +485,7 @@ final class CashInPlanOptimizer {
      * 첫 단계의 {@link #expectedStepTurns}을 전 단계에 동일하게 적용(근사).
      */
     private static double growthValue(TreasureSet set, List<Card> holdings,
-            List<Card> discardPile, List<Card> opponentHoldings) {
+            List<Card> discardPile, List<Card> opponentHoldings, Tuning tuning) {
         double stepTurns = expectedStepTurns(set, holdings, discardPile, opponentHoldings);
         if (stepTurns >= Double.MAX_VALUE / 2) return 0;
 
@@ -438,6 +499,8 @@ final class CashInPlanOptimizer {
             double value = (targetCoin - currentCoin) / cumTurns;
             if (value > best) best = value;
         }
+        // 같은색 연속은 천장이 가장 높다(4장=9, 5장=15). 키울 값어치를 가중해 즉시 환금 대신 보류를 유도.
+        if (set.type() == SetType.RUN_SAME_COLOR) best *= tuning.flushGrowthMultiplier();
         return best;
     }
 
