@@ -79,7 +79,8 @@ final class CashInPlanOptimizer {
         boolean anyCashed = best.candidates().size() > held.size();
         addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, anyCashed, tuning);
         if (!isTuskerQueued(actions)) {
-            discardDownToLimit(actions, remaining, context.holdLimit());
+            int projectedCoins = projectedTeamCoins(context.teamCoins(), actions);
+            discardDownToLimit(actions, remaining, context.holdLimit(), junkDealerDrawCount(actions), projectedCoins);
         }
         return actions;
     }
@@ -97,21 +98,25 @@ final class CashInPlanOptimizer {
      * @param curseFreeHoldRoom    보류 가능 여부의 보유 한도 계산에서 처분 예정 저주를 제외해 보류 공간을 확보.
      * @param viperOnlyWhenOverLimit 척후 바이퍼를 보유 한도 초과(환금 뒤에도)일 때만 쓴다. 한도 여유가 있으면
      *                             저주는 매칭 세트로 무료 처분하거나 더 모았다가 쓰는 게 나아 1회용 바이퍼를 아낀다.
+     * @param freeRoomForHold      true 면 보류 방이 부족할 때 세트 잠재력 없는 단독 잡카드(loose)를 버려 방을
+     *                             확보한다. 1인팀 보유 한도가 5로 빡빡해, loose 를 다 쥐면 3장 세트를 보류할
+     *                             공간이 영영 안 나 4·5장으로 못 키운다(사람 vs S7 로그 175208 = 봇 최대 3장).
+     *                             키울 가치가 임계를 넘는 세트를 위해 잡카드를 비워 큰 세트 양성을 가능케 한다.
      */
     record Tuning(double holdGrowthThreshold, double flushGrowthMultiplier,
             int freeCurseDisposalReward, boolean freeCurseRewardOnlyOverLimit,
-            boolean curseFreeHoldRoom, boolean viperOnlyWhenOverLimit) {
+            boolean curseFreeHoldRoom, boolean viperOnlyWhenOverLimit, boolean freeRoomForHold) {
 
         /** S6: 과거 동작 보존(보류 임계 0.8, 보정 없음, 무료 처분 보너스 8 무조건, 바이퍼·투스커 기존 로직). */
-        static final Tuning S6 = new Tuning(HOLD_GROWTH_THRESHOLD, 1.0, 8, false, false, false);
+        static final Tuning S6 = new Tuning(HOLD_GROWTH_THRESHOLD, 1.0, 8, false, false, false, false);
 
         /**
          * S7: 보류 임계 완화 + 같은색 연속 성장 가중 + 저주를 보유공간 부채로 취급 + 무료 처분은 한도 초과일 때만
-         * 이득으로 봄(2코인 강제 버림 회피) + 바이퍼를 한도 초과 구제용으로만. 사람 vs S6 로그가 짚은 저주 운용
-         * 약점을 교정한다. (TUSKER 로 저주를 보류해 다음 무료 처분을 노리는 것은 합리적이라 S6 그대로 둔다 —
-         * 저주를 그냥 버려도 2코인이 들기 때문.)
+         * 이득으로 봄(2코인 강제 버림 회피) + 바이퍼를 한도 초과 구제용으로만 + 보류 방이 부족하면 잡카드를 버려
+         * 방을 확보. 사람 vs S6/S7 로그가 짚은 저주 운용·보류 약점을 교정한다. (TUSKER 로 저주를 보류해 다음
+         * 무료 처분을 노리는 것은 합리적이라 S6 그대로 둔다 — 저주를 그냥 버려도 2코인이 들기 때문.)
          */
-        static final Tuning S7 = new Tuning(0.5, 2.0, 200, true, true, true);
+        static final Tuning S7 = new Tuning(0.5, 2.0, 200, true, true, true, true);
     }
 
     /**
@@ -383,7 +388,8 @@ final class CashInPlanOptimizer {
         });
     }
 
-    private static void discardDownToLimit(List<CashInAction> actions, List<Card> remaining, int holdLimit) {
+    private static void discardDownToLimit(List<CashInAction> actions, List<Card> remaining, int holdLimit,
+            int extraDrawn, int availableCoins) {
         if (holdLimit == Integer.MAX_VALUE) {
             return;
         }
@@ -391,12 +397,43 @@ final class CashInPlanOptimizer {
         if (hasViper(actions)) {
             projected.removeIf(CursedCard.class::isInstance);
         }
-        while (projected.size() > holdLimit) {
-            Card discard = BotCardEvaluator.chooseDiscard(projected);
+        while (projected.size() + extraDrawn > holdLimit) {
+            List<Card> eligible = availableCoins >= 2 ? projected
+                    : projected.stream().filter(c -> !(c instanceof CursedCard)).toList();
+            if (eligible.isEmpty()) break;
+            Card discard = BotCardEvaluator.chooseDiscard(eligible);
+            if (discard == null) break;
+            if (discard instanceof CursedCard) availableCoins -= 2;
             actions.add(new CashInAction.Discard(discard));
             projected.remove(discard);
             remaining.remove(discard);
         }
+    }
+
+    private static int projectedTeamCoins(int teamCoins, List<CashInAction> actions) {
+        int coins = teamCoins;
+        for (CashInAction action : actions) {
+            List<Card> cards = switch (action) {
+                case CashInAction.Cash cash -> cash.cards();
+                case CashInAction.CashWithHelpers cash -> cash.cards();
+                default -> List.of();
+            };
+            if (!cards.isEmpty()) {
+                coins += CashInEvaluator.evaluate(cards).map(r -> r.set().coin()).orElse(0);
+            }
+        }
+        return coins;
+    }
+
+    private static int junkDealerDrawCount(List<CashInAction> actions) {
+        int count = 0;
+        for (CashInAction action : actions) {
+            if (action instanceof CashInAction.UseHelper use) {
+                if (use.helper().kind() == HelperKind.JUNK_DEALER) count++;
+                else if (use.copyTarget() != null && use.copyTarget().kind() == HelperKind.JUNK_DEALER) count++;
+            }
+        }
+        return count;
     }
 
     private static boolean hasViper(List<CashInAction> actions) {
@@ -437,6 +474,12 @@ final class CashInPlanOptimizer {
             CardColor.values().length * (TreasureCard.MAX_NUMBER - TreasureCard.MIN_NUMBER + 1);
     /** 성장 기대값이 이 값(코인/예상턴) 이상인 세트만 보류 대상으로 본다(작은 성장은 그냥 환금). */
     private static final double HOLD_GROWTH_THRESHOLD = 0.8;
+    /**
+     * 보류 방 확보를 위해 버려도 되는 loose 카드의 잠재력 손실 상한({@link BotCardEvaluator#discardLoss}).
+     * 이 이하면 세트 잠재력 없는 단독 잡카드로 본다(고립 보물 ≈ 4, 1번 단독 ≈ 9, 페어/런 재료는 10+ 라
+     * 안 버려진다). 키울 세트를 위해 이런 잡카드만 비운다.
+     */
+    private static final int LOOSE_JUNK_CEILING = 8;
 
     /**
      * 베스트 플랜의 세트들 중 성장 기대값({@link #growthValue})이 큰 순으로, 보유 한도가 허락하는 한
@@ -449,26 +492,39 @@ final class CashInPlanOptimizer {
         int myNeed = context.winningCoins() - context.teamCoins();
         if (myNeed <= 0) return held;
 
-        // 보류 후 다음 라운드로 넘어갈 비(非)세트 카드 수. 저주는 처분/버림 예정이므로(S7) 공간 계산에서 제외해
+        // 보류 후 다음 라운드로 넘어갈 비(非)세트 카드. 저주는 처분/버림 예정이므로(S7) 공간 계산에서 제외해
         // 저주가 보유 한도를 잡아먹어 키울 세트를 즉시 환금하게 되는 문제(사람 vs S6 로그)를 푼다.
         List<Card> looseCards = new ArrayList<>(context.holdings());
         for (SetCandidate c : best.candidates()) looseCards.removeAll(c.selectedCards());
-        int remainingAfterAllCash = tuning.curseFreeHoldRoom()
-                ? (int) looseCards.stream().filter(card -> !(card instanceof CursedCard)).count()
-                : looseCards.size();
+        List<Card> keepableLoose = tuning.curseFreeHoldRoom()
+                ? looseCards.stream().filter(card -> !(card instanceof CursedCard)).toList()
+                : looseCards;
+
+        // 방이 부족할 때 버릴 후보: 잠재력 손실이 작은 순(잡카드 먼저). freeRoomForHold 면 이 순서로 비운다.
+        List<Card> discardable = new ArrayList<>(keepableLoose);
+        discardable.sort(Comparator.comparingInt(c -> BotCardEvaluator.discardLoss(keepableLoose, c)));
 
         List<SetCandidate> byGrowth = new ArrayList<>(best.candidates());
         byGrowth.sort(Comparator.comparingDouble((SetCandidate c) -> growthValue(c.set(),
                 context.holdings(), context.discardPile(), context.opponentHoldings(), tuning)).reversed());
 
+        int looseKept = keepableLoose.size();
         int heldCards = 0;
         for (SetCandidate candidate : byGrowth) {
             if (candidate.set().coin() >= myNeed) continue; // 승리 세트는 즉시 환금
             double value = growthValue(candidate.set(), context.holdings(),
                     context.discardPile(), context.opponentHoldings(), tuning);
             if (value < tuning.holdGrowthThreshold()) continue;
-            int projected = remainingAfterAllCash + heldCards + candidate.selectedCards().size();
-            if (projected > context.holdLimit()) continue; // 한도 초과면 보류 불가
+            int projected = looseKept + heldCards + candidate.selectedCards().size();
+            // 방이 부족하면 세트 잠재력 없는 단독 잡카드(loose)를 버려 방을 만든다. 키울 가치(임계 통과)가 있는
+            // 세트를 위해 잡카드를 비우는 트레이드오프 — 한도 5 에서 loose 를 다 쥐면 보류가 영영 불가하기 때문.
+            while (tuning.freeRoomForHold() && projected > context.holdLimit() && !discardable.isEmpty()
+                    && BotCardEvaluator.discardLoss(keepableLoose, discardable.get(0)) <= LOOSE_JUNK_CEILING) {
+                discardable.remove(0);
+                looseKept--;
+                projected--;
+            }
+            if (projected > context.holdLimit()) continue; // 그래도 방을 못 만들면 보류 불가
             held.add(candidate);
             heldCards += candidate.selectedCards().size();
         }

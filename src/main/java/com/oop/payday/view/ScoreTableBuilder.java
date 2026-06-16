@@ -25,7 +25,7 @@ public final class ScoreTableBuilder {
         VBox root = new VBox(18);
         root.getStyleClass().add("score-table-panel");
         root.setAlignment(Pos.TOP_CENTER);
-        root.setMaxWidth(1020);
+        root.setMaxWidth(1060);
         root.setMaxHeight(Region.USE_PREF_SIZE);
 
         HBox header = new HBox(12);

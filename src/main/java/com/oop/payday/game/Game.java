@@ -446,6 +446,10 @@ public final class Game {
         if (!player.holdings().contains(card)) {
             return;
         }
+        if (card instanceof CursedCard && team.coins() < 2) {
+            listener.onMessage(team.name() + ": 코인 부족(2코인 필요)으로 저주받은 그림 처분 불가");
+            return;
+        }
         int beforeCoins = team.coins();
         if (card instanceof CursedCard) {
             // 저주받은 그림은 자발적 처분 시 2코인을 지불한다(규칙서 §3-1).

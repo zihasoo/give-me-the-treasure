@@ -25,7 +25,7 @@ import com.oop.payday.model.helper.HelperCard;
  *       고정 보너스 20 으로만 봐서, 사람이 <i>얇은 묶음 뒤에 굉장한 보물을 숨기고 두꺼운 미끼 묶음을 내미는</i>
  *       분할에 매번 걸렸다(R3). 사람은 그 와일드로 9·15코인 대형 세트를 뽑아 게임을 끝냈다.
  *       S7 은 {@link #hiddenEv}로 <b>적대적 뒷면 추론</b>(덜 매력적으로 보이는 묶음일수록 분할자가 값진
- *       카드를 숨겼을 확률↑)을 쓰고, 보이는 와일드는 {@link #wildSwing}으로 강하게 확보/견제한다.</li>
+ *       카드를 숨겼을 확률↑)을 쓰고, 와일드는 {@link #wildValue}({@link #WILD_GRAB})로 강하게 확보/견제한다.</li>
  *   <li><b>② 저주를 부채로 안 봄</b> — S6 의 keep/choice 평가는 저주를 0(중립)으로 봐 저주 묶음을 태연히
  *       떠안았고(R2·R4), 저주가 보유 한도를 잡아먹어 키울 세트를 즉시 환금하게 만들었다(R7). 게다가
  *       TUSKER 로 저주를 끌어안았다(R3). S7 은 {@link #CURSE_LIABILITY}로 저주를 음의 가치로 깔고,
@@ -51,6 +51,13 @@ public final class S7BotStrategy implements BotStrategy {
     private static final int DENY_WEIGHT = 100;
 
     private static final long WIN_SECURE = 1_000_000_000L;
+
+    /**
+     * 임계를 넘기는(이번 라운드 승리 코인 도달 가능) 묶음끼리 비교할 때, '이번 라운드 실현 코인 마진'
+     * (내 환금 코인 − 상대가 받은 묶음으로 낼 코인) 1코인이 갖는 가중. {@link #WIN_SECURE} 보다
+     * 작아 임계 통과 묶음은 항상 미달 묶음보다 위지만, 통과 묶음끼리는 이 마진으로 순위가 갈린다.
+     */
+    private static final long SECURE_MARGIN_UNIT = 1_000_000L;
 
     /** 상시 maximin 안전장치 바닥(0~100). 종반에 {@code MAXIMIN_WEIGHT}까지 상승한다. */
     private static final int BASE_MAXIMIN_WEIGHT = 50;
@@ -123,8 +130,9 @@ public final class S7BotStrategy implements BotStrategy {
         boolean faceInA = bundleA.contains(faceDown);
 
         // ① 현실적 선택자 모델: 즉시 코인 + 카드 물량(장수) + 상대 손패 시너지 + 보이는 와일드 + 뒷면 기대값.
-        int chooserValA = predictedChooserValue(visA, faceInA, oppHoldings);
-        int chooserValB = predictedChooserValue(visB, !faceInA, oppHoldings);
+        //    봇은 faceDown 정체를 알므로(자기 손패) 뒷면이 와일드면 선택자가 간파한다고 본다(아래).
+        int chooserValA = predictedChooserValue(visA, faceInA ? faceDown : null, oppHoldings);
+        int chooserValB = predictedChooserValue(visB, faceInA ? null : faceDown, oppHoldings);
         boolean chooserTakesA = chooserValA > chooserValB
                 || (chooserValA == chooserValB && bundleA.size() >= bundleB.size());
 
@@ -175,16 +183,24 @@ public final class S7BotStrategy implements BotStrategy {
      * 더 짓는다). 뒷면은 카드 1장 + 약간의 미지 프리미엄일 뿐 4장을 못 이긴다. 이렇게 둬야 봇이
      * "사람이 빈 묶음을 가져갈 것"이라 착각해 이유 없이 1:4 로 나눠 4장을 헌납하는 일이 사라진다.
      * 저주는 음의 재료라 묶음 매력을 낮춘다(선택자가 피함 → 뒷면 저주 떠넘김과 호응).
+     *
+     * <p><b>와일드 뒷면 숨김은 통하지 않는다</b>({@code faceDown} 이 와일드면 {@link #WILD_GRAB} 가산):
+     * 봇은 자기 손패라 뒷면 정체를 안다. 175208 R2·R8 에서 봇이 와일드를 *얇은 묶음 뒷면*에 숨겼으나
+     * 사람은 두 번 다 "얇은 묶음 + 뒷면 = 값진 카드"라는 신호를 읽어 가져갔다(봇 자신의 {@link #hiddenEv}
+     * 와 같은 추론). 와일드는 어디 숨겨도 합리적 선택자가 가져가므로, 선택자가 와일드 묶음을 집는다고
+     * 정직히 예측한다. 그러면 봇은 헛된 숨김 대신 <b>와일드를 내주는 대신 나머지 묶음을 알차게</b> 짜는
+     * 보상 분할로 유도된다. (일반 카드 뒷면은 그대로 물량 기반이라 1:4 헌납 방지는 유지된다.)
      */
-    private static int predictedChooserValue(List<Card> mineVisible, boolean hasFaceDown, List<Card> oppHoldings) {
+    private static int predictedChooserValue(List<Card> mineVisible, Card faceDown, List<Card> oppHoldings) {
         int coin = BotCardEvaluator.bestCashCoin(mineVisible) * 100;
         int material = 0;
         for (Card card : mineVisible) {
             material += (card instanceof CursedCard) ? -CARD_MATERIAL : CARD_MATERIAL;
         }
         int wild = wildValue(mineVisible); // 보이는 와일드는 선택자가 무조건 챙긴다 → 봇이 와일드를 노출하면 잃는다고 예측.
+        if (faceDown != null && faceDown.isWild()) wild += WILD_GRAB; // 뒷면 와일드도 간파당함(위 javadoc).
         int oppSyn = synergy(oppHoldings, mineVisible);
-        int hidden = hasFaceDown ? CARD_MATERIAL + HIDDEN_PREMIUM : 0; // 뒷면도 카드 1장 + 약간의 미지 프리미엄.
+        int hidden = faceDown != null ? CARD_MATERIAL + HIDDEN_PREMIUM : 0; // 뒷면도 카드 1장 + 약간의 미지 프리미엄.
         return coin + material + wild + oppSyn + hidden;
     }
 
@@ -220,15 +236,25 @@ public final class S7BotStrategy implements BotStrategy {
         List<Card> mineVisible = mine.visibleCards();
         List<Card> otherVisible = other.visibleCards();
 
+        // 임계를 넘기는 묶음(이 묶음으로 이번 라운드 승리 코인 도달 가능)은 라운드 종료 승부를 가르는 분기다.
+        // checkWinner 는 동일 라운드 환금 뒤 '코인이 더 많은 팀'을 승자로 한다 — 30 을 먼저 찍어도 즉승이
+        // 아니다. 따라서 임계 통과 묶음끼리는 미래 가치(keep·hiddenEv)가 아니라 *이번 라운드 실현 코인 마진*
+        // (내 환금 코인 − 상대가 받은 묶음으로 낼 코인)이 최대인 쪽을 고른다. 평탄한 WIN_SECURE 만 더하면
+        // hiddenEv 같은 잔여 가중이 더 적게 버는 묶음을 골라 같은-라운드 역전패한다(사람 vs S7 175208·001705-R9).
+        if (secures(holdings, mineVisible, myNeed)) {
+            int myCash = BotCardEvaluator.bestCashCoin(combine(holdings, mineVisible));
+            int oppCash = BotCardEvaluator.bestCashCoin(combine(oppHoldings, otherVisible));
+            return WIN_SECURE + (long) (myCash - oppCash) * SECURE_MARGIN_UNIT;
+        }
+
         // ① 보이는 와일드 확보는 myKeepValue 가 처리(아래). 적대적 뒷면 추론: 이 묶음이 공개상 빈약할수록
-        //    분할자가 값진 카드를 숨겼을 확률↑. 종반엔 더 크게.
+        //    분할자가 값진 카드를 숨겼을 확률↑. 단 종반엔 투기적 뒷면보다 실현 코인·견제가 중요하므로 비중↓.
         long score = myKeepValue(holdings, mineVisible, tighten);
         if (mine.hasFaceDown()) {
-            score += (long) hiddenEv(mineVisible, otherVisible) * (200 + tighten) / 200;
+            score += (long) hiddenEv(mineVisible, otherVisible) * (200 - tighten) / 200;
         }
         // ① 보이는 와일드는 상대에게 절대 안 남긴다(견제).
         if (otherVisible.stream().anyMatch(Card::isWild)) score -= WILD_GRAB;
-        if (secures(holdings, mineVisible, myNeed)) score += WIN_SECURE;
 
         int theirCoin = BotCardEvaluator.bestCashCoin(otherVisible) * 100;
         score -= (long) theirCoin * tighten * DENY_WEIGHT / 10_000;
@@ -301,16 +327,19 @@ public final class S7BotStrategy implements BotStrategy {
     }
 
     private static int synergy(List<Card> holdings, List<Card> bundle) {
-        List<Card> combined = new ArrayList<>(holdings);
-        combined.addAll(bundle);
-        return BotCardEvaluator.potentialScore(combined) - BotCardEvaluator.potentialScore(holdings);
+        return BotCardEvaluator.potentialScore(combine(holdings, bundle))
+                - BotCardEvaluator.potentialScore(holdings);
     }
 
     private static boolean secures(List<Card> holdings, List<Card> bundle, int myNeed) {
         if (myNeed <= 0) return false;
-        List<Card> combined = new ArrayList<>(holdings);
-        combined.addAll(bundle);
-        return BotCardEvaluator.bestCashCoin(combined) >= myNeed;
+        return BotCardEvaluator.bestCashCoin(combine(holdings, bundle)) >= myNeed;
+    }
+
+    private static List<Card> combine(List<Card> a, List<Card> b) {
+        List<Card> combined = new ArrayList<>(a);
+        combined.addAll(b);
+        return combined;
     }
 
     private static int need(int winningCoins, int coins) {

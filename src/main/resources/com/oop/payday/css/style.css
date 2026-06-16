@@ -1009,8 +1009,8 @@
     -fx-border-radius: 8;
     -fx-border-width: 1;
     -fx-padding: 13 14 15 14;
-    -fx-min-width: 300;
-    -fx-pref-width: 300;
+    -fx-min-width: 320;
+    -fx-pref-width: 320;
 }
 
 .score-table-heading {
