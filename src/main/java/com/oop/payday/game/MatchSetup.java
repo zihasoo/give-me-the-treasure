@@ -79,7 +79,7 @@ public final class MatchSetup {
     public static MatchSetup defaultSetup(String hostName) {
         MatchSetup setup = new MatchSetup();
         setup.teamA.add(Slot.human(hostName));
-        setup.teamB.add(Slot.bot(BotKind.S3, "봇 1"));
+        setup.teamB.add(Slot.bot(BotKind.S6, "봇 1"));
         return setup;
     }
 }

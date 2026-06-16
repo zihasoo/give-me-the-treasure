@@ -31,7 +31,7 @@ import com.oop.payday.model.helper.HelperCard;
  *       대박 보물 보호(keystone 을 내 쪽에 뒷면으로 숨겨 선택자가 내 묶음을 저평가하게 함)는
  *       현실적 선택자 모델 + 뒷면 탐색에서 자연히 창발한다.</li>
  *   <li><b>도우미 활용</b> — 드래프트는 게임 준비 시점이라 손패가 없어 손패 반영이 구조적으로 불가능하다.
- *       실효 레버인 <b>환금 단계 도우미 활용</b>을 {@link CashInPlanOptimizer#planWithHoldS6}로 강화한다
+ *       실효 레버인 <b>환금 단계 도우미 활용</b>을 {@link CashInPlanOptimizer#plan}으로 강화한다
  *       (JUNK_DEALER 와일드 회수 가치를 손패 빌드 잠재력에 비례).</li>
  * </ol>
  *
@@ -40,7 +40,15 @@ import com.oop.payday.model.helper.HelperCard;
  */
 public final class S6BotStrategy implements BotStrategy {
 
-    private static final S3BotStrategy.S3Tuning TUNING = S3BotStrategy.S3Tuning.DEFAULT;
+    // 자기복제 A/B 스윕으로 튜닝한 가중치(이전 S3Tuning.DEFAULT 값).
+    /** 종반 구간 폭(%): 누군가 {@code (100 − ENDZONE_PCT)}% 도달 시점부터 긴박도가 켜진다. */
+    private static final int ENDZONE_PCT = 30;
+    /** 미끼 유도력(블러핑) 가중치. 종반엔 자동 페이드. */
+    private static final int LURE_WEIGHT = 40;
+    /** 종반에 분할 keep 가치를 기대값→최악보장(maximin)으로 끄는 정도(0~100). */
+    private static final int MAXIMIN_WEIGHT = 100;
+    /** 상대에게 넘기는 즉시 코인·oppSynergy 견제 강도(0~200, 100=코인 전액). */
+    private static final int DENY_WEIGHT = 100;
 
     private static final long WIN_SECURE = 1_000_000_000L;
     private static final int FACEDOWN_BONUS = 20;
@@ -48,7 +56,7 @@ public final class S6BotStrategy implements BotStrategy {
     /**
      * 상시 maximin 안전장치(0~100). S5 는 {@code maximinWeight × tighten/100} 라 종반에만 켜졌다.
      * S6 는 이 값을 바닥으로 깔아 중반에도 무방비 분할을 줄인다(현실적 선택자 모델로 예측이 선명해진
-     * 만큼만 적당히). 종반에는 {@code TUNING.maximinWeight()}(=100)까지 상승한다.
+     * 만큼만 적당히). 종반에는 {@code MAXIMIN_WEIGHT}(=100)까지 상승한다.
      */
     private static final int BASE_MAXIMIN_WEIGHT = 50;
 
@@ -111,13 +119,13 @@ public final class S6BotStrategy implements BotStrategy {
         int worstMine = Math.min(valueA, valueB);
         // ① 상시 maximin: 바닥(BASE) 위에 종반 가중을 더한다(중반에도 무방비 분할 억제).
         int mmw = clamp(BASE_MAXIMIN_WEIGHT
-                + (TUNING.maximinWeight() - BASE_MAXIMIN_WEIGHT) * tighten / 100, 0, 100);
+                + (MAXIMIN_WEIGHT - BASE_MAXIMIN_WEIGHT) * tighten / 100, 0, 100);
         int keep = (int) ((long) predMine * (100 - mmw) / 100 + (long) worstMine * mmw / 100);
 
         List<Card> theirBundle = chooserTakesA ? bundleA : bundleB;
         int theirStandalone = standaloneValue(theirBundle, tighten);
         int oppSynergy = synergy(oppHoldings, theirBundle);
-        int theirs = theirStandalone + TUNING.denyWeight() * oppSynergy / 100;
+        int theirs = theirStandalone + DENY_WEIGHT * oppSynergy / 100;
 
         int visTheirs = chooserTakesA ? BotCardEvaluator.bestCashCoin(visA) : BotCardEvaluator.bestCashCoin(visB);
         int visMine = chooserTakesA ? BotCardEvaluator.bestCashCoin(visB) : BotCardEvaluator.bestCashCoin(visA);
@@ -129,7 +137,7 @@ public final class S6BotStrategy implements BotStrategy {
             score += WIN_SECURE;
         }
         score += (keep - theirs) * 10_000L + keep * 10L;
-        score += (long) lure * TUNING.lureWeight() * (100 - tighten) / 100;
+        score += (long) lure * LURE_WEIGHT * (100 - tighten) / 100;
         score += hiddenCurseDumpScore(theirBundle, faceDown);
         score += balanced ? 1L : 0L;
         return score;
@@ -196,10 +204,10 @@ public final class S6BotStrategy implements BotStrategy {
         if (secures(holdings, mineVisible, myNeed)) score += WIN_SECURE;
 
         int theirCoin = BotCardEvaluator.bestCashCoin(other.visibleCards()) * 100;
-        score -= (long) theirCoin * tighten * TUNING.denyWeight() / 10_000;
+        score -= (long) theirCoin * tighten * DENY_WEIGHT / 10_000;
 
         int oppSynergy = synergy(oppHoldings, other.visibleCards());
-        score -= (long) oppSynergy * TUNING.denyWeight() / 100;
+        score -= (long) oppSynergy * DENY_WEIGHT / 100;
 
         return score;
     }
@@ -216,7 +224,7 @@ public final class S6BotStrategy implements BotStrategy {
 
     @Override
     public List<CashInAction> planCashIn(CashInContext context, int opponentCoins) {
-        return CashInPlanOptimizer.planWithHoldS6(context, opponentCoins);
+        return CashInPlanOptimizer.plan(context, opponentCoins);
     }
 
     // ─── 평가 보조 ────────────────────────────────────────────────────────────────
@@ -253,7 +261,7 @@ public final class S6BotStrategy implements BotStrategy {
     private int tighten(int myCoins, int opponentCoins, int winningCoins) {
         if (winningCoins <= 0) return 0;
         int closest = Math.min(need(winningCoins, myCoins), need(winningCoins, opponentCoins));
-        int endzone = winningCoins * TUNING.endzonePct() / 100;
+        int endzone = winningCoins * ENDZONE_PCT / 100;
         if (endzone <= 0 || closest >= endzone) return 0;
         return clamp((endzone - closest) * 100 / endzone, 0, 100);
     }
@@ -264,7 +272,7 @@ public final class S6BotStrategy implements BotStrategy {
 
     /**
      * 도우미 픽 점수. 드래프트는 게임 준비 시점이라 손패가 없어 손패 반영이 구조적으로 불가능하다
-     * (실효 개선은 환금 단계 활용 — {@link CashInPlanOptimizer#planWithHoldS6}). S5 의 가중치를 유지한다.
+     * (실효 개선은 환금 단계 활용 — {@link CashInPlanOptimizer#plan}). 환금 보류·견제에 유리한 가중치다.
      */
     private int helperDraftScore(HelperCard helper) {
         return switch (helper.kind()) {

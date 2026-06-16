@@ -25,6 +25,10 @@ import com.oop.payday.model.set.TreasureSet;
 /**
  * 봇 환금 계획 최적화기. 보유 카드에서 가능한 세트 후보를 모두 만든 뒤, 서로 겹치지
  * 않는 조합 중 총 기대 점수가 가장 높은 계획을 고른다.
+ *
+ * <p>종반이 아니면 성장 기대값이 큰 세트들을 한도가 허락하는 한 이번 턴 환금에서 제외해
+ * (다중 세트 보류) 다음 라운드에 더 크게 키우고, 환금 단계 도우미(JUNK_DEALER 와일드 회수 등)는
+ * 손패 빌드 잠재력에 비례해 활용한다.
  */
 final class CashInPlanOptimizer {
 
@@ -36,37 +40,24 @@ final class CashInPlanOptimizer {
     private CashInPlanOptimizer() {
     }
 
-    /** S1: 승리 임박을 보지 않는 기본 계획. */
-    static List<CashInAction> plan(CashInContext context) {
-        return planWith(context, false);
-    }
-
     /**
-     * S2: 자기 팀 코인 기준 승리 임박을 반영한다.
-     *
-     * @param winAware {@code true} 이고 팀이 승리 코인에 가까우면 와일드 보존 페널티와 미래 잠재력
-     *                 가중치를 빼고 즉시 환금 코인을 최대화한다.
-     */
-    static List<CashInAction> plan(CashInContext context, boolean winAware) {
-        return planWith(context, winAware && isImminent(context));
-    }
-
-    /**
-     * S3: 자기 팀과 상대 팀 코인을 함께 본다. 어느 한쪽이라도 승리에 임박하면(목표의 70% 이상)
-     * 게임이 곧 끝날 수 있으므로 보존·잠재력을 버리고 지금 모을 수 있는 코인을 최대화한다.
+     * 환금 계획을 만든다. 종반이 아니면 성장 기대값이 큰 세트들을 한도가 허락하는 한 보류해
+     * 다음 라운드에 더 크게 키우고, 종반({@link #isEndgame})이면 보존·잠재력을 버리고 즉시 환금한다.
+     * {@code opponentCoins} 는 상대 팀 코인으로, 상대 승리 임박 시 즉시 환금(종반 판단)에 쓴다.
      */
     static List<CashInAction> plan(CashInContext context, int opponentCoins) {
-        return planWith(context, isEndgame(context, opponentCoins));
-    }
-
-    private static List<CashInAction> planWith(CashInContext context, boolean winNow) {
+        boolean winNow = isEndgame(context, opponentCoins);
         List<SetCandidate> candidates = enumerateCandidates(context.holdings(), context.helpers(), winNow);
         Plan best = findBestPlan(candidates, context.holdings(), winNow);
+
+        Set<SetCandidate> held = winNow ? identitySet() : pickSetsToHold(best, context);
+
         List<CashInAction> actions = new ArrayList<>();
         List<Card> remaining = new ArrayList<>(context.holdings());
         Set<HelperCard> queuedHelpers = new HashSet<>();
 
         for (SetCandidate candidate : best.candidates()) {
+            if (held.contains(candidate)) continue;
             List<HelperCard> helpers = usefulConditionalHelpers(context.helpers(), queuedHelpers, candidate.set());
             actions.add(helpers.isEmpty()
                     ? new CashInAction.Cash(candidate.selectedCards())
@@ -75,17 +66,12 @@ final class CashInPlanOptimizer {
             remaining.removeAll(candidate.selectedCards());
         }
 
-        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, !best.candidates().isEmpty(), false);
+        boolean anyCashed = best.candidates().size() > held.size();
+        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, anyCashed);
         if (!isTuskerQueued(actions)) {
             discardDownToLimit(actions, remaining, context.holdLimit());
         }
         return actions;
-    }
-
-    /** 팀이 승리 코인의 70% 이상에 도달했으면 승리 임박으로 본다. */
-    private static boolean isImminent(CashInContext context) {
-        return context.winningCoins() > 0
-                && context.teamCoins() * 10 >= context.winningCoins() * 7;
     }
 
     /**
@@ -246,13 +232,13 @@ final class CashInPlanOptimizer {
     }
 
     private static void addUsefulStandaloneHelper(List<CashInAction> actions, CashInContext context,
-            List<Card> remaining, Set<HelperCard> queuedHelpers, boolean alreadyCashed, boolean s6) {
+            List<Card> remaining, Set<HelperCard> queuedHelpers, boolean alreadyCashed) {
         HelperChoice best = null;
         for (HelperCard helper : context.helpers()) {
             if (helper.isUsed() || queuedHelpers.contains(helper) || HelperRules.isCashReaction(helper.kind())) {
                 continue;
             }
-            HelperChoice choice = standaloneChoice(helper, context, remaining, alreadyCashed, s6);
+            HelperChoice choice = standaloneChoice(helper, context, remaining, alreadyCashed);
             if (choice != null && (best == null || choice.score() > best.score())) {
                 best = choice;
             }
@@ -264,7 +250,7 @@ final class CashInPlanOptimizer {
     }
 
     private static HelperChoice standaloneChoice(HelperCard helper, CashInContext context, List<Card> remaining,
-            boolean alreadyCashed, boolean s6) {
+            boolean alreadyCashed) {
         return switch (helper.kind()) {
             case VIPER -> {
                 long curses = remaining.stream().filter(CursedCard.class::isInstance).count();
@@ -281,22 +267,19 @@ final class CashInPlanOptimizer {
                 if (alreadyCashed || context.discardPile().stream().noneMatch(Card::isWild)) {
                     yield null;
                 }
-                yield new HelperChoice(helper, null, List.of(), junkDealerScore(remaining, s6));
+                yield new HelperChoice(helper, null, List.of(), junkDealerScore(remaining));
             }
-            case CROC_BROTHERS -> crocChoice(helper, context, remaining, alreadyCashed, s6);
+            case CROC_BROTHERS -> crocChoice(helper, context, remaining, alreadyCashed);
             default -> null;
         };
     }
 
     /**
-     * 버림 더미에서 와일드를 회수하는 가치. S6는 회수한 와일드가 현재 보관 카드와 만들 수 있는
-     * 빌드 잠재력(특히 색 연속 완성)에 비례해 점수를 올린다 — JUNK_DEALER 는 이번 라운드 환금을
-     * 막으므로 "와일드로 대박 세트를 노릴 수 있을 때"만 적극적으로 쓰게 한다.
+     * 버림 더미에서 와일드를 회수하는 가치. 회수한 와일드가 현재 보관 카드와 만들 수 있는 빌드 잠재력
+     * (특히 색 연속 완성)에 비례해 점수를 올린다 — JUNK_DEALER 는 이번 라운드 환금을 막으므로
+     * "와일드로 대박 세트를 노릴 수 있을 때"만 적극적으로 쓰게 한다.
      */
-    private static int junkDealerScore(List<Card> remaining, boolean s6) {
-        if (!s6) {
-            return 18;
-        }
+    private static int junkDealerScore(List<Card> remaining) {
         List<Card> withWild = new ArrayList<>(remaining);
         withWild.add(new WildCard(-1)); // 평가 전용 프록시(보관/액션에 들어가지 않음)
         // 잠재력 증분에서 와일드 자체의 고정 보너스(38)를 빼 "구멍을 메우는 조합 가치"만 본다.
@@ -317,13 +300,13 @@ final class CashInPlanOptimizer {
     }
 
     private static HelperChoice crocChoice(HelperCard helper, CashInContext context, List<Card> remaining,
-            boolean alreadyCashed, boolean s6) {
+            boolean alreadyCashed) {
         HelperChoice best = null;
         for (HelperCard target : context.usedHelpers()) {
             if (target.kind() == HelperKind.CROC_BROTHERS) {
                 continue;
             }
-            HelperChoice copied = standaloneChoice(target, context, remaining, alreadyCashed, s6);
+            HelperChoice copied = standaloneChoice(target, context, remaining, alreadyCashed);
             if (copied == null) {
                 continue;
             }
@@ -370,163 +353,6 @@ final class CashInPlanOptimizer {
         });
     }
 
-    // ─── S4: 환금 보류 전략 ───────────────────────────────────────────────────────
-
-    /**
-     * S4: 보류 전략을 포함한 환금 계획.
-     * 종반이 아닌 경우, 성장 여지가 있고 한도 여유가 충분한 세트 하나를 이번 턴 환금에서 제외한다.
-     * 종반({@link #isEndgame})이면 일반 {@link #plan(CashInContext, int)} 와 동일하게 즉시 환금한다.
-     */
-    static List<CashInAction> planWithHold(CashInContext context, int opponentCoins) {
-        boolean winNow = isEndgame(context, opponentCoins);
-        List<SetCandidate> candidates = enumerateCandidates(context.holdings(), context.helpers(), winNow);
-        Plan best = findBestPlan(candidates, context.holdings(), winNow);
-
-        SetCandidate held = winNow ? null : pickBestToHold(best, context);
-
-        List<CashInAction> actions = new ArrayList<>();
-        List<Card> remaining = new ArrayList<>(context.holdings());
-        Set<HelperCard> queuedHelpers = new HashSet<>();
-
-        for (SetCandidate candidate : best.candidates()) {
-            if (candidate == held) continue;
-            List<HelperCard> helpers = usefulConditionalHelpers(context.helpers(), queuedHelpers, candidate.set());
-            actions.add(helpers.isEmpty()
-                    ? new CashInAction.Cash(candidate.selectedCards())
-                    : new CashInAction.CashWithHelpers(candidate.selectedCards(), helpers));
-            queuedHelpers.addAll(helpers);
-            remaining.removeAll(candidate.selectedCards());
-        }
-
-        boolean anyCashed = held == null
-                ? !best.candidates().isEmpty()
-                : best.candidates().size() > 1;
-        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, anyCashed, false);
-        if (!isTuskerQueued(actions)) {
-            discardDownToLimit(actions, remaining, context.holdLimit());
-        }
-        return actions;
-    }
-
-    /**
-     * 베스트 플랜 중에서 "이번 턴 보류"할 최적 후보를 고른다.
-     * 성장 코인 증분이 가장 크고, 성장 여지({@link #hasGrowthRoom})가 있으며,
-     * 보류 후 잔여 장수가 holdLimit 이하인 후보만 대상으로 한다.
-     * 이기는 세트(코인 ≥ 필요량)는 절대 보류하지 않는다.
-     */
-    private static SetCandidate pickBestToHold(Plan best, CashInContext context) {
-        if (best.candidates().isEmpty()) return null;
-        int myNeed = context.winningCoins() - context.teamCoins();
-        if (myNeed <= 0) return null; // 이미 승리 조건 달성 — 보류 불필요
-
-        int totalCards = context.holdings().size();
-        int totalCashCards = best.candidates().stream().mapToInt(c -> c.selectedCards().size()).sum();
-        int remainingAfterAllCash = totalCards - totalCashCards;
-
-        SetCandidate bestHold = null;
-        int bestGrowth = 0;
-
-        for (SetCandidate candidate : best.candidates()) {
-            if (candidate.set().coin() >= myNeed) continue; // 이 세트 자체가 승리 세트 → 즉시 환금
-            int growth = growthCoin(candidate.set());
-            if (growth <= 0) continue;
-            if (!hasGrowthRoom(candidate.set(), context.holdings(), context.discardPile())) continue;
-            int remainingIfHeld = remainingAfterAllCash + candidate.selectedCards().size();
-            if (remainingIfHeld > context.holdLimit()) continue;
-            if (growth > bestGrowth) {
-                bestGrowth = growth;
-                bestHold = candidate;
-            }
-        }
-        return bestHold;
-    }
-
-    /** 세트를 한 등급 키울 때 얻는 코인 증분. 이미 최대 등급이면 0. */
-    private static int growthCoin(TreasureSet set) {
-        int nextCoin = set.type().coin(set.size() + 1);
-        if (nextCoin == SetType.INVALID) return 0;
-        return nextCoin - set.coin();
-    }
-
-    /** 세트를 다음 등급으로 키울 카드가 아직 게임에 살아있는지(버림 더미에 없으면 살아있다고 근사). */
-    private static boolean hasGrowthRoom(TreasureSet set, List<Card> holdings, List<Card> discardPile) {
-        return switch (set.type()) {
-            case SAME_NUMBER -> hasGrowthRoomSameNumber(set, discardPile);
-            case RUN         -> hasGrowthRoomRun(set, discardPile);
-            case RUN_SAME_COLOR -> hasGrowthRoomRunColor(set, discardPile);
-        };
-    }
-
-    private static boolean hasGrowthRoomSameNumber(TreasureSet set, List<Card> discardPile) {
-        if (set.size() >= 4) return false;
-        int number = -1;
-        Set<CardColor> usedColors = new HashSet<>();
-        for (Card card : set.cards()) {
-            if (card instanceof TreasureCard tc) {
-                number = tc.number();
-                usedColors.add(tc.color());
-            }
-        }
-        if (number == -1) return false;
-        for (CardColor color : CardColor.values()) {
-            if (!usedColors.contains(color) && !isDeadCard(color, number, discardPile)) return true;
-        }
-        return false;
-    }
-
-    private static boolean hasGrowthRoomRun(TreasureSet set, List<Card> discardPile) {
-        int[] range = runRange(set);
-        if (range == null) return false;
-        int min = range[0], max = range[1];
-        if (min > TreasureCard.MIN_NUMBER && !allColorsDead(min - 1, discardPile)) return true;
-        if (max < TreasureCard.MAX_NUMBER && !allColorsDead(max + 1, discardPile)) return true;
-        return false;
-    }
-
-    private static boolean hasGrowthRoomRunColor(TreasureSet set, List<Card> discardPile) {
-        int[] range = runRange(set);
-        CardColor color = runColor(set);
-        if (range == null || color == null) return false;
-        int min = range[0], max = range[1];
-        if (min > TreasureCard.MIN_NUMBER && !isDeadCard(color, min - 1, discardPile)) return true;
-        if (max < TreasureCard.MAX_NUMBER && !isDeadCard(color, max + 1, discardPile)) return true;
-        return false;
-    }
-
-    private static int[] runRange(TreasureSet set) {
-        int min = Integer.MAX_VALUE, max = Integer.MIN_VALUE;
-        for (Card card : set.cards()) {
-            if (card instanceof TreasureCard tc) {
-                if (tc.number() < min) min = tc.number();
-                if (tc.number() > max) max = tc.number();
-            }
-        }
-        return min == Integer.MAX_VALUE ? null : new int[]{min, max};
-    }
-
-    private static CardColor runColor(TreasureSet set) {
-        for (Card card : set.cards()) {
-            if (card instanceof TreasureCard tc) return tc.color();
-        }
-        return null;
-    }
-
-    private static boolean isDeadCard(CardColor color, int number, List<Card> discardPile) {
-        for (Card card : discardPile) {
-            if (card instanceof TreasureCard tc && tc.color() == color && tc.number() == number) return true;
-        }
-        return false;
-    }
-
-    /** RUN 확장 시 해당 숫자의 모든 색상 카드가 버림 더미에 있으면(=전멸) 성장 불가. */
-    private static boolean allColorsDead(int number, List<Card> discardPile) {
-        Set<CardColor> dead = new HashSet<>();
-        for (Card card : discardPile) {
-            if (card instanceof TreasureCard tc && tc.number() == number) dead.add(tc.color());
-        }
-        return dead.size() >= CardColor.values().length;
-    }
-
     private record SetCandidate(TreasureSet set, List<Card> selectedCards, int score) {
         private SetCandidate {
             selectedCards = List.copyOf(selectedCards);
@@ -542,7 +368,7 @@ final class CashInPlanOptimizer {
         }
     }
 
-    // ─── S5: 성장 기대값 기반 보류 전략 ─────────────────────────────────────────────
+    // ─── 성장 기대값 기반 다중 세트 보류 ───────────────────────────────────────────
 
     /** 버림 더미에 있는 카드: 슬쩍하기로 회수 가능 → 낮은 예상 턴. */
     private static final double DISCARD_TURNS = 1.5;
@@ -553,97 +379,15 @@ final class CashInPlanOptimizer {
     /** 미지 상태 보물 카드 전체 수 (4색 × 7숫자). */
     private static final int TOTAL_TREASURE =
             CardColor.values().length * (TreasureCard.MAX_NUMBER - TreasureCard.MIN_NUMBER + 1);
-
-    /**
-     * S5: 상대 손패를 반영한 성장 기대값 기반 보류 전략.
-     * {@link #isEndgame}이면 {@link #planWithHold}와 동일하게 즉시 환금한다.
-     */
-    static List<CashInAction> planWithHoldS5(CashInContext context, int opponentCoins) {
-        return assembleHoldPlan(context, opponentCoins, false);
-    }
-
-    /**
-     * S6: S5 의 성장 기대값 보류를 <b>다중 세트 보류</b>로 확장하고(작은 세트를 자잘하게 내지 않고
-     * 한도가 허락하는 한 여러 개를 키운다 — {@link #pickSetsToHoldS6}), 환금 단계 도우미 활용을 강화한다
-     * (JUNK_DEALER 와일드 회수 가치를 손패 빌드 잠재력에 비례시킴).
-     */
-    static List<CashInAction> planWithHoldS6(CashInContext context, int opponentCoins) {
-        return assembleHoldPlan(context, opponentCoins, true);
-    }
-
-    private static List<CashInAction> assembleHoldPlan(CashInContext context, int opponentCoins, boolean s6) {
-        boolean winNow = isEndgame(context, opponentCoins);
-        List<SetCandidate> candidates = enumerateCandidates(context.holdings(), context.helpers(), winNow);
-        Plan best = findBestPlan(candidates, context.holdings(), winNow);
-
-        Set<SetCandidate> held = winNow ? identitySet()
-                : s6 ? pickSetsToHoldS6(best, context)
-                     : singletonIdentity(pickBestToHoldS5(best, context));
-
-        List<CashInAction> actions = new ArrayList<>();
-        List<Card> remaining = new ArrayList<>(context.holdings());
-        Set<HelperCard> queuedHelpers = new HashSet<>();
-
-        for (SetCandidate candidate : best.candidates()) {
-            if (held.contains(candidate)) continue;
-            List<HelperCard> helpers = usefulConditionalHelpers(context.helpers(), queuedHelpers, candidate.set());
-            actions.add(helpers.isEmpty()
-                    ? new CashInAction.Cash(candidate.selectedCards())
-                    : new CashInAction.CashWithHelpers(candidate.selectedCards(), helpers));
-            queuedHelpers.addAll(helpers);
-            remaining.removeAll(candidate.selectedCards());
-        }
-
-        boolean anyCashed = best.candidates().size() > held.size();
-        addUsefulStandaloneHelper(actions, context, remaining, queuedHelpers, anyCashed, s6);
-        if (!isTuskerQueued(actions)) {
-            discardDownToLimit(actions, remaining, context.holdLimit());
-        }
-        return actions;
-    }
-
-    /**
-     * 베스트 플랜 중 "이번 턴 보류"할 최적 후보를 고른다(S5).
-     * {@link #pickBestToHold}와 달리 성장 코인/가능 여부 이진 판단 대신
-     * {@link #growthValue} — 예상 획득 턴 당 기대 코인 증분 — 로 연속 점수화한다.
-     */
-    private static SetCandidate pickBestToHoldS5(Plan best, CashInContext context) {
-        if (best.candidates().isEmpty()) return null;
-        int myNeed = context.winningCoins() - context.teamCoins();
-        if (myNeed <= 0) return null;
-
-        int totalCards = context.holdings().size();
-        int totalCashCards = best.candidates().stream().mapToInt(c -> c.selectedCards().size()).sum();
-        int remainingAfterAllCash = totalCards - totalCashCards;
-
-        SetCandidate bestHold = null;
-        double bestValue = 0;
-
-        for (SetCandidate candidate : best.candidates()) {
-            if (candidate.set().coin() >= myNeed) continue;
-            double value = growthValue(candidate.set(), context.holdings(),
-                    context.discardPile(), context.opponentHoldings());
-            if (value <= 0) continue;
-            int remainingIfHeld = remainingAfterAllCash + candidate.selectedCards().size();
-            if (remainingIfHeld > context.holdLimit()) continue;
-            if (value > bestValue) {
-                bestValue = value;
-                bestHold = candidate;
-            }
-        }
-        return bestHold;
-    }
-
     /** 성장 기대값이 이 값(코인/예상턴) 이상인 세트만 보류 대상으로 본다(작은 성장은 그냥 환금). */
     private static final double HOLD_GROWTH_THRESHOLD = 0.8;
 
     /**
-     * S6 다중 세트 보류: 베스트 플랜의 세트들 중 성장 기대값({@link #growthValue})이 큰 순으로,
-     * 보유 한도가 허락하는 한 <b>여러 개</b>를 이번 턴 환금에서 제외한다. S5({@link #pickBestToHoldS5})는
-     * 최대 한 개만 보류해 작은 세트를 자잘하게 냈지만, S6는 키울 수 있는 세트를 모아 크게 낸다.
-     * 승리 세트(코인 ≥ 필요량)와 성장 기대값이 임계 미만인 세트는 즉시 환금한다.
+     * 베스트 플랜의 세트들 중 성장 기대값({@link #growthValue})이 큰 순으로, 보유 한도가 허락하는 한
+     * <b>여러 개</b>를 이번 턴 환금에서 제외(보류)한다. 작은 세트를 자잘하게 내는 대신 키울 수 있는
+     * 세트를 모아 크게 낸다. 승리 세트(코인 ≥ 필요량)와 성장 기대값이 임계 미만인 세트는 즉시 환금한다.
      */
-    private static Set<SetCandidate> pickSetsToHoldS6(Plan best, CashInContext context) {
+    private static Set<SetCandidate> pickSetsToHold(Plan best, CashInContext context) {
         Set<SetCandidate> held = identitySet();
         if (best.candidates().isEmpty()) return held;
         int myNeed = context.winningCoins() - context.teamCoins();
@@ -673,12 +417,6 @@ final class CashInPlanOptimizer {
 
     private static Set<SetCandidate> identitySet() {
         return Collections.newSetFromMap(new IdentityHashMap<>());
-    }
-
-    private static Set<SetCandidate> singletonIdentity(SetCandidate candidate) {
-        Set<SetCandidate> set = identitySet();
-        if (candidate != null) set.add(candidate);
-        return set;
     }
 
     /**
@@ -785,6 +523,24 @@ final class CashInPlanOptimizer {
         if (range[0] > TreasureCard.MIN_NUMBER) result.add(new TargetSpec(color, range[0] - 1));
         if (range[1] < TreasureCard.MAX_NUMBER) result.add(new TargetSpec(color, range[1] + 1));
         return result;
+    }
+
+    private static int[] runRange(TreasureSet set) {
+        int min = Integer.MAX_VALUE, max = Integer.MIN_VALUE;
+        for (Card card : set.cards()) {
+            if (card instanceof TreasureCard tc) {
+                if (tc.number() < min) min = tc.number();
+                if (tc.number() > max) max = tc.number();
+            }
+        }
+        return min == Integer.MAX_VALUE ? null : new int[]{min, max};
+    }
+
+    private static CardColor runColor(TreasureSet set) {
+        for (Card card : set.cards()) {
+            if (card instanceof TreasureCard tc) return tc.color();
+        }
+        return null;
     }
 
     private static long countTreasure(List<Card> cards) {
