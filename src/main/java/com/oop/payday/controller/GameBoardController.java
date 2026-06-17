@@ -7,17 +7,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 
 import com.oop.payday.app.GameApp;
-import com.oop.payday.net.FanOutGameListener;
-import com.oop.payday.net.NetMessage;
-import com.oop.payday.net.NetworkBroadcaster;
-import com.oop.payday.net.PublicBoardState;
-import com.oop.payday.net.WireCodec;
-import com.oop.payday.net.GameServer;
-import com.oop.payday.net.GameClient;
-import com.oop.payday.net.ClientMirror;
-import com.oop.payday.player.NetworkPlayer;
 import com.oop.payday.decision.BundleView;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.ChoiceView;
@@ -36,15 +28,24 @@ import com.oop.payday.model.card.TreasureCard;
 import com.oop.payday.model.helper.HelperCard;
 import com.oop.payday.model.helper.HelperKind;
 import com.oop.payday.model.set.TreasureSet;
+import com.oop.payday.net.ClientMirror;
+import com.oop.payday.net.FanOutGameListener;
+import com.oop.payday.net.GameClient;
+import com.oop.payday.net.GameServer;
+import com.oop.payday.net.NetMessage;
+import com.oop.payday.net.NetworkBroadcaster;
+import com.oop.payday.net.PublicBoardState;
+import com.oop.payday.net.WireCodec;
 import com.oop.payday.player.BotPlayer;
 import com.oop.payday.player.HumanPlayer;
+import com.oop.payday.player.NetworkPlayer;
 import com.oop.payday.player.Player;
 import com.oop.payday.view.CardView;
 import com.oop.payday.view.Panels;
-import com.oop.payday.view.ScorePanels;
-import com.oop.payday.view.SplitPanelBuilder;
 import com.oop.payday.view.RulebookBuilder;
+import com.oop.payday.view.ScorePanels;
 import com.oop.payday.view.ScoreTableBuilder;
+import com.oop.payday.view.SplitPanelBuilder;
 
 import javafx.animation.FadeTransition;
 import javafx.animation.Interpolator;
@@ -55,30 +56,28 @@ import javafx.animation.PauseTransition;
 import javafx.animation.ScaleTransition;
 import javafx.animation.Timeline;
 import javafx.animation.TranslateTransition;
-import javafx.scene.transform.Translate;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
-import javafx.geometry.Pos;
 import javafx.geometry.Point2D;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
-import javafx.geometry.Bounds;
-import javafx.scene.layout.Pane;
-import javafx.scene.layout.Region;
-import javafx.scene.shape.Rectangle;
-
-import java.util.concurrent.CountDownLatch;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.Rectangle;
+import javafx.scene.transform.Translate;
 import javafx.util.Duration;
 
 /**
@@ -324,7 +323,7 @@ public final class GameBoardController implements GameListener, Initializable {
             Comparator<Card> chosen = newToggle == byColor ? CARD_ORDER_BY_COLOR : CARD_ORDER_BY_NUMBER;
             if (isFieldA) sortModeA = chosen;
             else          sortModeB = chosen;
-            updateBoardStatus();
+            updateBoardStatus(true);
         });
 
         HBox sortBox = new HBox(4, byColor, byNumber);
@@ -471,8 +470,7 @@ public final class GameBoardController implements GameListener, Initializable {
         this.networkPlayers = remotes.stream().map(RemoteBinding::player).toList();
 
         int epoch = EPOCH_SEQ.incrementAndGet();
-        NetworkBroadcaster broadcaster = new NetworkBroadcaster(server, teamA, teamB, null, allPlayers, epoch);
-        this.broadcaster = broadcaster;
+        broadcaster = new NetworkBroadcaster(server, teamA, teamB, null, allPlayers, epoch);
         FanOutGameListener fanOut = new FanOutGameListener(this, broadcaster);
         Game game = new Game(config, teamA, teamB, fanOut);
         broadcaster.setGame(game);
@@ -1323,16 +1321,20 @@ public final class GameBoardController implements GameListener, Initializable {
             StackPane card = teammateHelperCards.get(i);
             card.getStyleClass().removeAll("helper-pick-mine", "helper-pick-mate");
             badge.getStyleClass().removeAll("helper-pick-badge-mine", "helper-pick-badge-mate");
-            if (role == 1) {            // 리더 몫
-                card.getStyleClass().add("helper-pick-mate");
-                badge.getStyleClass().add("helper-pick-badge-mate");
-                badge.setText(teammateHelperLeader != null ? teammateHelperLeader.name() : "리더");
-            } else if (role == 2) {     // 팀원(나) 몫
-                card.getStyleClass().add("helper-pick-mine");
-                badge.getStyleClass().add("helper-pick-badge-mine");
-                badge.setText("나");
-            } else {
-                badge.setText("미선택");
+            switch (role) {
+                case 1 -> {
+                    // 리더 몫
+                    card.getStyleClass().add("helper-pick-mate");
+                    badge.getStyleClass().add("helper-pick-badge-mate");
+                    badge.setText(teammateHelperLeader != null ? teammateHelperLeader.name() : "리더");
+                }
+                case 2 -> {
+                    // 팀원(나) 몫
+                    card.getStyleClass().add("helper-pick-mine");
+                    badge.getStyleClass().add("helper-pick-badge-mine");
+                    badge.setText("나");
+                }
+                default -> badge.setText("미선택");
             }
         }
     }
@@ -1429,16 +1431,20 @@ public final class GameBoardController implements GameListener, Initializable {
                 Label badge = badgeOf.get(h);
                 card.getStyleClass().removeAll("helper-pick-mine", "helper-pick-mate");
                 badge.getStyleClass().removeAll("helper-pick-badge-mine", "helper-pick-badge-mate");
-                if (s == MINE) {
-                    card.getStyleClass().add("helper-pick-mine");
-                    badge.getStyleClass().add("helper-pick-badge-mine");
-                    badge.setText("나");
-                } else if (s == MATE) {
-                    card.getStyleClass().add("helper-pick-mate");
-                    badge.getStyleClass().add("helper-pick-badge-mate");
-                    badge.setText(teammate.name());
-                } else {
-                    badge.setText("미선택");
+                switch (s) {
+                    case MINE -> {
+                        card.getStyleClass().add("helper-pick-mine");
+                        badge.getStyleClass().add("helper-pick-badge-mine");
+                        badge.setText("나");
+                    }
+                    case MATE -> {
+                        card.getStyleClass().add("helper-pick-mate");
+                        badge.getStyleClass().add("helper-pick-badge-mate");
+                        badge.setText(teammate.name());
+                    }
+                    default -> {
+                        badge.setText("미선택");
+                    }
                 }
             }
             done.setDisable(!(mine == 1 && mate == 1));
@@ -1471,16 +1477,16 @@ public final class GameBoardController implements GameListener, Initializable {
             card.setOnMouseClicked(e -> {
                 int cur = state.get(helper);
                 int next;
-                if (cur == NONE) {
-                    // 미선택 카드는 아직 비어 있는 역할(나 우선, 없으면 팀원)에 배정 →
-                    // 두 카드를 한 번씩만 눌러도 나·팀원 배정이 끝난다.
-                    boolean hasMine = options.stream().anyMatch(h -> state.get(h) == MINE);
-                    boolean hasMate = options.stream().anyMatch(h -> state.get(h) == MATE);
-                    next = !hasMine ? MINE : (!hasMate ? MATE : MINE);
-                } else if (cur == MINE) {
-                    next = MATE;    // 다시 누르면 역할 전환
-                } else {
-                    next = NONE;    // 한 바퀴 돌면 해제
+                switch (cur) {
+                    case NONE -> {
+                        // 미선택 카드는 아직 비어 있는 역할(나 우선, 없으면 팀원)에 배정 →
+                        // 두 카드를 한 번씩만 눌러도 나·팀원 배정이 끝난다.
+                        boolean hasMine = options.stream().anyMatch(h -> state.get(h) == MINE);
+                        boolean hasMate = options.stream().anyMatch(h -> state.get(h) == MATE);
+                        next = !hasMine ? MINE : (!hasMate ? MATE : MINE);
+                    }
+                    case MINE -> next = MATE;    // 다시 누르면 역할 전환
+                    default -> next = NONE;    // 한 바퀴 돌면 해제
                 }
                 // 같은 역할(나/팀원)은 한 장만: 다른 카드가 이미 그 역할이면 비운다.
                 if (next == MINE || next == MATE) {
@@ -1807,11 +1813,15 @@ public final class GameBoardController implements GameListener, Initializable {
     }
 
     private void updateBoardStatus() {
-        updateFields();
+        updateBoardStatus(false);
     }
 
-    private void updateFields() {
-        if (distributionFieldUpdatePending) {
+    private void updateBoardStatus(boolean forceFieldUpdate) {
+        updateFields(forceFieldUpdate);
+    }
+
+    private void updateFields(boolean forceUpdate) {
+        if (distributionFieldUpdatePending && !forceUpdate) {
             return;
         }
         boolean showFieldUI = !introPhase && !gameOver;
