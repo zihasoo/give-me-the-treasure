@@ -16,8 +16,6 @@ import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.card.CardColor;
-import com.oop.payday.model.card.CursedCard;
-import com.oop.payday.model.card.StealCard;
 import com.oop.payday.model.card.TreasureCard;
 import com.oop.payday.model.Deck;
 import com.oop.payday.model.helper.HelperCard;
@@ -47,18 +45,6 @@ final class HelperActionModelTest {
                         || action instanceof CashInAction.CashWithHelpers)
                 .count();
         assertEquals(2, cashActions);
-    }
-
-    @Test
-    void smartBotDiscardsCursedCardBeforeLowPotentialSpecialCard() {
-        CursedCard cursed = new CursedCard(400, 2);
-        StealCard steal = new StealCard(401);
-        CashInContext context = new CashInContext(List.of(cursed, steal), List.of(), List.of(), List.of(), 0, 1, 30, List.of());
-
-        List<CashInAction> actions = new S7BotStrategy().planCashIn(context, 0);
-
-        CashInAction.Discard discard = assertInstanceOf(CashInAction.Discard.class, actions.get(0));
-        assertSame(cursed, discard.card());
     }
 
     @Test

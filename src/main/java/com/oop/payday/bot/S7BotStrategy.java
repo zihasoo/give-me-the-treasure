@@ -9,6 +9,7 @@ import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.ChoiceContext;
 import com.oop.payday.decision.ChoiceView;
+import com.oop.payday.decision.HelperDraftContext;
 import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.model.card.Card;
@@ -285,7 +286,8 @@ public final class S7BotStrategy implements BotStrategy {
     // ─── 환금 ─────────────────────────────────────────────────────────────────────
 
     @Override
-    public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount) {
+    public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount, HelperDraftContext context) {
+        // S7 은 정적 랭킹만 쓴다(상황 보정은 S8 의 몫). context 는 baseline 동작 보존을 위해 무시한다.
         return options.stream()
                 .sorted(Comparator.comparingInt(this::helperDraftScore).reversed())
                 .limit(chooseCount)

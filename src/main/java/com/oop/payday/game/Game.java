@@ -21,6 +21,7 @@ import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceContext;
 import com.oop.payday.decision.ChoiceView;
+import com.oop.payday.decision.HelperDraftContext;
 import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
@@ -139,7 +140,7 @@ public final class Game {
         listener.onRequestSplit(splitter, hand);
         SplitContext splitContext = new SplitContext(hand, splitter.holdings(),
                 splitTeam.coins(), chooseTeam.coins(), config.winningCoins(),
-                teamHoldings(chooseTeam));
+                teamHoldings(chooseTeam), deck.discardView(), splitter.helpers(), leaderOfficer(splitter));
         SplitDecision decision = splitter.decideSplit(splitContext);
         if (!decision.isValid()) {
             throw new IllegalStateException("잘못된 분할 결정: " + splitTeam.name());
@@ -168,7 +169,7 @@ public final class Game {
         listener.onRequestChoice(chooser, choiceView);
         ChoiceContext choiceContext = new ChoiceContext(choiceView, chooser.holdings(),
                 chooseTeam.coins(), splitTeam.coins(), config.winningCoins(),
-                teamHoldings(splitTeam));
+                teamHoldings(splitTeam), deck.discardView(), chooser.helpers(), leaderOfficer(chooser));
         int index = chooser.decideChoice(choiceContext);
         if (index != 0 && index != 1) {
             throw new IllegalStateException("잘못된 선택 인덱스: " + index);
@@ -586,6 +587,23 @@ public final class Game {
                 player, team, opponentOf(team), null, 0, 0, config.leaderEffectsEnabled()));
     }
 
+    /**
+     * 봇 컨텍스트(분할/선택/드래프트)에 넣을 리더의 간부 타일. 리더 효과가 비활성이거나 리더가 아니면
+     * {@code null} 을 돌려, 봇이 적용되지 않을 리더 보너스를 종반 추정에 끼우지 않게 한다.
+     */
+    private OfficerTile leaderOfficer(Player player) {
+        if (!config.leaderEffectsEnabled() || !player.isLeader()) {
+            return null;
+        }
+        return player.officer();
+    }
+
+    /** 봇 도우미 드래프트 상황화를 위한 컨텍스트(인원수·보유 한도·리더·승리 코인). */
+    private HelperDraftContext draftContext(Team team, Player leader) {
+        return new HelperDraftContext(team.members().size(), leader.holdLimit(),
+                leaderOfficer(leader), config.winningCoins());
+    }
+
     private void setupOfficers() {
         for (Team team : List.of(splitTeam, chooseTeam)) {
             for (Player player : team.members()) {
@@ -624,14 +642,16 @@ public final class Game {
         // 선택 (동시, 가상 스레드)
         @SuppressWarnings("unchecked")
         List<HelperCard>[] results = new List[2];
+        HelperDraftContext splitDraft = draftContext(splitTeam, splitLeader);
+        HelperDraftContext chooseDraft = draftContext(chooseTeam, chooseLeader);
         runConcurrently(List.of(
                 () -> {
                     listener.onRequestHelpers(splitLeader, optionsSplit, 2);
-                    results[0] = splitLeader.decideHelpers(optionsSplit, 2);
+                    results[0] = splitLeader.decideHelpers(optionsSplit, 2, splitDraft);
                 },
                 () -> {
                     listener.onRequestHelpers(chooseLeader, optionsChoose, 2);
-                    results[1] = chooseLeader.decideHelpers(optionsChoose, 2);
+                    results[1] = chooseLeader.decideHelpers(optionsChoose, 2, chooseDraft);
                 }));
 
         // 검증·등록 (게임 스레드, 순차). 다인 팀이면 리더·멤버가 1장씩 나눠 갖는다(규칙서 §4-3).

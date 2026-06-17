@@ -107,6 +107,61 @@ final class CashInPlanOptimizer {
          * 무료 처분을 노리는 것은 합리적이라 기존 로직 그대로 둔다 — 저주를 그냥 버려도 2코인이 들기 때문.)
          */
         static final Tuning S7 = new Tuning(0.5, 2.0, 200, true, true, true, true);
+
+        /**
+         * S8: 환금 계획 수치는 S7 을 그대로 계승한다(환금 단계 안정성 유지). S8 의 향상은 분할/선택의
+         * 공개 정보 메모리·상대 확률 모델·실현 코인 종반 평가에서 나오며, 환금 최적화 자체는 검증된
+         * S7 경로를 공유한다. 추후 회귀를 보며 이 값을 독립적으로 조정한다.
+         */
+        static final Tuning S8 = new Tuning(0.5, 2.0, 200, true, true, true, true);
+    }
+
+    /**
+     * 환금 계획과 함께 예상 코인/즉승/잔여 카드를 돌려주는 평가 API(로드맵 4.4). {@link #plan} 의 행동을
+     * 그대로 쓰되, 반환된 행동을 되짚어 실현 코인을 근사한다(세트 코인 + 반응 도우미 보너스 − 저주 처분 비용,
+     * ALPHA → 즉승). 봇은 이를 종반 판단·디버그 로그(후보 점수표)에 쓴다.
+     */
+    static CashInProjection project(CashInContext context, int opponentCoins, Tuning tuning) {
+        List<CashInAction> actions = plan(context, opponentCoins, tuning);
+        int coinsGained = 0;
+        boolean instantWin = false;
+        List<Card> remaining = new ArrayList<>(context.holdings());
+        for (CashInAction action : actions) {
+            switch (action) {
+                case CashInAction.Cash cash -> {
+                    coinsGained += setCoinOf(cash.cards());
+                    remaining.removeAll(cash.cards());
+                }
+                case CashInAction.CashWithHelpers cash -> {
+                    var evaluation = CashInEvaluator.evaluate(cash.cards());
+                    if (evaluation.isPresent()) {
+                        TreasureSet set = evaluation.get().set();
+                        coinsGained += set.coin();
+                        for (HelperCard helper : cash.helpers()) {
+                            int bonus = reactionBonus(helper.kind(), set);
+                            if (helper.kind() == HelperKind.ALPHA && bonus > 0) {
+                                instantWin = true;
+                            } else {
+                                coinsGained += bonus;
+                            }
+                        }
+                    }
+                    remaining.removeAll(cash.cards());
+                }
+                case CashInAction.Discard discard -> {
+                    if (discard.card() instanceof CursedCard) coinsGained -= 2;
+                    remaining.remove(discard.card());
+                }
+                case CashInAction.UseHelper ignored -> {
+                    // VIPER 코인·드로우 등 도우미 단독 효과는 엔진 정산 소관이라 근사에서 제외한다.
+                }
+            }
+        }
+        return new CashInProjection(actions, coinsGained, instantWin, remaining);
+    }
+
+    private static int setCoinOf(List<Card> cards) {
+        return CashInEvaluator.evaluate(cards).map(result -> result.set().coin()).orElse(0);
     }
 
     /**
@@ -371,7 +426,8 @@ final class CashInPlanOptimizer {
 
     private static boolean isTuskerQueued(List<CashInAction> actions) {
         return actions.stream().anyMatch(action -> switch (action) {
-            case CashInAction.UseHelper use -> use.helper().kind() == HelperKind.TUSKER;
+            case CashInAction.UseHelper use -> use.helper().kind() == HelperKind.TUSKER
+                    || (use.copyTarget() != null && use.copyTarget().kind() == HelperKind.TUSKER);
             case CashInAction.CashWithHelpers cash -> cash.helpers().stream()
                     .anyMatch(helper -> helper.kind() == HelperKind.TUSKER);
             default -> false;

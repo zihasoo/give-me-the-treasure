@@ -8,6 +8,7 @@ import java.util.List;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceContext;
+import com.oop.payday.decision.HelperDraftContext;
 import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
@@ -135,8 +136,12 @@ public abstract class Player {
         return TeamDistribution.leaderTakesAll(acquired, members.size());
     }
 
-    /** 게임 준비: 받은 도우미 후보 중 사용할 카드를 고른다. */
-    public abstract List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount);
+    /**
+     * 게임 준비: 받은 도우미 후보 중 사용할 카드를 고른다. {@code context} 는 드래프트 상황(인원수·
+     * 보유 한도·리더·승리 코인)으로, 봇은 상황 보정에 쓰고 사람/네트워크 플레이어는 무시한다.
+     */
+    public abstract List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount,
+            HelperDraftContext context);
 
     /**
      * 환금 단계 시작. 이 플레이어는 {@code snapshot} 을 보고 자기 방식으로 행동을 {@code sink} 에

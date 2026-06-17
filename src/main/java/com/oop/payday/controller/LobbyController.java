@@ -281,7 +281,7 @@ public final class LobbyController implements Initializable {
         Button addBot = new Button("+ 봇 추가");
         addBot.getStyleClass().add("lobby-add-button");
         addBot.setOnAction(e -> {
-            slots.add(Slot.bot(BotKind.S7, "봇"));
+            slots.add(Slot.bot(BotKind.S8, "봇"));
             renderHostTeams();
             broadcastLobby();
         });
@@ -312,7 +312,7 @@ public final class LobbyController implements Initializable {
                 ComboBox<BotKind> strategy = new ComboBox<>();
                 strategy.getStyleClass().add("lobby-combo");
                 strategy.getItems().setAll(BotKind.values());
-                strategy.setValue(slot.botKind() != null ? slot.botKind() : BotKind.S7);
+                strategy.setValue(slot.botKind() != null ? slot.botKind() : BotKind.S8);
                 strategy.setConverter(botKindConverter());
                 strategy.setButtonCell(botKindCell());
                 strategy.setCellFactory(list -> botKindCell());

@@ -7,6 +7,7 @@ import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceContext;
+import com.oop.payday.decision.HelperDraftContext;
 import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
@@ -46,7 +47,7 @@ public final class HumanPlayer extends Player {
     }
 
     @Override
-    public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount) {
+    public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount, HelperDraftContext context) {
         return take(helperChannel);
     }
 

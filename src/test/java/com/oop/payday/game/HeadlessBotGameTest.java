@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import com.oop.payday.bot.BotStrategy;
 import com.oop.payday.bot.S7BotStrategy;
+import com.oop.payday.bot.S8BotStrategy;
 import com.oop.payday.log.PlayLogWriter;
 import com.oop.payday.model.Deck;
 import com.oop.payday.player.BotPlayer;
@@ -121,6 +122,51 @@ final class HeadlessBotGameTest {
     @Test
     void s7SelfPlaySeedReport() {
         runSeedReport("S7", S7BotStrategy::new, "S7", S7BotStrategy::new);
+    }
+
+    /**
+     * S8(현재 기본 봇)이 한 판을 무효 행동 없이 끝까지 진행하는지 검증한다(회귀 안전망). S8 은 분할자·선택자
+     * 역할을 번갈아 맡으므로 한 판으로 상대 확률 모델·카드 카운팅·실현 코인 종반 평가 경로가 모두 행사된다.
+     */
+    @Tag("integration")
+    @Test
+    void s8BotFinishesPracticeGameWithoutInvalidActions() {
+        AtomicReference<Team> winnerRef = new AtomicReference<>();
+        AtomicInteger invalidCashes = new AtomicInteger();
+
+        Team alpha = new Team("S8 봇 A", List.of(BotPlayer.test(new S8BotStrategy())));
+        Team beta = new Team("S8 봇 B", List.of(BotPlayer.test(new S8BotStrategy())));
+        Game game = new Game(GameConfig.practice(true), alpha, beta, new GameListener() {
+            @Override
+            public void onMessage(String message) {
+                if (message.contains(INVALID_CASH_MARKER)) {
+                    invalidCashes.incrementAndGet();
+                }
+            }
+
+            @Override
+            public void onGameOver(Team winner) {
+                winnerRef.set(winner);
+            }
+        });
+
+        assertTimeoutPreemptively(Duration.ofSeconds(5), game::play);
+
+        Team winner = winnerRef.get();
+        assertNotNull(winner, "S8 봇 대전은 승자를 내고 종료해야 한다.");
+        assertTrue(winner == alpha || winner == beta, "승자는 참가 팀 중 하나여야 한다.");
+        assertTrue(invalidCashes.get() == 0, "S8 은 무효 환금이 없어야 한다(현재 " + invalidCashes.get() + ").");
+    }
+
+    /**
+     * S8(challenger) 대 S7(baseline 회귀) 자가대전을 같은 seed 표본으로 돌린다. 봇끼리 승률은 사람 상대
+     * 강함의 척도가 아니라 <b>회귀 체온계</b>다 — S8 이 크래시·무효 환금 없이 모든 seed 를 끝내고 S7 대비
+     * 터무니없이 무너지지 않는지 본다. 표본은 {@code -DbotSeedCount=300} 처럼 조절한다.
+     */
+    @Tag("integration")
+    @Test
+    void s8VsS7SeedReport() {
+        runSeedReport("S8", S8BotStrategy::new, "S7", S7BotStrategy::new);
     }
 
     private static Team team(String name) {

@@ -39,7 +39,8 @@ final class S7BotStrategyTest {
                 new TreasureCard(11, CardColor.RED, 7),
                 new TreasureCard(12, CardColor.YELLOW, 1),
                 new TreasureCard(13, CardColor.TEAL, 3));
-        ChoiceContext context = new ChoiceContext(view, holdings, 2, 0, 30, List.of());
+        ChoiceContext context = new ChoiceContext(view, holdings, 2, 0, 30, List.of(),
+                List.of(), List.of(), null);
 
         int chosen = new S7BotStrategy().decideChoice(context);
 
@@ -58,7 +59,8 @@ final class S7BotStrategyTest {
                 new CursedCard(3, 2)), false);
         ChoiceView view = new ChoiceView(List.of(clean, cursed));
 
-        ChoiceContext context = new ChoiceContext(view, List.of(), 0, 0, 30, List.of());
+        ChoiceContext context = new ChoiceContext(view, List.of(), 0, 0, 30, List.of(),
+                List.of(), List.of(), null);
 
         int chosen = new S7BotStrategy().decideChoice(context);
 

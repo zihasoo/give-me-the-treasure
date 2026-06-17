@@ -6,6 +6,7 @@ import java.util.List;
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.ChoiceContext;
+import com.oop.payday.decision.HelperDraftContext;
 import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
@@ -59,8 +60,12 @@ public interface BotStrategy {
         return new TeamDistribution(byMember);
     }
 
-    /** 준비: 도우미 후보 중 사용할 카드를 고른다. */
-    List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount);
+    /**
+     * 준비: 도우미 후보 중 사용할 카드를 고른다. {@code context} 는 인원수·보유 한도·리더·승리 코인 등
+     * 드래프트 상황으로, 같은 후보라도 룰/팀에 따라 가치를 보정하는 데 쓴다(예: 1v1 한도 5/6에서
+     * TUSKER/VIPER 가치 상승).
+     */
+    List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount, HelperDraftContext context);
 
     /**
      * 환금 시작 시점의 snapshot으로 이번 환금 단계에서 시도할 행동 계획을 만든다.

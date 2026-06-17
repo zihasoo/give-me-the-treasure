@@ -5,6 +5,7 @@ import java.util.List;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.CashSink;
 import com.oop.payday.decision.ChoiceContext;
+import com.oop.payday.decision.HelperDraftContext;
 import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.model.helper.HelperCard;
@@ -30,7 +31,7 @@ public final class MirrorPlayer extends Player {
     }
 
     @Override
-    public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount) {
+    public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount, HelperDraftContext context) {
         throw new UnsupportedOperationException("클라이언트 측에서 호출 불가");
     }
 
