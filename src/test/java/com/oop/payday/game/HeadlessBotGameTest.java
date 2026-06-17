@@ -19,7 +19,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.oop.payday.bot.BotStrategy;
-import com.oop.payday.bot.S6BotStrategy;
 import com.oop.payday.bot.S7BotStrategy;
 import com.oop.payday.log.PlayLogWriter;
 import com.oop.payday.model.Deck;
@@ -68,8 +67,8 @@ final class HeadlessBotGameTest {
     @Test
     void playLogCapturesFullGame() {
         GameConfig config = GameConfig.practice(true);
-        Team a = new Team("우리 팀", List.of(BotPlayer.test(new S6BotStrategy())));
-        Team b = new Team("상대 팀", List.of(BotPlayer.test(new S6BotStrategy())));
+        Team a = new Team("우리 팀", List.of(BotPlayer.test(new S7BotStrategy())));
+        Team b = new Team("상대 팀", List.of(BotPlayer.test(new S7BotStrategy())));
         StringWriter buffer = new StringWriter();
         PlayLogWriter log = PlayLogWriter.to(buffer, config, a, b, a, b);
 
@@ -78,7 +77,7 @@ final class HeadlessBotGameTest {
 
         String text = buffer.toString();
         assertTrue(text.contains("도적단의 월급날 — 플레이 로그"), "헤더가 있어야 한다.");
-        assertTrue(text.contains("(S6)"), "플레이어 전략명이 기록돼야 한다.");
+        assertTrue(text.contains("(S7)"), "플레이어 전략명이 기록돼야 한다.");
         assertTrue(text.contains("라운드 1"), "라운드 진행이 기록돼야 한다.");
         assertTrue(text.contains("[환금]"), "환금 페이즈가 기록돼야 한다.");
         assertTrue(text.contains("게임 종료 — 승리:"), "게임 종료가 기록돼야 한다.");
@@ -112,20 +111,20 @@ final class HeadlessBotGameTest {
     }
 
     /**
-     * S7(현재 기본 봇)을 S6(직전 베이스라인)와 같은 seed 표본으로 맞붙인다.
+     * S7(현재 기본 봇) 자가대전을 같은 seed 표본으로 돌린다.
      *
      * <p>봇끼리 승률은 사람 상대 강함의 척도가 아니므로, 이 테스트는 전략 개선을 증명하기보다
      * <b>회귀 체온계</b> 역할을 한다. 즉, 크래시 없이 모든 seed 를 끝내고 무효 환금이 게임당 평균 1회
-     * 미만인지 확인하며, 승률·평균 코인은 문서화할 참고 신호로 출력한다.
+     * 미만인지 확인하며, 평균 코인은 문서화할 참고 신호로 출력한다.
      */
     @Tag("integration")
     @Test
-    void S6vsS7SeedReport() {
-        runSeedReport("S7", S7BotStrategy::new, "S6", S6BotStrategy::new);
+    void s7SelfPlaySeedReport() {
+        runSeedReport("S7", S7BotStrategy::new, "S7", S7BotStrategy::new);
     }
 
     private static Team team(String name) {
-        Player bot = BotPlayer.test(new S6BotStrategy());
+        Player bot = BotPlayer.test(new S7BotStrategy());
         return new Team(name, List.of(bot));
     }
 

@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import com.oop.payday.bot.S6BotStrategy;
+import com.oop.payday.bot.S7BotStrategy;
 import com.oop.payday.player.BotPlayer;
 
 /**
@@ -24,21 +24,21 @@ final class MultiplayerBotGameTest {
     @Test
     void fourPlayerTwoVsTwoFinishes() {
         Team alpha = new Team("팀 A", List.of(
-                BotPlayer.test(new S6BotStrategy()),
-                BotPlayer.test(new S6BotStrategy())));
+                BotPlayer.test(new S7BotStrategy()),
+                BotPlayer.test(new S7BotStrategy())));
         Team beta = new Team("팀 B", List.of(
-                BotPlayer.test(new S6BotStrategy()),
-                BotPlayer.test(new S6BotStrategy())));
+                BotPlayer.test(new S7BotStrategy()),
+                BotPlayer.test(new S7BotStrategy())));
         assertGameFinishes(alpha, beta);
     }
 
     @Tag("integration")
     @Test
     void threePlayerOneVsTwoFinishes() {
-        Team solo = new Team("팀 A", List.of(BotPlayer.test(new S6BotStrategy())));
+        Team solo = new Team("팀 A", List.of(BotPlayer.test(new S7BotStrategy())));
         Team duo = new Team("팀 B", List.of(
-                BotPlayer.test(new S6BotStrategy()),
-                BotPlayer.test(new S6BotStrategy())));
+                BotPlayer.test(new S7BotStrategy()),
+                BotPlayer.test(new S7BotStrategy())));
         assertGameFinishes(solo, duo);
     }
 

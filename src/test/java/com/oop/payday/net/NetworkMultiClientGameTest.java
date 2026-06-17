@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import com.oop.payday.bot.S6BotStrategy;
+import com.oop.payday.bot.S7BotStrategy;
 import com.oop.payday.game.Game;
 import com.oop.payday.game.GameConfig;
 import com.oop.payday.game.GameListener;
@@ -65,8 +65,8 @@ final class NetworkMultiClientGameTest {
             // 팀 구성: 리더=봇, 멤버=원격. allPlayers 순서 = teamA(리더,멤버) + teamB(리더,멤버).
             NetworkPlayer npA = new NetworkPlayer("원격 A");
             NetworkPlayer npB = new NetworkPlayer("원격 B");
-            Team teamA = new Team("팀 A", List.of(BotPlayer.test(new S6BotStrategy()), npA));
-            Team teamB = new Team("팀 B", List.of(BotPlayer.test(new S6BotStrategy()), npB));
+            Team teamA = new Team("팀 A", List.of(BotPlayer.test(new S7BotStrategy()), npA));
+            Team teamB = new Team("팀 B", List.of(BotPlayer.test(new S7BotStrategy()), npB));
             List<Player> allPlayers = new ArrayList<>(teamA.members());
             allPlayers.addAll(teamB.members());
 

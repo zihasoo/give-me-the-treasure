@@ -41,13 +41,6 @@ final class CashInPlanOptimizer {
     }
 
     /**
-     * 환금 계획을 세대별 기본 튜닝({@link Tuning#S6})으로 만든다.
-     */
-    static List<CashInAction> plan(CashInContext context, int opponentCoins) {
-        return plan(context, opponentCoins, Tuning.S6);
-    }
-
-    /**
      * 환금 계획을 만든다. 종반이 아니면 성장 기대값이 큰 세트들을 한도가 허락하는 한 보류해
      * 다음 라운드에 더 크게 키우고, 종반({@link #isEndgame})이면 보존·잠재력을 버리고 즉시 환금한다.
      * {@code opponentCoins} 는 상대 팀 코인으로, 상대 승리 임박 시 즉시 환금(종반 판단)에 쓴다.
@@ -107,14 +100,11 @@ final class CashInPlanOptimizer {
             int freeCurseDisposalReward, boolean freeCurseRewardOnlyOverLimit,
             boolean curseFreeHoldRoom, boolean viperOnlyWhenOverLimit, boolean freeRoomForHold) {
 
-        /** S6: 과거 동작 보존(보류 임계 0.8, 보정 없음, 무료 처분 보너스 8 무조건, 바이퍼·투스커 기존 로직). */
-        static final Tuning S6 = new Tuning(HOLD_GROWTH_THRESHOLD, 1.0, 8, false, false, false, false);
-
         /**
          * S7: 보류 임계 완화 + 같은색 연속 성장 가중 + 저주를 보유공간 부채로 취급 + 무료 처분은 한도 초과일 때만
          * 이득으로 봄(2코인 강제 버림 회피) + 바이퍼를 한도 초과 구제용으로만 + 보류 방이 부족하면 잡카드를 버려
-         * 방을 확보. 사람 vs S6/S7 로그가 짚은 저주 운용·보류 약점을 교정한다. (TUSKER 로 저주를 보류해 다음
-         * 무료 처분을 노리는 것은 합리적이라 S6 그대로 둔다 — 저주를 그냥 버려도 2코인이 들기 때문.)
+         * 방을 확보. 사람 vs 봇 로그가 짚은 저주 운용·보류 약점을 교정한다. (TUSKER 로 저주를 보류해 다음
+         * 무료 처분을 노리는 것은 합리적이라 기존 로직 그대로 둔다 — 저주를 그냥 버려도 2코인이 들기 때문.)
          */
         static final Tuning S7 = new Tuning(0.5, 2.0, 200, true, true, true, true);
     }
@@ -472,8 +462,6 @@ final class CashInPlanOptimizer {
     /** 미지 상태 보물 카드 전체 수 (4색 × 7숫자). */
     private static final int TOTAL_TREASURE =
             CardColor.values().length * (TreasureCard.MAX_NUMBER - TreasureCard.MIN_NUMBER + 1);
-    /** 성장 기대값이 이 값(코인/예상턴) 이상인 세트만 보류 대상으로 본다(작은 성장은 그냥 환금). */
-    private static final double HOLD_GROWTH_THRESHOLD = 0.8;
     /**
      * 보류 방 확보를 위해 버려도 되는 loose 카드의 잠재력 손실 상한({@link BotCardEvaluator#discardLoss}).
      * 이 이하면 세트 잠재력 없는 단독 잡카드로 본다(고립 보물 ≈ 4, 1번 단독 ≈ 9, 페어/런 재료는 10+ 라
@@ -493,7 +481,7 @@ final class CashInPlanOptimizer {
         if (myNeed <= 0) return held;
 
         // 보류 후 다음 라운드로 넘어갈 비(非)세트 카드. 저주는 처분/버림 예정이므로(S7) 공간 계산에서 제외해
-        // 저주가 보유 한도를 잡아먹어 키울 세트를 즉시 환금하게 되는 문제(사람 vs S6 로그)를 푼다.
+        // 저주가 보유 한도를 잡아먹어 키울 세트를 즉시 환금하게 되는 문제(사람 vs 봇 로그)를 푼다.
         List<Card> looseCards = new ArrayList<>(context.holdings());
         for (SetCandidate c : best.candidates()) looseCards.removeAll(c.selectedCards());
         List<Card> keepableLoose = tuning.curseFreeHoldRoom()

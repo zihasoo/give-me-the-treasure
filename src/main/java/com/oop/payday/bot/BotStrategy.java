@@ -16,7 +16,7 @@ import com.oop.payday.model.helper.HelperCard;
  * 봇의 두뇌. 봇 의사결정의 단일 확장점이다(전략 패턴).
  *
  * <p>이 인터페이스만 구현하면 봇의 실력/방식을 통째로 교체할 수 있다:
- * 점수 기반({@link S6BotStrategy}), 난이도별 변형, 혹은 추후 LLM 기반 전략 등.
+ * 점수 기반({@link S7BotStrategy}), 난이도별 변형, 혹은 추후 LLM 기반 전략 등.
  * 게임 엔진과 {@code BotPlayer} 는 구체 구현을 모른 채 이 계약에만 의존한다.
  *
  * <p>각 메서드는 입력만으로 결정을 내리는 순수 함수에 가깝게 두어,
