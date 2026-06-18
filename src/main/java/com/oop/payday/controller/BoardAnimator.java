@@ -51,6 +51,8 @@ final class BoardAnimator {
     private int centerRevision;
     private FadeTransition activeCenterTransition;
     private boolean opponentWaitingVisible;
+    /** 현재 떠 있는 말풍선(있으면 새 대사가 교체). 비차단 연출이라 오버레이 큐와 무관하다. */
+    private Node activeSpeech;
 
     BoardAnimator(StackPane contentArea, Pane globalOverlay, StackPane centerArea,
             Predicate<Player> isLocalActor, Comparator<Card> cardOrder) {
@@ -174,6 +176,60 @@ final class BoardAnimator {
         transition.setFromValue(from);
         transition.setToValue(to);
         return transition;
+    }
+
+    // ===== 봇 대사(말풍선) =====
+
+    /**
+     * 상대(봇) 영역 위에 말풍선으로 한 마디 띄운다(LLM 봇 도발/혼잣말용). 게임 흐름을 막지 않는
+     * <b>비차단 연출</b> — 오버레이 큐({@link #playNextOverlay()})와 무관하고 입력도 가로채지 않는다.
+     * 새 대사가 오면 이전 말풍선을 즉시 교체한다. FX 스레드에서 호출해야 한다.
+     */
+    void showSpeech(String line) {
+        if (globalOverlay == null || line == null || line.isBlank()) {
+            return;
+        }
+        if (activeSpeech != null) {
+            globalOverlay.getChildren().remove(activeSpeech);
+            activeSpeech = null;
+        }
+
+        String text = line.trim();
+        Label bubble = new Label(text);
+        bubble.setWrapText(true);
+        bubble.setMaxWidth(540);
+        bubble.setStyle(
+            "-fx-background-color: rgba(13,21,24,0.92);"
+            + " -fx-text-fill: #eaf6ef; -fx-font-size: 14px;"
+            + " -fx-font-family: 'Malgun Gothic','Book Antiqua',serif;"
+            + " -fx-padding: 10 16 10 16; -fx-background-radius: 14;"
+            + " -fx-border-color: rgba(145,223,192,0.85); -fx-border-radius: 14; -fx-border-width: 1.5;"
+            + " -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 12, 0.2, 0, 3);");
+
+        StackPane host = new StackPane(bubble);
+        host.setMouseTransparent(true); // 클릭을 가로채지 않는다(비차단).
+        host.setPickOnBounds(false);
+        StackPane.setAlignment(bubble, Pos.TOP_CENTER);
+        StackPane.setMargin(bubble, new Insets(64, 0, 0, 0)); // 상단(상대) 영역 위쪽
+        host.prefWidthProperty().bind(globalOverlay.widthProperty());
+        host.prefHeightProperty().bind(globalOverlay.heightProperty());
+        alignOverPlayField(host); // 좌측 사이드바 제외 필드 기준 좌/우 가운데 정렬(host 패딩)
+        host.setOpacity(0);
+        globalOverlay.getChildren().add(host);
+        activeSpeech = host;
+
+        long pauseMs = Math.max(4000, Math.min(12000, text.length() * 110L));
+        SequentialTransition seq = new SequentialTransition(
+            fade(host, 0, 1, 200),
+            new PauseTransition(Duration.millis(pauseMs)),
+            fade(host, 1, 0, 350));
+        seq.setOnFinished(e -> {
+            globalOverlay.getChildren().remove(host);
+            if (activeSpeech == host) {
+                activeSpeech = null;
+            }
+        });
+        seq.play();
     }
 
     private SequentialTransition buildCardFlip(StackPane container, Node front) {

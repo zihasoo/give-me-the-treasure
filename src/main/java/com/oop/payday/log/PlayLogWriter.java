@@ -72,7 +72,6 @@ public final class PlayLogWriter implements GameListener {
             BufferedWriter writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8);
             return new PlayLogWriter(writer, file, config, teamA, teamB, firstSplit, firstChoose);
         } catch (IOException e) {
-            System.err.println("플레이 로그 파일을 열 수 없습니다: " + e.getMessage());
             return null;
         }
     }
@@ -254,8 +253,6 @@ public final class PlayLogWriter implements GameListener {
             out.write(System.lineSeparator());
             out.flush();
         } catch (IOException e) {
-            // 로깅 실패가 게임을 막지 않도록 한 번만 알리고 이후 무음 처리.
-            System.err.println("플레이 로그 기록 실패: " + e.getMessage());
             closed = true;
         }
     }

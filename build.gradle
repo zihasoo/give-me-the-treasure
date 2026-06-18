@@ -34,6 +34,9 @@ repositories {
 }
 
 dependencies {
+    // LLM 봇(제미나이) 구조화 출력 JSON 파싱. 무전이 의존성(유일한 런타임 라이브러리).
+    implementation 'com.google.code.gson:gson:2.11.0'
+
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

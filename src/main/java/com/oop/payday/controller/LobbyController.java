@@ -311,7 +311,7 @@ public final class LobbyController implements Initializable {
 
                 ComboBox<BotKind> strategy = new ComboBox<>();
                 strategy.getStyleClass().add("lobby-combo");
-                strategy.getItems().setAll(BotKind.values());
+                strategy.getItems().setAll(BotKind.lobbyChoices());
                 strategy.setValue(slot.botKind() != null ? slot.botKind() : BotKind.S8);
                 strategy.setConverter(botKindConverter());
                 strategy.setButtonCell(botKindCell());

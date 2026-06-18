@@ -82,4 +82,12 @@ public final class MatchSetup {
         setup.teamB.add(Slot.bot(BotKind.S8, "봇 1"));
         return setup;
     }
+
+    /** LLM(토이) 봇과의 1 vs 1 (나 + 토이 봇). 메인 메뉴의 전용 진입점에서만 쓴다(대기실을 거치지 않음). */
+    public static MatchSetup llmDuel(String hostName) {
+        MatchSetup setup = new MatchSetup();
+        setup.teamA.add(Slot.human(hostName));
+        setup.teamB.add(Slot.bot(BotKind.LLM, "토이 봇"));
+        return setup;
+    }
 }

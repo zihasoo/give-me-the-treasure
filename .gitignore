@@ -21,6 +21,9 @@ out/
 # 플레이 로그(분석용, 커밋하지 않음)
 logs/
 
+# 제미나이 API 키(평문, 절대 커밋 금지)
+gemini-api-key.txt
+
 # OS
 .DS_Store
 Thumbs.db

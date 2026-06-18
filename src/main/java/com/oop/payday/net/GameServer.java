@@ -166,9 +166,6 @@ public final class GameServer implements Closeable {
                         try {
                             route(p, msg);
                         } catch (RuntimeException e) {
-                            // 잘못된 id 등 손상된 결정 메시지 — 이 메시지만 버린다.
-                            // 요청은 소비 전이므로(route 가 resolve 후 consume) 클라이언트가 재시도할 수 있다.
-                            System.err.println("결정 메시지 처리 실패(폐기): " + msg + " — " + e);
                         }
                     } else if (msg instanceof NetMessage.LobbyHello hello) {
                         session.name = hello.name();
