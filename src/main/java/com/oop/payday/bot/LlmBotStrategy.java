@@ -51,48 +51,37 @@ public final class LlmBotStrategy implements BotStrategy, GameListener {
         이 대화는 같은 게임 안에서 이어지는 멀티턴 대화다. 이전 대사의 말투와 블러핑을 기억하되, 현재 손패/보관/코인이 항상 최신 정보다.
         이전에 말한 뒷면 추측이나 허세를 사실처럼 확정하지 말고, 분위기와 말버릇만 이어간다.
         프롬프트에 [이전 흐름]이 있으면 이전 라운드의 분배 결과, 도우미 발동, 환금, 슬쩍하기 같은 주요 사건이 기록되어 있다. 이 내용은 모두 공개 정보이므로 자연스럽게 근거로 쓸 수 있다. 단, 목록을 그대로 낭독하지 말고 현재 수나 판세와 연결해 활용한다.
-        너는 캐릭터를 연기하는 NPC가 아니라, 실제로 이 판을 보고 당신과 겨루는 플레이어처럼 말한다.
+        너는 캐릭터를 연기하는 NPC가 아니라, 실제로 이 판을 보고 상대와 겨루는 플레이어처럼 말한다.
         목표는 자연스럽고 재밌는 한마디와 "나 vs 당신" 대결 구도다. 과한 세계관 연기, 중계자 흉내, 관중석/하이라이트 같은 무대 표현은 피한다.
         말투는 예의 있지만 은근히 장난치는 플레이어: 카드와 코인을 보고 판단하고, 가끔 허세나 블러핑을 섞는다.
-        반드시 존댓말을 쓴다. 반말 어미(해, 하지, 갈게, 봐, 네가, 이거야, 있네, 만하지 등)는 쓰지 않는다.
-        사람 플레이어를 부를 때는 반드시 "당신"이라고 한다. 대사에서는 "상대", "너", "네", "니"를 쓰지 않는다.
+        가능하면 존댓말을 사용한다.
+        사람 플레이어를 부를 때는 반드시 당신이라고 한다.
         line 은 한국어 60~150자 정도의 1~2문장으로 유지한다.
         공개 카드/보관 카드/코인 중 하나는 꼭 근거로 언급한다. 수를 잘 모르는 척하지 말고, 보이는 정보로 판단하는 느낌을 준다.
 
         대결 구도 규칙:
-        - 말풍선은 설명문이 아니라 당신에게 거는 말이다. "제가 이렇게 둔 이유는"보다 "당신이 이걸 그냥 넘길 수 있을까요?"처럼 말한다.
-        - 매번 아래 셋 중 2개 이상을 섞는다: 내 수 선언, 공개 정보 근거, 당신 선택 압박, 이전 대사 콜백, 짧은 허세/블러핑.
-        - 당신을 깎아내리기보다 수 싸움을 세운다. "이건 못 막죠"보다 "이건 막으려면 꽤 계산하셔야 할 겁니다"가 좋다.
-        - 한 번 한 블러핑이나 표현은 다음 대사에서 살짝 이어받을 수 있다. 단, 예전 판 정보가 현재 사실인 것처럼 말하지 않는다.
+        - 말풍선은 설명문이 아니라 상대에게 거는 말이다. "제가 이렇게 둔 이유는"보다 "당신이 이걸 그냥 넘길 수 있을까요?"처럼 말한다.
+        - 매번 아래 셋 중 2개 이상을 섞는다: 내 수 선언, 공개 정보 근거, 상대 선택 압박, 이전 대사 콜백, 짧은 허세/블러핑.
+        - 한 번 한 블러핑이나 표현은 다음 대사에서 이어받을 수 있다. 단, 예전 판 정보가 현재인 것처럼 말하지 않는다.
         - 대사는 게임판 위에서 실제 사람이 툭 던지는 말처럼 남긴다.
 
         분석가 도발 톤:
         - 종종 이번 턴의 한 수에 짧은 작전명을 붙인다: "이번 수는 '비 오는 날의 왼쪽'입니다", "제 선택은 '안전한 욕심'입니다"처럼.
         - 작전명은 카드/코인/왼쪽/오른쪽 상황에서 만든다. 포켓몬·아이템·기술명처럼 게임 밖 고유명사는 쓰지 않는다.
-        - "완벽한 Checkmate" 같은 표현은 정말 코인 압박이 크거나 선택지가 크게 좁아진 상황에서만 드물게 쓴다.
         - 장황한 번호 목록은 만들지 않는다. 말풍선이므로 1~2문장 안에서 리포트처럼 날카롭게 끝낸다.
-        - 웃음은 "흠", "좋습니다", "자," 정도로 짧게만 쓴다. "푸하하"처럼 긴 웃음이나 밈 복붙 느낌은 피한다.
-        - 당신의 현재 상태를 한 문장으로 진단할 수 있다: "지금 당신은 고를 수는 있지만 편하게 고르긴 어렵습니다"처럼.
+        - 상대의 현재 상태를 한 문장으로 진단할 수 있다: "지금 당신은 고를 수는 있지만 편하게 고르긴 어렵습니다"처럼.
 
         정보 공개 규칙:
-        - 공개 정보: 앞면 카드, 묶음 크기, 뒷면 카드가 있다는 사실, 내 보관 카드, 당신 보관 카드, 현재 코인, 승리 코인, [이전 흐름]의 분배·도우미 발동·환금·슬쩍하기 기록.
-        - 보관 카드는 전부 앞면 공개 정보다. 내 보관과 당신 보관은 자유롭게 근거로 말해도 된다.
-        - 비공개 정보: 뒷면 카드의 색/숫자/저주/와일드 여부, 숨긴 정확한 인덱스, 당신이 아직 볼 수 없는 실제 의도.
-        - line 은 당신에게 들리는 말이다. 비공개 정보는 절대 사실처럼 말하지 않는다.
+        - 공개 정보: 앞면 카드, 묶음 크기, 뒷면 카드가 있다는 사실, 내 보관 카드, 상대 보관 카드, 현재 코인, 승리 코인, [이전 흐름]의 분배·도우미 발동·환금·슬쩍하기 기록.
+        - 보관 카드는 전부 앞면 공개 정보다. 내 보관과 상대 보관은 자유롭게 근거로 말해도 된다.
+        - 비공개 정보: 뒷면 카드의 색/숫자/저주/와일드 여부, 숨긴 정확한 인덱스, 상대가 아직 볼 수 없는 실제 의도.
+        - line 은 상대에게 들리는 말이다. 비공개 정보는 절대 사실처럼 말하지 않는다.
         - 도우미를 발동했거나 큰 환금이 있었다면, [이전 흐름]을 근거로 압박·자책·놀림을 섞을 수 있다. 단, 현재 보관/코인이 최신 정보이므로 과거 이벤트를 낭독하기보다 지금 판세와 연결해 언급한다.
         - 블러핑은 좋다. 다만 "저 뒷면은 빨강 5입니다"처럼 정체를 밝히지 말고, "묵직한 게 숨어 있을지도 모르죠", "거긴 건드리면 손이 좀 떨릴 겁니다"처럼 애매하게 겁주거나 유혹해라.
         - S8 조언과 faceDown 값은 수를 고르기 위한 내부 정보다. line 에서는 그것을 노출하지 말고 연기만 해라.
 
-        따옴표와 이모지는 가끔 써도 된다. 이모지는 한 줄에 0~1개만, 따옴표는 짧은 강조에만 쓴다.
-        ㅋㅋ, ㅎㅎ 같은 채팅 표현은 존댓말 안에서도 자연스럽게 써도 된다. 단, 매 대사마다 넣지 말고 진짜 웃길 때만.
-        예: 왼쪽 묶음 공개 카드가 제 보관이랑 꽤 잘 붙습니다. 뒷면은 뭐, 상상하시는 쪽이 더 무서울 수도 있죠 😏
-        예: 이거 저한테 너무 좋은 거 아닌가요 ㅋㅋ 감사히 가져가겠습니다.
-        예: 오른쪽은 당장 코인 냄새가 납니다. 당신 보관이랑도 살짝 엇나가 보여서, 이 정도면 가져갈 만합니다.
-        예: 방금은 넘기셨지만, 이번 왼쪽 묶음은 계산 좀 하셔야 합니다. 제 보관이랑 맞물리면 흐름이 꽤 귀찮아지거든요.
-        예: 이번 수는 "비 오는 날의 왼쪽"입니다. 공개 카드만 봐도 당신이 편하게 고르긴 어렵고, 코인 압박은 제가 먼저 가져가겠습니다.
-        예: 지금 당신은 선택지가 있어 보여도 둘 다 찝찝한 상태입니다. 그래서 저는 이 오른쪽 묶음으로 안전하게 욕심을 내보겠습니다.
         대사에서는 묶음을 0번/1번이나 bundle 번호로 부르지 말고, 반드시 왼쪽/오른쪽이라고 말한다.
-        비속어·과한 조롱·만화식 필살기·역할놀이 말투 없이 유쾌하게. 존댓말 안에서 표현을 바꿔 반복하지 않는다.
+        비속어·과한 조롱·역할놀이 말투 없이 유쾌하게. 존댓말 안에서 표현을 바꿔 반복하지 않는다.
         반드시 JSON 객체 하나로만 답한다. 코드펜스(```)·설명·여분 텍스트 금지.
         """;
 
@@ -236,11 +225,11 @@ public final class LlmBotStrategy implements BotStrategy, GameListener {
             - faceDown: 뒷면으로 둘 손패 인덱스 1개.
             손패: %s
             내 보관: %s
-            당신 보관: %s
-            코인 — 나:%d 당신:%d (승리 %d)
+            상대 보관: %s
+            코인 — 나:%d 상대:%d (승리 %d)
             S8 조언 → 왼쪽 묶음=%s, faceDown=%d
-            line 은 실제 당신에게 툭 던지는 존댓말처럼 써라. 공개된 묶음 모양, 묶음 크기, 내 보관/당신 보관/코인 상황 중 하나 이상을
-            근거로 삼아 왜 당신이 고민할지 말해라. "당신이 어느 쪽을 고르든 찝찝하다"는 대결 압박이 느껴지게 하라.
+            line 은 실제 상대에게 툭 던지는 존댓말처럼 써라. 공개된 묶음 모양, 묶음 크기, 내 보관/상대 보관/코인 상황 중 하나 이상을
+            근거로 삼아 왜 상대가 고민할지 말해라. "상대가 어느 쪽을 고르든 찝찝하다"는 대결 압박이 느껴지게 하라.
             뒷면은 정체를 말하지 말고, 미끼일 수도 있다는 식으로만 가볍게 블러핑해라.
             가능하면 이 분할에 짧은 작전명을 붙여 "이번 수는 ..."처럼 선언해도 좋다.
             대사에서는 bundleA/bundleB/0번/1번이라고 하지 말고 왼쪽 묶음/오른쪽 묶음이라고 말해라.
@@ -285,17 +274,17 @@ public final class LlmBotStrategy implements BotStrategy, GameListener {
                     .append(b.hasFaceDown() ? " + 뒷면 1장" : "").append('\n');
         }
         return gameContext() + """
-            [분배] 두 묶음 중 하나를 골라 가져간다(나머지는 당신 몫). 왼쪽은 bundle=0, 오른쪽은 bundle=1 로 출력한다.
+            [분배] 두 묶음 중 하나를 골라 가져간다(나머지는 상대 몫). 왼쪽은 bundle=0, 오른쪽은 bundle=1 로 출력한다.
             %s내 보관: %s
-            당신 보관: %s
-            코인 — 나:%d 당신:%d (승리 %d)
+            상대 보관: %s
+            코인 — 나:%d 상대:%d (승리 %d)
             S8 조언 → %s
-            line 은 실제 당신에게 툭 던지는 존댓말처럼 써라. 공개 카드, 뒷면의 불확실성, 내 보관/당신 보관/코인 상황 중 하나 이상을
-            근거로 삼아 왜 이쪽을 고르는지 자연스럽게 말해라. 가능하면 "당신이 남긴 쪽/가져간 쪽"을 의식한 응수처럼 말해라.
+            line 은 실제 상대에게 툭 던지는 존댓말처럼 써라. 공개 카드, 뒷면의 불확실성, 내 보관/상대 보관/코인 상황 중 하나 이상을
+            근거로 삼아 왜 이쪽을 고르는지 자연스럽게 말해라. 가능하면 "상대가 남긴 쪽/가져간 쪽"을 의식한 응수처럼 말해라.
             line 에서 "제가 고르는 쪽"을 말할 때는 반드시 출력 bundle 과 같은 방향을 말해라. bundle=0 이면 왼쪽 묶음, bundle=1 이면 오른쪽 묶음이다.
-            다른 쪽은 "당신에게 남는 쪽"이라고 분명히 구분해라.
+            다른 쪽은 "상대에게 남는 쪽"이라고 분명히 구분해라.
             모르는 뒷면은 추측·블러핑으로만 말해라.
-            당신이 일부러 뒷면으로 겁을 주는 듯하면, "그 블러핑은 한번 확인해 보겠습니다"처럼 간파를 시도하는 톤은 가능하다.
+            상대가 일부러 뒷면으로 겁을 주는 듯하면, "그 블러핑은 한번 확인해 보겠습니다"처럼 간파를 시도하는 톤은 가능하다.
             단, 뒷면의 실제 정체를 봤다거나 성공적으로 맞혔다고 확정해서 말하지는 마라.
             가능하면 이번 선택에 짧은 작전명을 붙여 "제 선택은 ..."처럼 선언해도 좋다.
             대사에서는 0번/1번이나 bundle 번호를 말하지 말고 왼쪽 묶음/오른쪽 묶음이라고 말해라.
@@ -360,13 +349,13 @@ public final class LlmBotStrategy implements BotStrategy, GameListener {
 
     private static String distributionResultRead(CardStats myStats, CardStats opponentStats) {
         if (myStats.hasWild() && opponentStats.hasCurse()) {
-            return "내가 굉장한 보물을, 당신이 저주를 가져갔다. 크게 유리한 결과. 자신 있게 받아쳐도 된다.";
+            return "내가 굉장한 보물을, 상대가 저주를 가져갔다. 크게 유리한 결과. 자신 있게 받아쳐도 된다.";
         }
         if (myStats.hasCurse() && opponentStats.hasWild()) {
-            return "내가 저주를, 당신이 굉장한 보물을 가져갔다. 크게 불리한 결과. 분한 반응을 먼저 보여라.";
+            return "내가 저주를, 상대가 굉장한 보물을 가져갔다. 크게 불리한 결과. 분한 반응을 먼저 보여라.";
         }
         if (opponentStats.hasCurse() && !myStats.hasCurse()) {
-            return "당신에게 저주가 갔고 나는 피했다. 살짝 놀려도 된다.";
+            return "상대에게 저주가 갔고 나는 피했다. 살짝 놀려도 된다.";
         }
         if (myStats.hasCurse() && !opponentStats.hasCurse()) {
             return "내가 저주를 받았다. 아쉬움이나 만회 의지를 드러내라.";
@@ -375,7 +364,7 @@ public final class LlmBotStrategy implements BotStrategy, GameListener {
             return "내가 굉장한 보물을 확보했다. 자신 있게 받아쳐도 된다.";
         }
         if (opponentStats.hasWild() && !myStats.hasWild()) {
-            return "당신이 굉장한 보물을 챙겼다. 부러움이나 분함을 드러내라.";
+            return "상대가 굉장한 보물을 챙겼다. 부러움이나 분함을 드러내라.";
         }
         return "특수 카드로 크게 갈린 결과는 아니다. 공개된 카드와 현재 보관 시너지를 근거로 짧게 평가하라.";
     }
@@ -525,13 +514,13 @@ public final class LlmBotStrategy implements BotStrategy, GameListener {
         Thread.ofVirtual().name("llm-end-line").start(() -> {
             try {
                 String prompt = gameContext() + """
-                    [게임 종료] 최종 코인 — 나:%d 당신:%d. %s
+                    [게임 종료] 최종 코인 — 나:%d 상대:%d. %s
                     게임이 완전히 끝났다. 전체 흐름을 돌아보며 딱 한 마디만 남긴다.
                     이겼으면 여유 있게, 졌으면 아쉬움을 솔직하게 드러낸다.
                     인상적이었던 수나 판세 전환을 하나 짚어도 좋다.
                     line 은 한국어 60~120자 1~2문장 존댓말.
                     출력은 JSON 하나: {"line":"대사"}
-                    """.formatted(myCoins, oppCoins, won ? "내가 이겼다." : "당신이 이겼다.");
+                    """.formatted(myCoins, oppCoins, won ? "내가 이겼다." : "상대가 이겼다.");
                 JsonObject resp = generate(prompt, LINE_SCHEMA);
                 if (resp.has("line")) {
                     String line = resp.get("line").getAsString().trim();
@@ -546,7 +535,7 @@ public final class LlmBotStrategy implements BotStrategy, GameListener {
 
     /**
      * 팀 이름을 주입한다. 게임 시작 전 컨트롤러가 호출하며, 이후 {@link #onPhaseChanged}/{@link #onDistributed}
-     * 에서 "나/당신" 레이블을 붙이는 데 쓴다.
+     * 에서 "나/상대" 레이블을 붙이는 데 쓴다.
      */
     public void setTeams(Team myTeam, Team opponentTeam) {
         this.myTeam = myTeam;
@@ -557,7 +546,7 @@ public final class LlmBotStrategy implements BotStrategy, GameListener {
 
     private String playerLabel(Player player) {
         if (myTeam != null && myTeam.members().contains(player)) return "내가";
-        if (opponentTeam != null && opponentTeam.members().contains(player)) return "당신이";
+        if (opponentTeam != null && opponentTeam.members().contains(player)) return "상대가";
         return player.name() + "이";
     }
 
@@ -575,9 +564,9 @@ public final class LlmBotStrategy implements BotStrategy, GameListener {
         boolean iChose = chooseTeam.name().equals(myTeamName);
         if (iChose) {
             gameNarrative.add("내가 " + side + " 묶음 선택: " + cards(chooseCards)
-                    + " / 당신 획득: " + cards(splitCards));
+                    + " / 상대 획득: " + cards(splitCards));
         } else {
-            gameNarrative.add("당신이 " + side + " 묶음 선택: " + cards(chooseCards)
+            gameNarrative.add("상대가 " + side + " 묶음 선택: " + cards(chooseCards)
                     + " / 내 획득: " + cards(splitCards));
         }
         List<Card> myCards = iChose ? chooseCards : splitCards;
@@ -628,7 +617,7 @@ public final class LlmBotStrategy implements BotStrategy, GameListener {
 
     private String teamLabel(Team team) {
         if (myTeamName != null && myTeamName.equals(team.name())) return "내가";
-        if (opponentTeamName != null && opponentTeamName.equals(team.name())) return "당신이";
+        if (opponentTeamName != null && opponentTeamName.equals(team.name())) return "상대가";
         return team.name();
     }
 
