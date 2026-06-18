@@ -11,7 +11,7 @@ import java.util.Random;
 
 import org.junit.jupiter.api.Test;
 
-import com.oop.payday.bot.S7BotStrategy;
+import com.oop.payday.bot.S8BotStrategy;
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.model.card.Card;
@@ -35,10 +35,10 @@ final class HelperActionModelTest {
                 new TreasureCard(302, CardColor.RED, 3),
                 new TreasureCard(303, CardColor.BLUE, 5),
                 new TreasureCard(304, CardColor.TEAL, 5));
-        // 종반(승리 5코인 앞)이라 S7 은 성장 보류 없이 가진 세트를 모두 즉시 환금한다.
+        // 종반(승리 5코인 앞)이라 S8 은 성장 보류 없이 가진 세트를 모두 즉시 환금한다.
         CashInContext context = new CashInContext(holdings, List.of(), List.of(), List.of(), 25, 10, 30, List.of());
 
-        List<CashInAction> actions = new S7BotStrategy().planCashIn(context, 0);
+        List<CashInAction> actions = new S8BotStrategy().planCashIn(context, 0);
 
         long cashActions = actions.stream()
                 .filter(action -> action instanceof CashInAction.Cash
@@ -58,7 +58,7 @@ final class HelperActionModelTest {
                 new TreasureCard(104, CardColor.RED, 5));
         CashInContext context = new CashInContext(sameColorRun, List.of(lucky), List.of(), List.of(), 0, 5, 30, List.of());
 
-        List<CashInAction> actions = new S7BotStrategy().planCashIn(context, 0);
+        List<CashInAction> actions = new S8BotStrategy().planCashIn(context, 0);
 
         CashInAction.CashWithHelpers action = assertInstanceOf(CashInAction.CashWithHelpers.class, actions.get(0));
         assertEquals(sameColorRun.size(), action.cards().size());
@@ -74,7 +74,7 @@ final class HelperActionModelTest {
                 List.of(new TreasureCard(500, CardColor.RED, 3)),
                 List.of(croc), List.of(tusker), List.of(), 0, 0, 30, List.of());
 
-        List<CashInAction> actions = new S7BotStrategy().planCashIn(context, 0);
+        List<CashInAction> actions = new S8BotStrategy().planCashIn(context, 0);
 
         CashInAction.UseHelper action = assertInstanceOf(CashInAction.UseHelper.class, actions.get(0));
         assertSame(croc, action.helper());
@@ -85,9 +85,9 @@ final class HelperActionModelTest {
     void crocBrothersCopyingTuskerSuspendsHoldLimit() {
         HelperCard croc = helper(HelperKind.CROC_BROTHERS);
         HelperCard tusker = helper(HelperKind.TUSKER);
-        Player player = BotPlayer.test(new S7BotStrategy());
+        Player player = BotPlayer.test(new S8BotStrategy());
         Team team = new Team("테스트 팀", List.of(player));
-        Team opponent = new Team("상대 팀", List.of(BotPlayer.test(new S7BotStrategy())));
+        Team opponent = new Team("상대 팀", List.of(BotPlayer.test(new S8BotStrategy())));
         HelperUseContext context = new HelperUseContext(
                 player, team, opponent, new Deck(new Random(3)), null, List.of(tusker), tusker);
 
@@ -99,7 +99,7 @@ final class HelperActionModelTest {
     @Test
     void dougDiscardsOnlySelectedNonCursedCards() {
         HelperCard doug = helper(HelperKind.DOUG);
-        Player player = BotPlayer.test(new S7BotStrategy());
+        Player player = BotPlayer.test(new S8BotStrategy());
         TreasureCard keep1 = new TreasureCard(200, CardColor.BLUE, 3);
         TreasureCard drop1 = new TreasureCard(201, CardColor.RED, 4);
         TreasureCard drop2 = new TreasureCard(202, CardColor.YELLOW, 5);
@@ -111,7 +111,7 @@ final class HelperActionModelTest {
         player.receiveHelpers(List.of(doug));
 
         Team team = new Team("팀", List.of(player));
-        Team opponent = new Team("상대", List.of(BotPlayer.test(new S7BotStrategy())));
+        Team opponent = new Team("상대", List.of(BotPlayer.test(new S8BotStrategy())));
         HelperUseContext context = new HelperUseContext(
                 player, team, opponent, new Deck(new Random(5)), null, List.of(), null, List.of(drop1, drop2));
 

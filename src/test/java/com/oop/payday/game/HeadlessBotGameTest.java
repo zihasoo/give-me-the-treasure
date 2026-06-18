@@ -19,7 +19,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.oop.payday.bot.BotStrategy;
-import com.oop.payday.bot.S7BotStrategy;
 import com.oop.payday.bot.S8BotStrategy;
 import com.oop.payday.log.PlayLogWriter;
 import com.oop.payday.model.Deck;
@@ -68,8 +67,8 @@ final class HeadlessBotGameTest {
     @Test
     void playLogCapturesFullGame() {
         GameConfig config = GameConfig.practice(true);
-        Team a = new Team("우리 팀", List.of(BotPlayer.test(new S7BotStrategy())));
-        Team b = new Team("상대 팀", List.of(BotPlayer.test(new S7BotStrategy())));
+        Team a = new Team("우리 팀", List.of(BotPlayer.test(new S8BotStrategy())));
+        Team b = new Team("상대 팀", List.of(BotPlayer.test(new S8BotStrategy())));
         StringWriter buffer = new StringWriter();
         PlayLogWriter log = PlayLogWriter.to(buffer, config, a, b, a, b);
 
@@ -78,50 +77,19 @@ final class HeadlessBotGameTest {
 
         String text = buffer.toString();
         assertTrue(text.contains("도적단의 월급날 — 플레이 로그"), "헤더가 있어야 한다.");
-        assertTrue(text.contains("(S7)"), "플레이어 전략명이 기록돼야 한다.");
+        assertTrue(text.contains("(S8)"), "플레이어 전략명이 기록돼야 한다.");
         assertTrue(text.contains("라운드 1"), "라운드 진행이 기록돼야 한다.");
         assertTrue(text.contains("[환금]"), "환금 페이즈가 기록돼야 한다.");
         assertTrue(text.contains("게임 종료 — 승리:"), "게임 종료가 기록돼야 한다.");
     }
 
     /**
-     * S7(현재 기본 봇)이 한 판을 무효 행동 없이 끝까지 진행하는지 검증한다(회귀 안전망). S7 은 분할자·선택자
-     * 역할을 번갈아 맡으므로 한 판으로 새 선택 모델·저주 부채·환금 보류 경로가 모두 행사된다.
+     * S8 자가대전을 같은 seed 표본으로 돌린다(회귀 체온계).
      */
     @Tag("integration")
     @Test
-    void s7BotFinishesPracticeGameWithoutInvalidActions() {
-        AtomicReference<Team> winnerRef = new AtomicReference<>();
-
-        Team alpha = new Team("S7 봇 A", List.of(BotPlayer.test(new S7BotStrategy())));
-        Team beta = new Team("S7 봇 B", List.of(BotPlayer.test(new S7BotStrategy())));
-        Game game = new Game(GameConfig.practice(true), alpha, beta, new GameListener() {
-            @Override
-            public void onGameOver(Team winner) {
-                winnerRef.set(winner);
-            }
-        });
-
-        assertTimeoutPreemptively(Duration.ofSeconds(5), game::play);
-
-        Team winner = winnerRef.get();
-        assertNotNull(winner, "S7 봇 대전은 승자를 내고 종료해야 한다.");
-        assertTrue(winner == alpha || winner == beta, "승자는 참가 팀 중 하나여야 한다.");
-        assertTrue(winner.coins() >= GameConfig.PRACTICE_WIN,
-                "승자는 연습 룰 승리 코인 이상을 보유해야 한다.");
-    }
-
-    /**
-     * S7(현재 기본 봇) 자가대전을 같은 seed 표본으로 돌린다.
-     *
-     * <p>봇끼리 승률은 사람 상대 강함의 척도가 아니므로, 이 테스트는 전략 개선을 증명하기보다
-     * <b>회귀 체온계</b> 역할을 한다. 즉, 크래시 없이 모든 seed 를 끝내고 무효 환금이 게임당 평균 1회
-     * 미만인지 확인하며, 평균 코인은 문서화할 참고 신호로 출력한다.
-     */
-    @Tag("integration")
-    @Test
-    void s7SelfPlaySeedReport() {
-        runSeedReport("S7", S7BotStrategy::new, "S7", S7BotStrategy::new);
+    void s8SelfPlaySeedReport() {
+        runSeedReport("S8", S8BotStrategy::new, "S8", S8BotStrategy::new);
     }
 
     /**
@@ -158,19 +126,8 @@ final class HeadlessBotGameTest {
         assertTrue(invalidCashes.get() == 0, "S8 은 무효 환금이 없어야 한다(현재 " + invalidCashes.get() + ").");
     }
 
-    /**
-     * S8(challenger) 대 S7(baseline 회귀) 자가대전을 같은 seed 표본으로 돌린다. 봇끼리 승률은 사람 상대
-     * 강함의 척도가 아니라 <b>회귀 체온계</b>다 — S8 이 크래시·무효 환금 없이 모든 seed 를 끝내고 S7 대비
-     * 터무니없이 무너지지 않는지 본다. 표본은 {@code -DbotSeedCount=300} 처럼 조절한다.
-     */
-    @Tag("integration")
-    @Test
-    void s8VsS7SeedReport() {
-        runSeedReport("S8", S8BotStrategy::new, "S7", S7BotStrategy::new);
-    }
-
     private static Team team(String name) {
-        Player bot = BotPlayer.test(new S7BotStrategy());
+        Player bot = BotPlayer.test(new S8BotStrategy());
         return new Team(name, List.of(bot));
     }
 

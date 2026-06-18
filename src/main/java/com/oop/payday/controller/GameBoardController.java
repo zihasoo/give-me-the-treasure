@@ -26,7 +26,6 @@ import com.oop.payday.game.MatchSetup;
 import com.oop.payday.game.Phase;
 import com.oop.payday.game.Team;
 import com.oop.payday.llm.GeminiClient;
-import com.oop.payday.log.PlayLogWriter;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.card.CursedCard;
 import com.oop.payday.model.card.StealCard;
@@ -385,13 +384,7 @@ public final class GameBoardController implements GameListener, Initializable {
         animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER_BY_COLOR);
         updateBoardStatus();
 
-        GameListener target = this;
-        PlayLogWriter playLog = PlayLogWriter.createForOfflineGame(config, teamA, teamB, teamA, teamB);
-        if (playLog != null) {
-            target = new FanOutGameListener(this, playLog);
-        }
-
-        Game game = new Game(config, teamA, teamB, target);
+        Game game = new Game(config, teamA, teamB, this);
         this.currentGame = game;
         startGameThread(game);
         installEscHandler();
