@@ -9,8 +9,10 @@ import com.oop.payday.llm.GeminiClient;
  */
 public enum BotKind {
 
-    S8("S8 봇"),
-    LLM("LLM 봇");
+    EASY("쉬움"),
+    NORMAL("중간"),
+    HARD("어려움"),
+    LLM("LLM");
 
     private final String displayName;
 
@@ -22,17 +24,22 @@ public enum BotKind {
         return displayName;
     }
 
+    public String numberedName(int number) {
+        return displayName + " 봇 " + number;
+    }
+
     public BotStrategy create() {
         return create(null, "");
     }
 
     public BotStrategy create(Consumer<String> say, String geminiApiKey) {
         return switch (this) {
-            case S8 -> new S8BotStrategy();
+            case EASY -> new DifficultyAdjustedBotStrategy(DifficultyAdjustedBotStrategy.Level.EASY);
+            case NORMAL -> new DifficultyAdjustedBotStrategy(DifficultyAdjustedBotStrategy.Level.NORMAL);
+            case HARD -> new DifficultyAdjustedBotStrategy(DifficultyAdjustedBotStrategy.Level.HARD);
             case LLM -> new LlmBotStrategy(
                     say,
-                    new GeminiClient(geminiApiKey),
-                    new S8BotStrategy());
+                    new GeminiClient(geminiApiKey));
         };
     }
 }

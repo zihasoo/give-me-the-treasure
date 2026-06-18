@@ -4,8 +4,6 @@ import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.oop.payday.app.GameApp;
-import com.oop.payday.app.Settings;
-import com.oop.payday.game.MatchSetup;
 import com.oop.payday.net.GameClient;
 import com.oop.payday.net.GameServer;
 import com.oop.payday.net.NetMessage;
@@ -57,51 +55,6 @@ public class MainMenuController {
     @FXML
     private void onJoinGame() {
         showJoinInput();
-    }
-
-    // ── LLM 봇과 1v1 (LLM 봇 전용 진입점) ──────────────────────────
-
-    @FXML
-    private void onLlmGame() {
-        VBox panel = lobbyPanel();
-
-        Label title = new Label("LLM 봇과 1v1");
-        title.getStyleClass().add("lobby-title");
-
-        Label hint = new Label("제미나이 API 키를 입력하세요:");
-        hint.getStyleClass().add("preview");
-
-        TextField keyField = new TextField(Settings.geminiApiKey());
-        keyField.setPromptText("AIza…");
-        keyField.setMaxWidth(320);
-
-        Label status = new Label();
-        status.getStyleClass().add("status");
-
-        Button startBtn = new Button("시작");
-        startBtn.getStyleClass().add("menu-button");
-        startBtn.setDisable(keyField.getText().trim().isEmpty());
-        keyField.textProperty().addListener((obs, old, val) -> startBtn.setDisable(val.trim().isEmpty()));
-        startBtn.setOnAction(e -> {
-            String key = keyField.getText().trim();
-            if (key.isEmpty()) return;
-            Settings.setGeminiApiKey(key);
-            try {
-                GameApp.get().showGameBoard(MatchSetup.llmDuel(nickname()));
-            } catch (IOException ex) {
-                status.setText("시작 실패: " + ex.getMessage());
-            }
-        });
-
-        Button cancelBtn = new Button("취소");
-        cancelBtn.getStyleClass().add("menu-button");
-        cancelBtn.setOnAction(e -> hideOverlay());
-
-        HBox btnRow = new HBox(12, cancelBtn, startBtn);
-        btnRow.setAlignment(Pos.CENTER);
-
-        panel.getChildren().addAll(title, hint, keyField, status, btnRow);
-        showOverlayPanel(panel);
     }
 
     private String nickname() {

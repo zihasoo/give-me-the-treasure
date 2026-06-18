@@ -2,7 +2,6 @@ package com.oop.payday.bot;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 
 import com.oop.payday.decision.CashInAction;
 import com.oop.payday.decision.CashInContext;
@@ -80,21 +79,30 @@ public interface BotStrategy {
         return "봇";
     }
 
+    /** 봇 연출 대기시간 범위. {@code minMillis} 와 {@code maxMillis} 는 모두 포함 범위다. */
+    record ThinkDelay(int minMillis, int maxMillis) {
+        public ThinkDelay {
+            if (minMillis < 0 || maxMillis < minMillis) {
+                throw new IllegalArgumentException("invalid think delay: " + minMillis + ".." + maxMillis);
+            }
+        }
+    }
+
     /**
-     * 결정 직전의 '생각하는 텀'. {@code BotPlayer} 가 각 {@code decideXxx} 앞에서 호출한다.
-     * {@code paced=false}(테스트 봇)면 즉시 반환한다.
+     * 일반 결정 직전의 '생각하는 텀' 정책. {@code BotPlayer} 가 {@code paced=true} 일 때만 실제로 대기한다.
      *
-     * <p>기본 구현은 사람처럼 보이게 2~4초 인위적으로 대기한다(동기 휴리스틱 전략용).
-     * LLM 처럼 결정 자체에 네트워크 지연이 있는 전략은 이 메서드를 비워(override) 이중 지연을 피한다.
+     * <p>기본값은 동기 휴리스틱 봇이 사람처럼 보이도록 2~4초다. LLM 처럼 결정 자체에 네트워크 지연이 있는
+     * 전략은 이 값을 짧게 줄여 이중 지연을 피한다.
      */
-    default void think(boolean paced) {
-        if (!paced) {
-            return;
-        }
-        try {
-            Thread.sleep(ThreadLocalRandom.current().nextInt(2000, 4001));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+    default ThinkDelay thinkDelay() {
+        return new ThinkDelay(2000, 3600);
+    }
+
+    /**
+     * 환금 단계에서 행동 하나를 제출하기 전의 짧은 텀 정책. 환금은 한 플레이어가 여러 행동을 연속 제출할 수
+     * 있어, 일반 의사결정 대기와 분리해 둔다.
+     */
+    default ThinkDelay cashInThinkDelay() {
+        return new ThinkDelay(450, 700);
     }
 }

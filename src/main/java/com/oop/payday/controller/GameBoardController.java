@@ -416,7 +416,7 @@ public final class GameBoardController implements GameListener, Initializable {
     }
 
     private BotStrategy createBotStrategy(BotKind kind) {
-        BotKind resolved = kind != null ? kind : BotKind.S8;
+        BotKind resolved = kind != null ? kind : BotKind.HARD;
         return resolved.create(
                 line -> Platform.runLater(() -> animator.showSpeech(line)),
                 Settings.geminiApiKey());

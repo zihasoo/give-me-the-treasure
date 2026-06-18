@@ -79,15 +79,8 @@ public final class MatchSetup {
     public static MatchSetup defaultSetup(String hostName) {
         MatchSetup setup = new MatchSetup();
         setup.teamA.add(Slot.human(hostName));
-        setup.teamB.add(Slot.bot(BotKind.S8, "봇 1"));
+        setup.teamB.add(Slot.bot(BotKind.HARD, BotKind.HARD.numberedName(1)));
         return setup;
     }
 
-    /** LLM 봇과의 1 vs 1 (나 + LLM 봇). 메인 메뉴의 전용 진입점에서만 쓴다(대기실을 거치지 않음). */
-    public static MatchSetup llmDuel(String hostName) {
-        MatchSetup setup = new MatchSetup();
-        setup.teamA.add(Slot.human(hostName));
-        setup.teamB.add(Slot.bot(BotKind.LLM, "LLM 봇"));
-        return setup;
-    }
 }

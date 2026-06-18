@@ -155,9 +155,6 @@ public abstract class Player {
 
     public abstract boolean isBot();
 
-    /** 환금 행동을 한 단계씩 공개할 때 행동 사이 대기 시간(ms). 0이면 즉시. */
-    public int revealPaceMillis() { return 0; }
-
     @Override
     public String toString() {
         return name;

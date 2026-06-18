@@ -248,18 +248,15 @@ public final class LobbyController implements Initializable {
         refreshStartEnabled();
     }
 
-    /** 두 팀의 봇을 순서대로 훑어 "봇 1, 봇 2…"로 다시 매긴다. */
+    /** 두 팀의 봇을 순서대로 훑어 "어려움 봇 1", "LLM 봇 2" 처럼 다시 매긴다. */
     private void renumberBots() {
         int n = 1;
         for (List<Slot> team : teams()) {
             for (int i = 0; i < team.size(); i++) {
                 Slot slot = team.get(i);
                 if (slot.kind() == SlotKind.BOT) {
-                    if (slot.botKind() == BotKind.LLM) {
-                        team.set(i, Slot.bot(BotKind.LLM, BotKind.LLM.displayName()));
-                    } else {
-                        team.set(i, Slot.bot(slot.botKind(), "봇 " + n++));
-                    }
+                    BotKind kind = slot.botKind() != null ? slot.botKind() : BotKind.HARD;
+                    team.set(i, Slot.bot(kind, kind.numberedName(n++)));
                 }
             }
         }
@@ -288,7 +285,7 @@ public final class LobbyController implements Initializable {
         Button addBot = new Button("+ 봇 추가");
         addBot.getStyleClass().add("lobby-add-button");
         addBot.setOnAction(e -> {
-            slots.add(Slot.bot(BotKind.S8, "봇"));
+            slots.add(Slot.bot(BotKind.HARD, BotKind.HARD.numberedName(1)));
             renderHostTeams();
             broadcastLobby();
         });
@@ -319,7 +316,7 @@ public final class LobbyController implements Initializable {
                 ComboBox<BotKind> strategy = new ComboBox<>();
                 strategy.getStyleClass().add("lobby-combo");
                 strategy.getItems().setAll(BotKind.values());
-                strategy.setValue(slot.botKind() != null ? slot.botKind() : BotKind.S8);
+                strategy.setValue(slot.botKind() != null ? slot.botKind() : BotKind.HARD);
                 strategy.setConverter(botKindConverter());
                 strategy.setButtonCell(botKindCell());
                 strategy.setCellFactory(list -> botKindCell());
@@ -524,7 +521,6 @@ public final class LobbyController implements Initializable {
     }
 
     private boolean canStart() {
-        if (hasLlmBot()) return isLocalLlmDuel();
         return !setup.teamA().isEmpty() && !setup.teamB().isEmpty();
     }
 
@@ -536,6 +532,10 @@ public final class LobbyController implements Initializable {
     @SuppressWarnings("unused")
     private void onStart() {
         if (!hostMode || !canStart()) return;
+        if (hasLlmBot() && !isLocalLlmDuel()) {
+            showLlmStartConditionAlert();
+            return;
+        }
         if (!ensureLlmApiKey()) return;
         boolean hasRemote = hasRemoteSeat();
         if (server != null) server.stopAccepting();
@@ -550,6 +550,14 @@ public final class LobbyController implements Initializable {
             }
         } catch (IOException ignored) {
         }
+    }
+
+    private void showLlmStartConditionAlert() {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("LLM 봇");
+        alert.setHeaderText("LLM 봇은 로컬 1:1만 지원합니다.");
+        alert.setContentText("팀당 한 명씩만 배치하고, 원격 플레이어 없이 시작해주세요.");
+        alert.showAndWait();
     }
 
     private boolean ensureLlmApiKey() {

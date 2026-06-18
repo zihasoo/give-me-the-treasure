@@ -1,11 +1,9 @@
 package com.oop.payday.bot;
 
+import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
-
-import java.io.StringReader;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -31,11 +29,11 @@ import com.oop.payday.model.helper.HelperCard;
  *
  * <p>매 분할/선택 결정마다 제미나이를 1회 호출해 {@code {line, move}} 를 한 번에 받는다 — {@code line} 은
  * 호들갑 섞인 중계/도발/혼잣말, {@code move} 는 실제 수다. <b>합법성은 절대 양보하지 않는다</b>: 동기 규칙봇
- * ({@code advisor}, 기본 S8)의 추천 수를 프롬프트에 "S8 조언"으로 넣어 플레이가 망가지지 않게 유도하고,
- * LLM 이 낸 수가 불법이거나 호출이 실패하면 <b>조용히 advisor 수로 폴백</b>한다.
+ * 내장 S8의 추천 수를 프롬프트에 "S8 조언"으로 넣어 플레이가 망가지지 않게 유도하고,
+ * LLM 이 낸 수가 불법이거나 호출이 실패하면 <b>조용히 S8 수로 폴백</b>한다.
  *
- * <p>도우미 드래프트·환금·팀 분배는 합법성 부담이 커서 수 자체는 {@code advisor} 에 위임한다. 단 환금은
- * 실제 환금이 있을 때 LLM 으로 리액션 대사만 덧붙인다(수는 그대로 S8). 오류 시 조용히 advisor 수로 폴백하고
+ * <p>도우미 드래프트·환금·팀 분배는 합법성 부담이 커서 수 자체는 내장 S8에 위임한다. 단 환금은
+ * 실제 환금이 있을 때 LLM 으로 리액션 대사만 덧붙인다(수는 그대로 S8). 오류 시 조용히 S8 수로 폴백하고
  * 다음 턴에 다시 시도한다.
  */
 public final class LlmBotStrategy implements BotStrategy {
@@ -120,7 +118,7 @@ public final class LlmBotStrategy implements BotStrategy {
         }
         """).getAsJsonObject();
 
-    /** 대사만 받는 스키마: {line}. (환금 리액션용 — 수는 advisor 가 둔다.) */
+    /** 대사만 받는 스키마: {line}. (환금 리액션용 — 수는 내장 S8이 둔다.) */
     private static final JsonObject LINE_SCHEMA = JsonParser.parseString("""
         {
           "type":"OBJECT",
@@ -131,7 +129,7 @@ public final class LlmBotStrategy implements BotStrategy {
 
     private final Consumer<String> say;
     private final GeminiClient gemini;
-    private final BotStrategy advisor;
+    private final S8BotStrategy s8 = new S8BotStrategy();
     private final List<GeminiClient.Turn> chatHistory = new ArrayList<>();
     private PendingSplitOffer pendingSplitOffer;
 
@@ -152,10 +150,9 @@ public final class LlmBotStrategy implements BotStrategy {
         }
     }
 
-    public LlmBotStrategy(Consumer<String> say, GeminiClient gemini, BotStrategy advisor) {
+    public LlmBotStrategy(Consumer<String> say, GeminiClient gemini) {
         this.say = say;
         this.gemini = gemini;
-        this.advisor = advisor;
     }
 
     @Override
@@ -164,24 +161,17 @@ public final class LlmBotStrategy implements BotStrategy {
     }
 
     @Override
-    public void think(boolean paced) {
-        if (!paced) {
-            return;
-        }
+    public ThinkDelay thinkDelay() {
         // 분할/선택은 generateJson() 의 네트워크 왕복이 곧 '생각 텀'이라 여기선 짧은 비트만 둔다.
-        // (도우미·환금 등 advisor 위임 결정은 네트워크가 없어 이 비트가 사람 같은 텀을 만든다.)
-        try {
-            Thread.sleep(ThreadLocalRandom.current().nextInt(600, 1000));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // (도우미·환금 등 S8 위임 결정은 네트워크가 없어 이 비트가 사람 같은 텀을 만든다.)
+        return new ThinkDelay(400, 700);
     }
 
     // ─── 분할(꾀부리기): LLM ──────────────────────────────────────────────────────
 
     @Override
     public SplitDecision decideSplit(SplitContext context) {
-        SplitDecision advice = advisor.decideSplit(context);
+        SplitDecision advice = s8.decideSplit(context);
         if (skipLlm()) {
             return advice;
         }
@@ -259,7 +249,7 @@ public final class LlmBotStrategy implements BotStrategy {
 
     @Override
     public int decideChoice(ChoiceContext context) {
-        int advice = advisor.decideChoice(context);
+        int advice = s8.decideChoice(context);
         if (skipLlm()) {
             return advice;
         }
@@ -309,20 +299,20 @@ public final class LlmBotStrategy implements BotStrategy {
                 ctx.myCoins(), ctx.opponentCoins(), ctx.winningCoins(), sideName(advice));
     }
 
-    // ─── 도우미·환금·팀분배: advisor(S8) 위임 ────────────────────────────────────
+    // ─── 도우미·환금·팀분배: S8 위임 ────────────────────────────────────────────
 
     @Override
     public List<HelperCard> decideHelpers(List<HelperCard> options, int chooseCount, HelperDraftContext context) {
-        return advisor.decideHelpers(options, chooseCount, context);
+        return s8.decideHelpers(options, chooseCount, context);
     }
 
     /**
-     * 환금은 합법성 부담이 커서 수 자체는 {@code advisor}(S8)가 둔다. 말은 환금 해설 대신, 직전 분배에서
+     * 환금은 합법성 부담이 커서 수 자체는 내장 S8이 둔다. 말은 환금 해설 대신, 직전 분배에서
      * 당신이 어떤 묶음을 골랐는지에 대한 리액션만 한 번 시도한다.
      */
     @Override
     public List<CashInAction> planCashIn(CashInContext context, int opponentCoins) {
-        List<CashInAction> plan = advisor.planCashIn(context, opponentCoins);
+        List<CashInAction> plan = s8.planCashIn(context, opponentCoins);
         speakOpponentChoiceReaction(context, opponentCoins);
         return plan;
     }
@@ -453,7 +443,7 @@ public final class LlmBotStrategy implements BotStrategy {
 
     @Override
     public TeamDistribution decideTeamDistribution(List<Card> acquired, List<List<Card>> memberHoldings) {
-        return advisor.decideTeamDistribution(acquired, memberHoldings);
+        return s8.decideTeamDistribution(acquired, memberHoldings);
     }
 
     // ─── 보조 ─────────────────────────────────────────────────────────────────────
@@ -552,7 +542,7 @@ public final class LlmBotStrategy implements BotStrategy {
         return "left".equals(side) ? "왼쪽 묶음" : "오른쪽 묶음";
     }
 
-    /** advisor 추천 묶음을 손패 인덱스 배열 문자열(예: "[0, 2]")로. */
+    /** S8 추천 묶음을 손패 인덱스 배열 문자열(예: "[0, 2]")로. */
     private static String indices(List<Card> sub, List<Card> hand) {
         List<Integer> idx = new ArrayList<>();
         for (Card c : sub) {
