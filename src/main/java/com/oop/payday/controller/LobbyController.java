@@ -4,9 +4,11 @@ import java.io.IOException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.ResourceBundle;
 
 import com.oop.payday.app.GameApp;
+import com.oop.payday.app.Settings;
 import com.oop.payday.bot.BotKind;
 import com.oop.payday.game.MatchSetup;
 import com.oop.payday.game.MatchSetup.Slot;
@@ -27,6 +29,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -252,7 +255,11 @@ public final class LobbyController implements Initializable {
             for (int i = 0; i < team.size(); i++) {
                 Slot slot = team.get(i);
                 if (slot.kind() == SlotKind.BOT) {
-                    team.set(i, Slot.bot(slot.botKind(), "봇 " + n++));
+                    if (slot.botKind() == BotKind.LLM) {
+                        team.set(i, Slot.bot(BotKind.LLM, BotKind.LLM.displayName()));
+                    } else {
+                        team.set(i, Slot.bot(slot.botKind(), "봇 " + n++));
+                    }
                 }
             }
         }
@@ -311,13 +318,14 @@ public final class LobbyController implements Initializable {
 
                 ComboBox<BotKind> strategy = new ComboBox<>();
                 strategy.getStyleClass().add("lobby-combo");
-                strategy.getItems().setAll(BotKind.lobbyChoices());
+                strategy.getItems().setAll(BotKind.values());
                 strategy.setValue(slot.botKind() != null ? slot.botKind() : BotKind.S8);
                 strategy.setConverter(botKindConverter());
                 strategy.setButtonCell(botKindCell());
                 strategy.setCellFactory(list -> botKindCell());
                 strategy.setOnAction(e -> {
                     slots.set(index, Slot.bot(strategy.getValue(), slot.name()));
+                    renderHostTeams();
                     broadcastLobby();
                 });
                 HBox.setHgrow(strategy, Priority.ALWAYS);
@@ -491,7 +499,32 @@ public final class LobbyController implements Initializable {
         return false;
     }
 
+    private boolean hasLlmBot() {
+        for (List<Slot> team : teams()) {
+            for (Slot s : team) {
+                if (s.kind() == SlotKind.BOT && s.botKind() == BotKind.LLM) return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isLocalLlmDuel() {
+        if (hasRemoteSeat()) return false;
+        if (setup.teamA().size() != 1 || setup.teamB().size() != 1) return false;
+
+        Slot a = setup.teamA().get(0);
+        Slot b = setup.teamB().get(0);
+        return isHumanVsLlm(a, b) || isHumanVsLlm(b, a);
+    }
+
+    private static boolean isHumanVsLlm(Slot human, Slot bot) {
+        return human.kind() == SlotKind.HUMAN_LOCAL
+                && bot.kind() == SlotKind.BOT
+                && bot.botKind() == BotKind.LLM;
+    }
+
     private boolean canStart() {
+        if (hasLlmBot()) return isLocalLlmDuel();
         return !setup.teamA().isEmpty() && !setup.teamB().isEmpty();
     }
 
@@ -503,6 +536,7 @@ public final class LobbyController implements Initializable {
     @SuppressWarnings("unused")
     private void onStart() {
         if (!hostMode || !canStart()) return;
+        if (!ensureLlmApiKey()) return;
         boolean hasRemote = hasRemoteSeat();
         if (server != null) server.stopAccepting();
         try {
@@ -516,6 +550,23 @@ public final class LobbyController implements Initializable {
             }
         } catch (IOException ignored) {
         }
+    }
+
+    private boolean ensureLlmApiKey() {
+        if (!hasLlmBot() || !Settings.geminiApiKey().isBlank()) {
+            return true;
+        }
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("LLM 봇");
+        dialog.setHeaderText(null);
+        dialog.setContentText("제미나이 API 키를 입력하세요:");
+
+        Optional<String> input = dialog.showAndWait();
+        if (input.isEmpty() || input.get().isBlank()) {
+            return false;
+        }
+        Settings.setGeminiApiKey(input.get());
+        return true;
     }
 
     @FXML

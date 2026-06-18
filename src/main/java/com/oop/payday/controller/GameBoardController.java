@@ -13,8 +13,6 @@ import com.oop.payday.app.GameApp;
 import com.oop.payday.app.Settings;
 import com.oop.payday.bot.BotKind;
 import com.oop.payday.bot.BotStrategy;
-import com.oop.payday.bot.LlmBotStrategy;
-import com.oop.payday.bot.S8BotStrategy;
 import com.oop.payday.decision.BundleView;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.ChoiceView;
@@ -25,7 +23,6 @@ import com.oop.payday.game.GameListener;
 import com.oop.payday.game.MatchSetup;
 import com.oop.payday.game.Phase;
 import com.oop.payday.game.Team;
-import com.oop.payday.llm.GeminiClient;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.card.CursedCard;
 import com.oop.payday.model.card.StealCard;
@@ -418,20 +415,11 @@ public final class GameBoardController implements GameListener, Initializable {
         return players;
     }
 
-    /**
-     * 봇 슬롯의 전략을 만든다. LLM 봇은 {@link BotKind#create()} 로 못 만든다 — 대사 싱크와 API 키
-     * 주입이 필요하므로 여기서 직접 조립한다. 대사는 상대(봇) 영역 말풍선으로 띄우고(1v1 전용),
-     * 합법성·조언·폴백은 {@link S8BotStrategy} 가 맡는다. say 람다는 호출 시점의 {@code animator}(게임 시작
-     * 후 초기화됨)를 읽으므로 생성 순서와 무관하게 안전하다.
-     */
     private BotStrategy createBotStrategy(BotKind kind) {
-        if (kind == BotKind.LLM) {
-            return new LlmBotStrategy(
-                    line -> Platform.runLater(() -> animator.showSpeech(line)),
-                    new GeminiClient(Settings.geminiApiKey()),
-                    new S8BotStrategy());
-        }
-        return kind.create();
+        BotKind resolved = kind != null ? kind : BotKind.S8;
+        return resolved.create(
+                line -> Platform.runLater(() -> animator.showSpeech(line)),
+                Settings.geminiApiKey());
     }
 
     private static String teamName(List<Player> players, String fallback) {
