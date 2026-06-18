@@ -61,6 +61,10 @@ public final class BotPlayer extends Player {
         return strategy.displayName();
     }
 
+    public BotStrategy strategy() {
+        return strategy;
+    }
+
     @Override
     public SplitDecision decideSplit(SplitContext context) {
         think(strategy.thinkDelay());

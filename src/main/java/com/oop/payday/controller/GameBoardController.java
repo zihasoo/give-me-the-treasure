@@ -13,6 +13,7 @@ import com.oop.payday.app.GameApp;
 import com.oop.payday.app.Settings;
 import com.oop.payday.bot.BotKind;
 import com.oop.payday.bot.BotStrategy;
+import com.oop.payday.bot.LlmBotStrategy;
 import com.oop.payday.decision.BundleView;
 import com.oop.payday.decision.CashInContext;
 import com.oop.payday.decision.ChoiceView;
@@ -127,6 +128,7 @@ public final class GameBoardController implements GameListener, Initializable {
     private boolean introPhase = true;
     private boolean gameOver = false;
     private Node cachedScoreTablePanel;
+    private LlmBotStrategy llmBot;
 
     /** 게임 모드. 다시하기/나가기 동작과 일시정지 메뉴 버튼 노출을 결정한다. */
     private enum Mode { OFFLINE, HOST, CLIENT }
@@ -381,7 +383,7 @@ public final class GameBoardController implements GameListener, Initializable {
         animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER_BY_COLOR);
         updateBoardStatus();
 
-        Game game = new Game(config, teamA, teamB, this);
+        Game game = new Game(config, teamA, teamB, wrapWithLlmBotListeners(this));
         this.currentGame = game;
         startGameThread(game);
         installEscHandler();
@@ -420,6 +422,25 @@ public final class GameBoardController implements GameListener, Initializable {
         return resolved.create(
                 line -> Platform.runLater(() -> animator.showSpeech(line)),
                 Settings.geminiApiKey());
+    }
+
+    /**
+     * LLM 봇 전략이 있으면 {@link GameListener}로도 체이닝해 게임 흐름을 컨텍스트로 주입할 수 있게 한다.
+     * LLM 봇이 없으면 {@code base}를 그대로 반환한다.
+     */
+    private GameListener wrapWithLlmBotListeners(GameListener base) {
+        GameListener listener = base;
+        for (Team team : List.of(teamA, teamB)) {
+            Team opponent = team == teamA ? teamB : teamA;
+            for (Player p : team.members()) {
+                if (p instanceof BotPlayer bot && bot.strategy() instanceof LlmBotStrategy llm) {
+                    llm.setTeams(team, opponent);
+                    llmBot = llm;
+                    listener = new FanOutGameListener(listener, llm);
+                }
+            }
+        }
+        return listener;
     }
 
     private static String teamName(List<Player> players, String fallback) {
@@ -474,7 +495,7 @@ public final class GameBoardController implements GameListener, Initializable {
         int epoch = EPOCH_SEQ.incrementAndGet();
         broadcaster = new NetworkBroadcaster(server, teamA, teamB, null, allPlayers, epoch);
         FanOutGameListener fanOut = new FanOutGameListener(this, broadcaster);
-        Game game = new Game(config, teamA, teamB, fanOut);
+        Game game = new Game(config, teamA, teamB, wrapWithLlmBotListeners(fanOut));
         broadcaster.setGame(game);
         this.currentGame = game;
 
@@ -570,6 +591,7 @@ public final class GameBoardController implements GameListener, Initializable {
 
     private void resetBoard() {
         gameOver = false;
+        llmBot = null;
         disconnected = false;
         introPhase = true;
         pauseMenuOpen = false;
@@ -908,8 +930,12 @@ public final class GameBoardController implements GameListener, Initializable {
         Platform.runLater(() -> {
             gameOver = true;
             pauseMenuOpen = false;
-            showScreenOverlay(ScorePanels.gameOver(teamA, teamB, winner, mode != Mode.CLIENT,
-                    this::restartGame, this::exitToMainMenu));
+            var panel = ScorePanels.gameOver(teamA, teamB, winner, mode != Mode.CLIENT,
+                    this::restartGame, this::exitToMainMenu);
+            showScreenOverlay(panel.root());
+            if (llmBot != null) {
+                llmBot.requestEndLine(winner, line -> Platform.runLater(() -> panel.setBotQuote().accept(line)));
+            }
             turnLabel.setText("게임 종료");
             updateBoardStatus();
         });

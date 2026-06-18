@@ -19,10 +19,15 @@ import com.oop.payday.decision.HelperDraftContext;
 import com.oop.payday.decision.SplitContext;
 import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
+import com.oop.payday.game.GameListener;
+import com.oop.payday.game.Phase;
+import com.oop.payday.game.Team;
 import com.oop.payday.llm.GeminiClient;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.card.CursedCard;
 import com.oop.payday.model.helper.HelperCard;
+import com.oop.payday.model.set.TreasureSet;
+import com.oop.payday.player.Player;
 
 /**
  * LLM(제미나이) 기반 "말하는 상대" 봇(토이용). 승률이 아니라 <b>성격 있고 예측 불가한 1:1 상대</b>가 목적이다.
@@ -36,14 +41,16 @@ import com.oop.payday.model.helper.HelperCard;
  * 실제 환금이 있을 때 LLM 으로 리액션 대사만 덧붙인다(수는 그대로 S8). 오류 시 조용히 S8 수로 폴백하고
  * 다음 턴에 다시 시도한다.
  */
-public final class LlmBotStrategy implements BotStrategy {
+public final class LlmBotStrategy implements BotStrategy, GameListener {
 
     private static final int MAX_CHAT_TURNS = 8;
+    private static final int MAX_NARRATIVE_ROUNDS = 8;
 
     private static final String PERSONA = """
         너는 보드게임 '도적단의 월급날'에서 사람과 1:1로 겨루는 AI다.
         이 대화는 같은 게임 안에서 이어지는 멀티턴 대화다. 이전 대사의 말투와 블러핑을 기억하되, 현재 손패/보관/코인이 항상 최신 정보다.
         이전에 말한 뒷면 추측이나 허세를 사실처럼 확정하지 말고, 분위기와 말버릇만 이어간다.
+        프롬프트에 [이전 흐름]이 있으면 이전 라운드의 분배 결과, 도우미 발동, 환금, 슬쩍하기 같은 주요 사건이 기록되어 있다. 이 내용은 모두 공개 정보이므로 자연스럽게 근거로 쓸 수 있다. 단, 목록을 그대로 낭독하지 말고 현재 수나 판세와 연결해 활용한다.
         너는 캐릭터를 연기하는 NPC가 아니라, 실제로 이 판을 보고 당신과 겨루는 플레이어처럼 말한다.
         목표는 자연스럽고 재밌는 한마디와 "나 vs 당신" 대결 구도다. 과한 세계관 연기, 중계자 흉내, 관중석/하이라이트 같은 무대 표현은 피한다.
         말투는 예의 있지만 은근히 장난치는 플레이어: 카드와 코인을 보고 판단하고, 가끔 허세나 블러핑을 섞는다.
@@ -57,11 +64,9 @@ public final class LlmBotStrategy implements BotStrategy {
         - 매번 아래 셋 중 2개 이상을 섞는다: 내 수 선언, 공개 정보 근거, 당신 선택 압박, 이전 대사 콜백, 짧은 허세/블러핑.
         - 당신을 깎아내리기보다 수 싸움을 세운다. "이건 못 막죠"보다 "이건 막으려면 꽤 계산하셔야 할 겁니다"가 좋다.
         - 한 번 한 블러핑이나 표현은 다음 대사에서 살짝 이어받을 수 있다. 단, 예전 판 정보가 현재 사실인 것처럼 말하지 않는다.
-        - 감탄사는 짧게만 쓴다. 대사는 게임판 위에서 실제 사람이 툭 던지는 말처럼 남긴다.
+        - 대사는 게임판 위에서 실제 사람이 툭 던지는 말처럼 남긴다.
 
         분석가 도발 톤:
-        - 가끔은 짧은 판정으로 시작한다: "분석:", "판정:", "교환 성공:", "작은 실책입니다.", "아직 체크메이트는 아니지만요."
-        - 형식은 판정 → 공개 정보 근거 → 예의 있는 한마디 압박 순서가 좋다.
         - 종종 이번 턴의 한 수에 짧은 작전명을 붙인다: "이번 수는 '비 오는 날의 왼쪽'입니다", "제 선택은 '안전한 욕심'입니다"처럼.
         - 작전명은 카드/코인/왼쪽/오른쪽 상황에서 만든다. 포켓몬·아이템·기술명처럼 게임 밖 고유명사는 쓰지 않는다.
         - "완벽한 Checkmate" 같은 표현은 정말 코인 압박이 크거나 선택지가 크게 좁아진 상황에서만 드물게 쓴다.
@@ -70,19 +75,20 @@ public final class LlmBotStrategy implements BotStrategy {
         - 당신의 현재 상태를 한 문장으로 진단할 수 있다: "지금 당신은 고를 수는 있지만 편하게 고르긴 어렵습니다"처럼.
 
         정보 공개 규칙:
-        - 공개 정보: 앞면 카드, 묶음 크기, 뒷면 카드가 있다는 사실, 내 보관 카드, 당신 보관 카드, 현재 코인, 승리 코인.
+        - 공개 정보: 앞면 카드, 묶음 크기, 뒷면 카드가 있다는 사실, 내 보관 카드, 당신 보관 카드, 현재 코인, 승리 코인, [이전 흐름]의 분배·도우미 발동·환금·슬쩍하기 기록.
         - 보관 카드는 전부 앞면 공개 정보다. 내 보관과 당신 보관은 자유롭게 근거로 말해도 된다.
         - 비공개 정보: 뒷면 카드의 색/숫자/저주/와일드 여부, 숨긴 정확한 인덱스, 당신이 아직 볼 수 없는 실제 의도.
         - line 은 당신에게 들리는 말이다. 비공개 정보는 절대 사실처럼 말하지 않는다.
+        - 도우미를 발동했거나 큰 환금이 있었다면, [이전 흐름]을 근거로 압박·자책·놀림을 섞을 수 있다. 단, 현재 보관/코인이 최신 정보이므로 과거 이벤트를 낭독하기보다 지금 판세와 연결해 언급한다.
         - 블러핑은 좋다. 다만 "저 뒷면은 빨강 5입니다"처럼 정체를 밝히지 말고, "묵직한 게 숨어 있을지도 모르죠", "거긴 건드리면 손이 좀 떨릴 겁니다"처럼 애매하게 겁주거나 유혹해라.
         - S8 조언과 faceDown 값은 수를 고르기 위한 내부 정보다. line 에서는 그것을 노출하지 말고 연기만 해라.
 
         따옴표와 이모지는 가끔 써도 된다. 이모지는 한 줄에 0~1개만, 따옴표는 짧은 강조에만 쓴다.
+        ㅋㅋ, ㅎㅎ 같은 채팅 표현은 존댓말 안에서도 자연스럽게 써도 된다. 단, 매 대사마다 넣지 말고 진짜 웃길 때만.
         예: 왼쪽 묶음 공개 카드가 제 보관이랑 꽤 잘 붙습니다. 뒷면은 뭐, 상상하시는 쪽이 더 무서울 수도 있죠 😏
+        예: 이거 저한테 너무 좋은 거 아닌가요 ㅋㅋ 감사히 가져가겠습니다.
         예: 오른쪽은 당장 코인 냄새가 납니다. 당신 보관이랑도 살짝 엇나가 보여서, 이 정도면 가져갈 만합니다.
         예: 방금은 넘기셨지만, 이번 왼쪽 묶음은 계산 좀 하셔야 합니다. 제 보관이랑 맞물리면 흐름이 꽤 귀찮아지거든요.
-        예: 판정: 작은 실책입니다. 당신 보관이 그 색을 못 살리는 동안, 저는 이쪽 공개 카드로 코인 각을 먼저 열겠습니다.
-        예: 분석 들어갑니다. 왼쪽은 미끼처럼 보이지만, 오른쪽을 넘기는 순간 제 보관이 꽤 편해집니다.
         예: 이번 수는 "비 오는 날의 왼쪽"입니다. 공개 카드만 봐도 당신이 편하게 고르긴 어렵고, 코인 압박은 제가 먼저 가져가겠습니다.
         예: 지금 당신은 선택지가 있어 보여도 둘 다 찝찝한 상태입니다. 그래서 저는 이 오른쪽 묶음으로 안전하게 욕심을 내보겠습니다.
         대사에서는 묶음을 0번/1번이나 bundle 번호로 부르지 말고, 반드시 왼쪽/오른쪽이라고 말한다.
@@ -131,12 +137,18 @@ public final class LlmBotStrategy implements BotStrategy {
     private final GeminiClient gemini;
     private final S8BotStrategy s8 = new S8BotStrategy();
     private final List<GeminiClient.Turn> chatHistory = new ArrayList<>();
-    private PendingSplitOffer pendingSplitOffer;
+    private final List<String> gameNarrative = new ArrayList<>();
+    private Team myTeam;
+    private Team opponentTeam;
+    private String myTeamName;
+    private String opponentTeamName;
+    private PendingDistribution pendingDistribution;
 
-    private record PendingSplitOffer(List<Card> left, List<Card> right, Card faceDown) {
-        PendingSplitOffer {
-            left = List.copyOf(left);
-            right = List.copyOf(right);
+    private record PendingDistribution(String chosenSide, boolean iChose,
+            List<Card> myCards, List<Card> opponentCards) {
+        PendingDistribution {
+            myCards = List.copyOf(myCards);
+            opponentCards = List.copyOf(opponentCards);
         }
     }
 
@@ -179,20 +191,13 @@ public final class LlmBotStrategy implements BotStrategy {
             JsonObject move = generate(splitPrompt(context, advice), SPLIT_SCHEMA);
             SplitDecision chosen = parseSplit(move, context.hand());
             SplitDecision decision = (chosen != null && chosen.isValid()) ? chosen : advice;
-            rememberSplitOffer(decision);
             emitLine(move);
             return decision;
         } catch (GeminiClient.QuotaExhaustedException | GeminiClient.LlmUnavailableException e) {
-            rememberSplitOffer(advice);
             return advice;
         } catch (RuntimeException e) {
-            rememberSplitOffer(advice);
             return advice;
         }
-    }
-
-    private void rememberSplitOffer(SplitDecision decision) {
-        pendingSplitOffer = new PendingSplitOffer(decision.bundleA(), decision.bundleB(), decision.faceDownCard());
     }
 
     private SplitDecision parseSplit(JsonObject move, List<Card> hand) {
@@ -225,7 +230,7 @@ public final class LlmBotStrategy implements BotStrategy {
 
     private String splitPrompt(SplitContext ctx, SplitDecision advice) {
         List<Card> hand = ctx.hand();
-        return """
+        return gameContext() + """
             [꾀부리기] 손패 5장을 두 묶음으로 나누고 정확히 1장을 뒷면으로 둔다. 당신이 한 묶음을 고르고 나는 나머지를 갖는다.
             - bundleA: 왼쪽 묶음의 손패 인덱스 배열(나머지는 자동으로 오른쪽 묶음). 두 묶음 크기는 1+4 또는 2+3 이어야 한다.
             - faceDown: 뒷면으로 둘 손패 인덱스 1개.
@@ -279,7 +284,7 @@ public final class LlmBotStrategy implements BotStrategy {
             bundles.append("  ").append(sideName(i)).append(": 공개[").append(cards(b.visibleCards())).append("]")
                     .append(b.hasFaceDown() ? " + 뒷면 1장" : "").append('\n');
         }
-        return """
+        return gameContext() + """
             [분배] 두 묶음 중 하나를 골라 가져간다(나머지는 당신 몫). 왼쪽은 bundle=0, 오른쪽은 bundle=1 로 출력한다.
             %s내 보관: %s
             당신 보관: %s
@@ -313,118 +318,66 @@ public final class LlmBotStrategy implements BotStrategy {
     @Override
     public List<CashInAction> planCashIn(CashInContext context, int opponentCoins) {
         List<CashInAction> plan = s8.planCashIn(context, opponentCoins);
-        speakOpponentChoiceReaction(context, opponentCoins);
+        speakDistributionReaction(context, opponentCoins);
         return plan;
     }
 
-    private void speakOpponentChoiceReaction(CashInContext ctx, int opponentCoins) {
-        PendingSplitOffer offer = pendingSplitOffer;
-        pendingSplitOffer = null;
-        if (skipLlm() || offer == null) {
-            return;
-        }
-        String keptSide = keptSide(offer, ctx.holdings());
-        if (keptSide == null) {
+    private void speakDistributionReaction(CashInContext ctx, int opponentCoins) {
+        PendingDistribution dist = pendingDistribution;
+        pendingDistribution = null;
+        if (skipLlm() || dist == null) {
             return;
         }
         try {
-            emitLine(generate(choiceReactionPrompt(ctx, opponentCoins, offer, keptSide), LINE_SCHEMA));
+            emitLine(generate(distributionReactionPrompt(ctx, opponentCoins, dist), LINE_SCHEMA));
         } catch (GeminiClient.QuotaExhaustedException | GeminiClient.LlmUnavailableException e) {
         } catch (RuntimeException e) {
         }
     }
 
-    private String choiceReactionPrompt(CashInContext ctx, int opponentCoins, PendingSplitOffer offer, String keptSide) {
-        String opponentSide = keptSide.equals("left") ? "오른쪽 묶음" : "왼쪽 묶음";
-        List<Card> opponentCards = keptSide.equals("left") ? offer.right() : offer.left();
-        List<Card> myCards = keptSide.equals("left") ? offer.left() : offer.right();
-        CardStats opponentStats = stats(opponentCards);
-        CardStats myStats = stats(myCards);
-        String resultRead = choiceResultRead(opponentCards, myCards, offer.faceDown(), opponentStats, myStats);
-        return """
-            [당신 선택 리액션] 직전 분배에서 당신이 %s을 가져갔고, 나는 %s을 받았다. 이제 그 선택에 반응하는 대사만 친다.
-            당신이 가져간 카드(이제 공개됨): %s
-            내가 받은 카드(이제 공개됨): %s
+    private String distributionReactionPrompt(CashInContext ctx, int opponentCoins, PendingDistribution dist) {
+        CardStats myStats = stats(dist.myCards());
+        CardStats opponentStats = stats(dist.opponentCards());
+        String resultRead = distributionResultRead(myStats, opponentStats);
+        String choseWho = dist.iChose() ? "내가" : "당신이";
+        return gameContext() + """
+            [분배 리액션] 방금 %s %s 묶음을 선택했다. 카드가 공개됐으니 그 결과에 반응하는 대사만 친다.
+            내가 받은 카드: %s
+            당신이 받은 카드: %s
             결과 판정: %s
             내 보관: %s
             코인 — 나:%d 당신:%d (승리 %d)
-            line 은 당신의 선택을 받아치는 존댓말 리액션으로 써라. 당신이 잘 골랐으면 인정하되 다음 압박을 예고하고,
-            애매하게 골랐으면 "판정:"이나 "분석:"으로 짧게 찌른다. 환금 설명은 하지 마라.
-            저주받은 그림은 나쁜 카드다. 당신이 내 뒷면 저주 블러핑에 당해 저주를 가져갔으면, 예의는 지키되 살짝 놀리듯 말해라.
-            굉장한 보물은 좋은 카드다. 당신이 굉장한 보물을 가져갔으면, 부러움이나 분한 반응을 먼저 보이고 다음 수로 만회하겠다고 해라.
-            내가 저주를 피하고 당신이 나쁜 쪽을 고른 결과면 "교환 성공:"처럼 짧게 조롱해도 좋다.
-            반대로 내가 저주를 받았거나 당신이 굉장한 보물을 챙겼으면 허세보다 아쉬움, 분함, 인정이 먼저다.
-            방금 공개된 카드와 현재 보관/코인만 근거로 삼고, 없는 카드나 미래 환금 결과를 지어내지 마라.
+            line 은 방금 분배 결과를 보고 실제 플레이어처럼 툭 던지는 존댓말 리액션으로 써라.
+            내가 잘 받았으면 자신 있게, 못 받았으면 아쉬움이나 만회 의지를 드러낸다.
+            당신이 잘 골랐으면 인정하되 다음 압박을 예고하고,
+            애매하게 골랐으면 짧게 찌른다. 환금 계획은 말하지 마라.
+            저주받은 그림은 나쁜 카드, 굉장한 보물은 좋은 카드다. 유리하면 은근히 자신 있게, 불리하면 솔직하게 분한 반응을 먼저 보여라.
+            이전 라운드 흐름이 있다면 현재 결과와 연결해도 좋다.
             출력은 JSON 하나: {"line":"대사"}
-            """.formatted(opponentSide, sideName(keptSide), cards(opponentCards), cards(myCards), resultRead,
-                cards(ctx.holdings()), ctx.teamCoins(), opponentCoins, ctx.winningCoins());
+            """.formatted(choseWho, dist.chosenSide(), cards(dist.myCards()), cards(dist.opponentCards()),
+                resultRead, cards(ctx.holdings()), ctx.teamCoins(), opponentCoins, ctx.winningCoins());
     }
 
-    private static String choiceResultRead(List<Card> opponentCards, List<Card> myCards, Card faceDown,
-            CardStats opponentStats, CardStats myStats) {
-        boolean opponentTookHidden = containsCard(opponentCards, faceDown);
-        boolean myTookHidden = containsCard(myCards, faceDown);
-        boolean hiddenCurse = faceDown instanceof CursedCard;
-        boolean hiddenWild = faceDown.isWild();
-
-        if (opponentTookHidden && hiddenCurse) {
-            return "당신이 내가 숨긴 저주받은 그림을 가져갔다. 뒷면 저주 블러핑에 낚인 결과라 살짝 놀려도 된다.";
+    private static String distributionResultRead(CardStats myStats, CardStats opponentStats) {
+        if (myStats.hasWild() && opponentStats.hasCurse()) {
+            return "내가 굉장한 보물을, 당신이 저주를 가져갔다. 크게 유리한 결과. 자신 있게 받아쳐도 된다.";
         }
-        if (opponentTookHidden && hiddenWild) {
-            return "당신이 내가 숨긴 굉장한 보물을 가져갔다. 좋은 카드를 뺏긴 상황이므로 부러움이나 분함을 드러내라.";
-        }
-        if (myTookHidden && hiddenCurse) {
-            return "내가 숨긴 저주받은 그림을 결국 내가 받았다. 허세를 줄이고 아쉬움이나 만회 의지를 말해라.";
-        }
-        if (myTookHidden && hiddenWild) {
-            return "내가 숨긴 굉장한 보물을 지켰다. 당신의 선택을 읽은 듯 자신 있게 받아쳐도 된다.";
-        }
-        if (opponentStats.hasCurse() && myStats.hasWild()) {
-            return "당신은 저주받은 그림을, 나는 굉장한 보물을 가져갔다. 크게 유리한 교환처럼 놀려도 된다.";
-        }
-        if (opponentStats.hasWild() && myStats.hasCurse()) {
-            return "당신은 굉장한 보물을, 나는 저주받은 그림을 가져갔다. 크게 당한 상황이므로 분한 반응을 보여라.";
+        if (myStats.hasCurse() && opponentStats.hasWild()) {
+            return "내가 저주를, 당신이 굉장한 보물을 가져갔다. 크게 불리한 결과. 분한 반응을 먼저 보여라.";
         }
         if (opponentStats.hasCurse() && !myStats.hasCurse()) {
-            return "당신이 저주받은 그림을 가져갔고 나는 저주를 피했다. 예의는 지키되 살짝 놀려도 된다.";
-        }
-        if (opponentStats.hasWild() && !myStats.hasWild()) {
-            return "당신이 굉장한 보물을 가져갔다. 좋은 카드를 빼앗긴 상황이므로 부러움이나 분함을 드러내라.";
+            return "당신에게 저주가 갔고 나는 피했다. 살짝 놀려도 된다.";
         }
         if (myStats.hasCurse() && !opponentStats.hasCurse()) {
-            return "내가 저주받은 그림을 받았다. 허세를 줄이고 아쉬움이나 만회 의지를 말해라.";
+            return "내가 저주를 받았다. 아쉬움이나 만회 의지를 드러내라.";
         }
         if (myStats.hasWild() && !opponentStats.hasWild()) {
-            return "내가 굉장한 보물을 확보했다. 당신의 블러핑을 넘긴 듯 자신 있게 받아쳐도 된다.";
+            return "내가 굉장한 보물을 확보했다. 자신 있게 받아쳐도 된다.";
         }
-        return "특수 카드로 크게 갈린 선택은 아니다. 공개 카드와 보관 시너지를 근거로 짧게 평가하라.";
-    }
-
-    private static String keptSide(PendingSplitOffer offer, List<Card> holdings) {
-        boolean hasLeft = containsAllCards(holdings, offer.left());
-        boolean hasRight = containsAllCards(holdings, offer.right());
-        if (hasLeft == hasRight) {
-            return null;
+        if (opponentStats.hasWild() && !myStats.hasWild()) {
+            return "당신이 굉장한 보물을 챙겼다. 부러움이나 분함을 드러내라.";
         }
-        return hasLeft ? "left" : "right";
-    }
-
-    private static boolean containsAllCards(List<Card> haystack, List<Card> needles) {
-        for (Card needle : needles) {
-            if (!containsCard(haystack, needle)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean containsCard(List<Card> haystack, Card needle) {
-        for (Card card : haystack) {
-            if (card.id() == needle.id()) {
-                return true;
-            }
-        }
-        return false;
+        return "특수 카드로 크게 갈린 결과는 아니다. 공개된 카드와 현재 보관 시너지를 근거로 짧게 평가하라.";
     }
 
     private static CardStats stats(List<Card> cards) {
@@ -538,9 +491,6 @@ public final class LlmBotStrategy implements BotStrategy {
         return index == 0 ? "왼쪽 묶음" : "오른쪽 묶음";
     }
 
-    private static String sideName(String side) {
-        return "left".equals(side) ? "왼쪽 묶음" : "오른쪽 묶음";
-    }
 
     /** S8 추천 묶음을 손패 인덱스 배열 문자열(예: "[0, 2]")로. */
     private static String indices(List<Card> sub, List<Card> hand) {
@@ -559,5 +509,131 @@ public final class LlmBotStrategy implements BotStrategy {
             }
         }
         return -1;
+    }
+
+    // ─── 게임 종료 대사 ────────────────────────────────────────────────────────────
+
+    /**
+     * 게임 종료 후 한 마디를 비동기로 요청한다. 응답이 오면 {@code callback} 을 호출한다.
+     * API 키 없음·오류면 조용히 생략한다. FX 스레드가 아닌 곳에서도 호출 가능(가상 스레드로 실행).
+     */
+    public void requestEndLine(Team winner, Consumer<String> callback) {
+        if (skipLlm() || myTeam == null) return;
+        boolean won = myTeam == winner;
+        int myCoins = myTeam.coins();
+        int oppCoins = opponentTeam != null ? opponentTeam.coins() : 0;
+        Thread.ofVirtual().name("llm-end-line").start(() -> {
+            try {
+                String prompt = gameContext() + """
+                    [게임 종료] 최종 코인 — 나:%d 당신:%d. %s
+                    게임이 완전히 끝났다. 전체 흐름을 돌아보며 딱 한 마디만 남긴다.
+                    이겼으면 여유 있게, 졌으면 아쉬움을 솔직하게 드러낸다.
+                    인상적이었던 수나 판세 전환을 하나 짚어도 좋다.
+                    line 은 한국어 60~120자 1~2문장 존댓말.
+                    출력은 JSON 하나: {"line":"대사"}
+                    """.formatted(myCoins, oppCoins, won ? "내가 이겼다." : "당신이 이겼다.");
+                JsonObject resp = generate(prompt, LINE_SCHEMA);
+                if (resp.has("line")) {
+                    String line = resp.get("line").getAsString().trim();
+                    if (!line.isBlank()) callback.accept(line);
+                }
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    // ─── 게임 흐름 추적(GameListener) ─────────────────────────────────────────────
+
+    /**
+     * 팀 이름을 주입한다. 게임 시작 전 컨트롤러가 호출하며, 이후 {@link #onPhaseChanged}/{@link #onDistributed}
+     * 에서 "나/당신" 레이블을 붙이는 데 쓴다.
+     */
+    public void setTeams(Team myTeam, Team opponentTeam) {
+        this.myTeam = myTeam;
+        this.myTeamName = myTeam.name();
+        this.opponentTeam = opponentTeam;
+        this.opponentTeamName = opponentTeam.name();
+    }
+
+    private String playerLabel(Player player) {
+        if (myTeam != null && myTeam.members().contains(player)) return "내가";
+        if (opponentTeam != null && opponentTeam.members().contains(player)) return "당신이";
+        return player.name() + "이";
+    }
+
+    @Override
+    public void onPhaseChanged(Phase phase, int round, Team splitTeam) {
+        if (phase != Phase.SCHEME) return;
+        pruneNarrativeIfNeeded();
+        gameNarrative.add("── R" + round + " (" + teamLabel(splitTeam) + " 분할) ──");
+    }
+
+    @Override
+    public void onDistributed(int chosenIndex, Team chooseTeam, List<Card> chooseCards,
+            Team splitTeam, List<Card> splitCards) {
+        String side = chosenIndex == 0 ? "왼쪽" : "오른쪽";
+        boolean iChose = chooseTeam.name().equals(myTeamName);
+        if (iChose) {
+            gameNarrative.add("내가 " + side + " 묶음 선택: " + cards(chooseCards)
+                    + " / 당신 획득: " + cards(splitCards));
+        } else {
+            gameNarrative.add("당신이 " + side + " 묶음 선택: " + cards(chooseCards)
+                    + " / 내 획득: " + cards(splitCards));
+        }
+        List<Card> myCards = iChose ? chooseCards : splitCards;
+        List<Card> opponentCards = iChose ? splitCards : chooseCards;
+        pendingDistribution = new PendingDistribution(side, iChose, myCards, opponentCards);
+    }
+
+    @Override
+    public void onHelperUsed(Player player, HelperCard helper, String message,
+            List<Card> drawn, List<Card> discarded) {
+        StringBuilder entry = new StringBuilder(playerLabel(player))
+                .append(" 도우미 '").append(helper.displayName()).append("' 발동");
+        if (!drawn.isEmpty()) {
+            entry.append(" → 획득: ").append(cards(drawn));
+        }
+        if (!discarded.isEmpty()) {
+            entry.append(" → 처분: ").append(cards(discarded));
+        }
+        gameNarrative.add(entry.toString());
+    }
+
+    @Override
+    public void onCashIn(Player player, TreasureSet set) {
+        gameNarrative.add(playerLabel(player) + " 환금: " + set.type().korean()
+                + " " + set.size() + "장 → +" + set.coin() + "코인");
+    }
+
+    @Override
+    public void onStealActivated(Player player, Card drawnCard) {
+        if (drawnCard != null) {
+            gameNarrative.add(playerLabel(player) + " 슬쩍하기 → " + drawnCard.displayName() + " 획득");
+        } else {
+            gameNarrative.add(playerLabel(player) + " 슬쩍하기 → 덱 소진으로 실패");
+        }
+    }
+
+    private void pruneNarrativeIfNeeded() {
+        long roundMarkers = gameNarrative.stream().filter(l -> l.startsWith("──")).count();
+        while (roundMarkers >= MAX_NARRATIVE_ROUNDS) {
+            int i = 0;
+            while (i < gameNarrative.size() && !gameNarrative.get(i).startsWith("──")) i++;
+            int end = i + 1;
+            while (end < gameNarrative.size() && !gameNarrative.get(end).startsWith("──")) end++;
+            gameNarrative.subList(i, end).clear();
+            roundMarkers--;
+        }
+    }
+
+    private String teamLabel(Team team) {
+        if (myTeamName != null && myTeamName.equals(team.name())) return "내가";
+        if (opponentTeamName != null && opponentTeamName.equals(team.name())) return "당신이";
+        return team.name();
+    }
+
+    private String gameContext() {
+        if (gameNarrative.isEmpty() || myTeamName == null) return "";
+        return "[이전 흐름]\n" + String.join("\n", gameNarrative) + "\n\n";
     }
 }

@@ -240,7 +240,7 @@ final class BoardAnimator {
         host.toFront();
         activeSpeech = host;
 
-        long pauseMs = Math.max(4000, Math.min(12000, line.trim().length() * 110L));
+        long pauseMs = Math.max(3000, Math.min(5000, line.trim().length() * 110L));
         SequentialTransition seq = new SequentialTransition(
             fade(host, 0, 1, 200),
             new PauseTransition(Duration.millis(pauseMs)),

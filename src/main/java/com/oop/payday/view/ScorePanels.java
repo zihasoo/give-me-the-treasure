@@ -1,5 +1,7 @@
 package com.oop.payday.view;
 
+import java.util.function.Consumer;
+
 import com.oop.payday.game.Team;
 
 import javafx.geometry.Insets;
@@ -21,7 +23,10 @@ public final class ScorePanels {
 
     private ScorePanels() {}
 
-    public static Node gameOver(Team teamA, Team teamB, Team winner, boolean showRestart,
+    /** {@link #gameOver} 반환값. LLM 봇 대사가 도착하면 {@code setBotQuote}로 패널에 표시한다. */
+    public record GameOverPanel(Node root, Consumer<String> setBotQuote) {}
+
+    public static GameOverPanel gameOver(Team teamA, Team teamB, Team winner, boolean showRestart,
             Runnable onRestart, Runnable onExit) {
         VBox root = Panels.panelRoot("게임 종료");
         root.setSpacing(16);
@@ -33,6 +38,16 @@ public final class ScorePanels {
         VBox scoreColumn = new VBox(12, topCard, bottomCard);
         scoreColumn.setAlignment(Pos.CENTER);
         scoreColumn.setMaxWidth(440);
+
+        // LLM 봇 마지막 대사. 응답이 오면 setBotQuote()로 채운다.
+        Label botQuote = new Label();
+        botQuote.setWrapText(true);
+        botQuote.setMaxWidth(400);
+        botQuote.setVisible(false);
+        botQuote.setStyle(
+            "-fx-text-fill: #b9e6d4; -fx-font-size: 14px;"
+            + " -fx-font-style: italic;"
+            + " -fx-font-family: 'Malgun Gothic','Segoe UI',sans-serif;");
 
         Button exit = new Button("나가기");
         exit.getStyleClass().add("menu-button");
@@ -49,13 +64,17 @@ public final class ScorePanels {
         }
         actions.getChildren().add(exit);
 
-        root.getChildren().addAll(scoreColumn, actions);
+        root.getChildren().addAll(scoreColumn, botQuote, actions);
         if (!showRestart) {
             Label note = new Label("호스트가 다시 시작할 수 있습니다.");
             note.getStyleClass().add("guide");
             root.getChildren().add(note);
         }
-        return root;
+
+        return new GameOverPanel(root, line -> {
+            botQuote.setText(line);
+            botQuote.setVisible(true);
+        });
     }
 
     private static VBox buildScoreCard(Team team, boolean win, boolean isBottom) {
