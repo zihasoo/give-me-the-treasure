@@ -49,8 +49,8 @@ public final class SplitPanelBuilder {
         Map<Card, Node> nodeOf = new HashMap<>();
         Card[] faceDown = new Card[1];
 
-        FlowPane bundleA = splitDropZone("묶음 ①");
-        FlowPane bundleB = splitDropZone("묶음 ②");
+        FlowPane bundleA = splitDropZone("왼쪽 묶음");
+        FlowPane bundleB = splitDropZone("오른쪽 묶음");
 
         Runnable refresh = () -> {
             bundleA.getChildren().clear();
@@ -75,8 +75,8 @@ public final class SplitPanelBuilder {
         refresh.run();
 
         HBox bundlesRow = new HBox(18,
-                splitBundleBox("묶음 ①", bundleA),
-                splitBundleBox("묶음 ②", bundleB));
+                splitBundleBox("왼쪽 묶음", bundleA),
+                splitBundleBox("오른쪽 묶음", bundleB));
         bundlesRow.setAlignment(Pos.CENTER);
 
         Button done = new Button("분할 완료");

@@ -59,13 +59,13 @@ public class MainMenuController {
         showJoinInput();
     }
 
-    // ── 토이 봇과 1v1 (LLM 봇 전용 진입점) ──────────────────────────
+    // ── LLM 봇과 1v1 (LLM 봇 전용 진입점) ──────────────────────────
 
     @FXML
     private void onLlmGame() {
         VBox panel = lobbyPanel();
 
-        Label title = new Label("토이 봇과 1v1");
+        Label title = new Label("LLM 봇과 1v1");
         title.getStyleClass().add("lobby-title");
 
         Label hint = new Label("제미나이 API 키를 입력하세요:");

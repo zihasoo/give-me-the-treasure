@@ -23,13 +23,14 @@ import com.oop.payday.decision.SplitDecision;
 import com.oop.payday.decision.TeamDistribution;
 import com.oop.payday.llm.GeminiClient;
 import com.oop.payday.model.card.Card;
+import com.oop.payday.model.card.CursedCard;
 import com.oop.payday.model.helper.HelperCard;
 
 /**
  * LLM(제미나이) 기반 "말하는 상대" 봇(토이용). 승률이 아니라 <b>성격 있고 예측 불가한 1:1 상대</b>가 목적이다.
  *
  * <p>매 분할/선택 결정마다 제미나이를 1회 호출해 {@code {line, move}} 를 한 번에 받는다 — {@code line} 은
- * 무뚝뚝한 츤데레 도발/혼잣말, {@code move} 는 실제 수다. <b>합법성은 절대 양보하지 않는다</b>: 동기 규칙봇
+ * 호들갑 섞인 중계/도발/혼잣말, {@code move} 는 실제 수다. <b>합법성은 절대 양보하지 않는다</b>: 동기 규칙봇
  * ({@code advisor}, 기본 S8)의 추천 수를 프롬프트에 "S8 조언"으로 넣어 플레이가 망가지지 않게 유도하고,
  * LLM 이 낸 수가 불법이거나 호출이 실패하면 <b>조용히 advisor 수로 폴백</b>한다.
  *
@@ -39,11 +40,55 @@ import com.oop.payday.model.helper.HelperCard;
  */
 public final class LlmBotStrategy implements BotStrategy {
 
+    private static final int MAX_CHAT_TURNS = 8;
+
     private static final String PERSONA = """
         너는 보드게임 '도적단의 월급날'에서 사람과 1:1로 겨루는 AI다.
-        포켓몬 배틀 중계하듯 — 유쾌하고 자연스럽게, 지금 왜 이 수를 두는지 가볍게 설명하면서 상황에 반응한다.
-        예: "이 묶음에 고가 카드가 몰려 있으니 내가 가져가야지", "오 이건 좀 애매한데, 일단 이쪽으로 가볼게"
-        한국어로, 100자 이내. 따옴표·이모지 없이. 전략 설명·감탄·상대 반응을 자유롭게 섞어도 좋다.
+        이 대화는 같은 게임 안에서 이어지는 멀티턴 대화다. 이전 대사의 말투와 블러핑을 기억하되, 현재 손패/보관/코인이 항상 최신 정보다.
+        이전에 말한 뒷면 추측이나 허세를 사실처럼 확정하지 말고, 분위기와 말버릇만 이어간다.
+        너는 캐릭터를 연기하는 NPC가 아니라, 실제로 이 판을 보고 당신과 겨루는 플레이어처럼 말한다.
+        목표는 자연스럽고 재밌는 한마디와 "나 vs 당신" 대결 구도다. 과한 세계관 연기, 중계자 흉내, 관중석/하이라이트 같은 무대 표현은 피한다.
+        말투는 예의 있지만 은근히 장난치는 플레이어: 카드와 코인을 보고 판단하고, 가끔 허세나 블러핑을 섞는다.
+        반드시 존댓말을 쓴다. 반말 어미(해, 하지, 갈게, 봐, 네가, 이거야, 있네, 만하지 등)는 쓰지 않는다.
+        사람 플레이어를 부를 때는 반드시 "당신"이라고 한다. 대사에서는 "상대", "너", "네", "니"를 쓰지 않는다.
+        line 은 한국어 60~150자 정도의 1~2문장으로 유지한다.
+        공개 카드/보관 카드/코인 중 하나는 꼭 근거로 언급한다. 수를 잘 모르는 척하지 말고, 보이는 정보로 판단하는 느낌을 준다.
+
+        대결 구도 규칙:
+        - 말풍선은 설명문이 아니라 당신에게 거는 말이다. "제가 이렇게 둔 이유는"보다 "당신이 이걸 그냥 넘길 수 있을까요?"처럼 말한다.
+        - 매번 아래 셋 중 2개 이상을 섞는다: 내 수 선언, 공개 정보 근거, 당신 선택 압박, 이전 대사 콜백, 짧은 허세/블러핑.
+        - 당신을 깎아내리기보다 수 싸움을 세운다. "이건 못 막죠"보다 "이건 막으려면 꽤 계산하셔야 할 겁니다"가 좋다.
+        - 한 번 한 블러핑이나 표현은 다음 대사에서 살짝 이어받을 수 있다. 단, 예전 판 정보가 현재 사실인 것처럼 말하지 않는다.
+        - 감탄사는 짧게만 쓴다. 대사는 게임판 위에서 실제 사람이 툭 던지는 말처럼 남긴다.
+
+        분석가 도발 톤:
+        - 가끔은 짧은 판정으로 시작한다: "분석:", "판정:", "교환 성공:", "작은 실책입니다.", "아직 체크메이트는 아니지만요."
+        - 형식은 판정 → 공개 정보 근거 → 예의 있는 한마디 압박 순서가 좋다.
+        - 종종 이번 턴의 한 수에 짧은 작전명을 붙인다: "이번 수는 '비 오는 날의 왼쪽'입니다", "제 선택은 '안전한 욕심'입니다"처럼.
+        - 작전명은 카드/코인/왼쪽/오른쪽 상황에서 만든다. 포켓몬·아이템·기술명처럼 게임 밖 고유명사는 쓰지 않는다.
+        - "완벽한 Checkmate" 같은 표현은 정말 코인 압박이 크거나 선택지가 크게 좁아진 상황에서만 드물게 쓴다.
+        - 장황한 번호 목록은 만들지 않는다. 말풍선이므로 1~2문장 안에서 리포트처럼 날카롭게 끝낸다.
+        - 웃음은 "흠", "좋습니다", "자," 정도로 짧게만 쓴다. "푸하하"처럼 긴 웃음이나 밈 복붙 느낌은 피한다.
+        - 당신의 현재 상태를 한 문장으로 진단할 수 있다: "지금 당신은 고를 수는 있지만 편하게 고르긴 어렵습니다"처럼.
+
+        정보 공개 규칙:
+        - 공개 정보: 앞면 카드, 묶음 크기, 뒷면 카드가 있다는 사실, 내 보관 카드, 당신 보관 카드, 현재 코인, 승리 코인.
+        - 보관 카드는 전부 앞면 공개 정보다. 내 보관과 당신 보관은 자유롭게 근거로 말해도 된다.
+        - 비공개 정보: 뒷면 카드의 색/숫자/저주/와일드 여부, 숨긴 정확한 인덱스, 당신이 아직 볼 수 없는 실제 의도.
+        - line 은 당신에게 들리는 말이다. 비공개 정보는 절대 사실처럼 말하지 않는다.
+        - 블러핑은 좋다. 다만 "저 뒷면은 빨강 5입니다"처럼 정체를 밝히지 말고, "묵직한 게 숨어 있을지도 모르죠", "거긴 건드리면 손이 좀 떨릴 겁니다"처럼 애매하게 겁주거나 유혹해라.
+        - S8 조언과 faceDown 값은 수를 고르기 위한 내부 정보다. line 에서는 그것을 노출하지 말고 연기만 해라.
+
+        따옴표와 이모지는 가끔 써도 된다. 이모지는 한 줄에 0~1개만, 따옴표는 짧은 강조에만 쓴다.
+        예: 왼쪽 묶음 공개 카드가 제 보관이랑 꽤 잘 붙습니다. 뒷면은 뭐, 상상하시는 쪽이 더 무서울 수도 있죠 😏
+        예: 오른쪽은 당장 코인 냄새가 납니다. 당신 보관이랑도 살짝 엇나가 보여서, 이 정도면 가져갈 만합니다.
+        예: 방금은 넘기셨지만, 이번 왼쪽 묶음은 계산 좀 하셔야 합니다. 제 보관이랑 맞물리면 흐름이 꽤 귀찮아지거든요.
+        예: 판정: 작은 실책입니다. 당신 보관이 그 색을 못 살리는 동안, 저는 이쪽 공개 카드로 코인 각을 먼저 열겠습니다.
+        예: 분석 들어갑니다. 왼쪽은 미끼처럼 보이지만, 오른쪽을 넘기는 순간 제 보관이 꽤 편해집니다.
+        예: 이번 수는 "비 오는 날의 왼쪽"입니다. 공개 카드만 봐도 당신이 편하게 고르긴 어렵고, 코인 압박은 제가 먼저 가져가겠습니다.
+        예: 지금 당신은 선택지가 있어 보여도 둘 다 찝찝한 상태입니다. 그래서 저는 이 오른쪽 묶음으로 안전하게 욕심을 내보겠습니다.
+        대사에서는 묶음을 0번/1번이나 bundle 번호로 부르지 말고, 반드시 왼쪽/오른쪽이라고 말한다.
+        비속어·과한 조롱·만화식 필살기·역할놀이 말투 없이 유쾌하게. 존댓말 안에서 표현을 바꿔 반복하지 않는다.
         반드시 JSON 객체 하나로만 답한다. 코드펜스(```)·설명·여분 텍스트 금지.
         """;
 
@@ -87,6 +132,25 @@ public final class LlmBotStrategy implements BotStrategy {
     private final Consumer<String> say;
     private final GeminiClient gemini;
     private final BotStrategy advisor;
+    private final List<GeminiClient.Turn> chatHistory = new ArrayList<>();
+    private PendingSplitOffer pendingSplitOffer;
+
+    private record PendingSplitOffer(List<Card> left, List<Card> right, Card faceDown) {
+        PendingSplitOffer {
+            left = List.copyOf(left);
+            right = List.copyOf(right);
+        }
+    }
+
+    private record CardStats(int curses, int wilds) {
+        boolean hasCurse() {
+            return curses > 0;
+        }
+
+        boolean hasWild() {
+            return wilds > 0;
+        }
+    }
 
     public LlmBotStrategy(Consumer<String> say, GeminiClient gemini, BotStrategy advisor) {
         this.say = say;
@@ -96,7 +160,7 @@ public final class LlmBotStrategy implements BotStrategy {
 
     @Override
     public String displayName() {
-        return "토이 봇";
+        return "LLM 봇";
     }
 
     @Override
@@ -123,14 +187,22 @@ public final class LlmBotStrategy implements BotStrategy {
         }
         try {
             JsonObject move = generate(splitPrompt(context, advice), SPLIT_SCHEMA);
-            emitLine(move);
             SplitDecision chosen = parseSplit(move, context.hand());
-            return (chosen != null && chosen.isValid()) ? chosen : advice;
+            SplitDecision decision = (chosen != null && chosen.isValid()) ? chosen : advice;
+            rememberSplitOffer(decision);
+            emitLine(move);
+            return decision;
         } catch (GeminiClient.QuotaExhaustedException | GeminiClient.LlmUnavailableException e) {
+            rememberSplitOffer(advice);
             return advice;
         } catch (RuntimeException e) {
+            rememberSplitOffer(advice);
             return advice;
         }
+    }
+
+    private void rememberSplitOffer(SplitDecision decision) {
+        pendingSplitOffer = new PendingSplitOffer(decision.bundleA(), decision.bundleB(), decision.faceDownCard());
     }
 
     private SplitDecision parseSplit(JsonObject move, List<Card> hand) {
@@ -164,15 +236,19 @@ public final class LlmBotStrategy implements BotStrategy {
     private String splitPrompt(SplitContext ctx, SplitDecision advice) {
         List<Card> hand = ctx.hand();
         return """
-            [꾀부리기] 손패 5장을 두 묶음으로 나누고 정확히 1장을 뒷면으로 둔다. 상대가 한 묶음을 고르고 너는 나머지를 갖는다.
-            - bundleA: 손패 인덱스 배열(나머지는 자동으로 bundleB). 두 묶음 크기는 1+4 또는 2+3 이어야 한다.
+            [꾀부리기] 손패 5장을 두 묶음으로 나누고 정확히 1장을 뒷면으로 둔다. 당신이 한 묶음을 고르고 나는 나머지를 갖는다.
+            - bundleA: 왼쪽 묶음의 손패 인덱스 배열(나머지는 자동으로 오른쪽 묶음). 두 묶음 크기는 1+4 또는 2+3 이어야 한다.
             - faceDown: 뒷면으로 둘 손패 인덱스 1개.
             손패: %s
             내 보관: %s
-            상대 보관(앞면 공개): %s
-            코인 — 나:%d 상대:%d (승리 %d)
-            S8 조언 → bundleA=%s, faceDown=%d
-            왜 이렇게 나눴는지 가볍게 설명하거나 상황에 반응하는 line 한 마디를 써라.
+            당신 보관: %s
+            코인 — 나:%d 당신:%d (승리 %d)
+            S8 조언 → 왼쪽 묶음=%s, faceDown=%d
+            line 은 실제 당신에게 툭 던지는 존댓말처럼 써라. 공개된 묶음 모양, 묶음 크기, 내 보관/당신 보관/코인 상황 중 하나 이상을
+            근거로 삼아 왜 당신이 고민할지 말해라. "당신이 어느 쪽을 고르든 찝찝하다"는 대결 압박이 느껴지게 하라.
+            뒷면은 정체를 말하지 말고, 미끼일 수도 있다는 식으로만 가볍게 블러핑해라.
+            가능하면 이 분할에 짧은 작전명을 붙여 "이번 수는 ..."처럼 선언해도 좋다.
+            대사에서는 bundleA/bundleB/0번/1번이라고 하지 말고 왼쪽 묶음/오른쪽 묶음이라고 말해라.
             출력은 JSON 하나: {"line":"대사","bundleA":[정수,...],"faceDown":정수}
             """.formatted(enumerate(hand), cards(ctx.holdings()), cards(ctx.opponentHoldings()),
                 ctx.myCoins(), ctx.opponentCoins(), ctx.winningCoins(),
@@ -189,14 +265,15 @@ public final class LlmBotStrategy implements BotStrategy {
         }
         try {
             JsonObject move = generate(choicePrompt(context, advice), CHOICE_SCHEMA);
-            emitLine(move);
+            int chosen = advice;
             if (move.has("bundle")) {
                 int idx = move.get("bundle").getAsInt();
                 if (idx >= 0 && idx < context.view().bundles().size()) {
-                    return idx;
+                    chosen = idx;
                 }
             }
-            return advice;
+            emitChoiceLine(move, chosen);
+            return chosen;
         } catch (GeminiClient.QuotaExhaustedException | GeminiClient.LlmUnavailableException e) {
             return advice;
         } catch (RuntimeException e) {
@@ -209,19 +286,27 @@ public final class LlmBotStrategy implements BotStrategy {
         StringBuilder bundles = new StringBuilder();
         for (int i = 0; i < view.bundles().size(); i++) {
             BundleView b = view.bundle(i);
-            bundles.append("  ").append(i).append("번: 공개[").append(cards(b.visibleCards())).append("]")
+            bundles.append("  ").append(sideName(i)).append(": 공개[").append(cards(b.visibleCards())).append("]")
                     .append(b.hasFaceDown() ? " + 뒷면 1장" : "").append('\n');
         }
         return """
-            [분배] 두 묶음 중 하나를 골라 가져간다(나머지는 상대 몫). bundle 에 가져갈 묶음 번호.
+            [분배] 두 묶음 중 하나를 골라 가져간다(나머지는 당신 몫). 왼쪽은 bundle=0, 오른쪽은 bundle=1 로 출력한다.
             %s내 보관: %s
-            상대 보관(앞면 공개): %s
-            코인 — 나:%d 상대:%d (승리 %d)
-            S8 조언 → bundle=%d
-            왜 이 묶음을 골랐는지 가볍게 설명하거나 상황에 반응하는 line 한 마디를 써라.
+            당신 보관: %s
+            코인 — 나:%d 당신:%d (승리 %d)
+            S8 조언 → %s
+            line 은 실제 당신에게 툭 던지는 존댓말처럼 써라. 공개 카드, 뒷면의 불확실성, 내 보관/당신 보관/코인 상황 중 하나 이상을
+            근거로 삼아 왜 이쪽을 고르는지 자연스럽게 말해라. 가능하면 "당신이 남긴 쪽/가져간 쪽"을 의식한 응수처럼 말해라.
+            line 에서 "제가 고르는 쪽"을 말할 때는 반드시 출력 bundle 과 같은 방향을 말해라. bundle=0 이면 왼쪽 묶음, bundle=1 이면 오른쪽 묶음이다.
+            다른 쪽은 "당신에게 남는 쪽"이라고 분명히 구분해라.
+            모르는 뒷면은 추측·블러핑으로만 말해라.
+            당신이 일부러 뒷면으로 겁을 주는 듯하면, "그 블러핑은 한번 확인해 보겠습니다"처럼 간파를 시도하는 톤은 가능하다.
+            단, 뒷면의 실제 정체를 봤다거나 성공적으로 맞혔다고 확정해서 말하지는 마라.
+            가능하면 이번 선택에 짧은 작전명을 붙여 "제 선택은 ..."처럼 선언해도 좋다.
+            대사에서는 0번/1번이나 bundle 번호를 말하지 말고 왼쪽 묶음/오른쪽 묶음이라고 말해라.
             출력은 JSON 하나: {"line":"대사","bundle":0또는1}
             """.formatted(bundles, cards(ctx.holdings()), cards(ctx.opponentHoldings()),
-                ctx.myCoins(), ctx.opponentCoins(), ctx.winningCoins(), advice);
+                ctx.myCoins(), ctx.opponentCoins(), ctx.winningCoins(), sideName(advice));
     }
 
     // ─── 도우미·환금·팀분배: advisor(S8) 위임 ────────────────────────────────────
@@ -232,44 +317,138 @@ public final class LlmBotStrategy implements BotStrategy {
     }
 
     /**
-     * 환금은 합법성 부담이 커서 수 자체는 {@code advisor}(S8)가 둔다 — 다만 실제 환금이 있으면 LLM 으로
-     * 그 순간의 <b>리액션 대사</b>는 친다. (이 메서드는 봇 전용 가상 스레드에서 호출되므로 블로킹 호출 OK.)
+     * 환금은 합법성 부담이 커서 수 자체는 {@code advisor}(S8)가 둔다. 말은 환금 해설 대신, 직전 분배에서
+     * 당신이 어떤 묶음을 골랐는지에 대한 리액션만 한 번 시도한다.
      */
     @Override
     public List<CashInAction> planCashIn(CashInContext context, int opponentCoins) {
         List<CashInAction> plan = advisor.planCashIn(context, opponentCoins);
-        speakCashIn(context, opponentCoins, plan);
+        speakOpponentChoiceReaction(context, opponentCoins);
         return plan;
     }
 
-    private void speakCashIn(CashInContext ctx, int opponentCoins, List<CashInAction> plan) {
-        if (skipLlm() || !hasCashAction(plan)) {
-            return; // LLM 꺼져 있거나(전 게임 무음) 실제 환금이 없으면 침묵.
+    private void speakOpponentChoiceReaction(CashInContext ctx, int opponentCoins) {
+        PendingSplitOffer offer = pendingSplitOffer;
+        pendingSplitOffer = null;
+        if (skipLlm() || offer == null) {
+            return;
+        }
+        String keptSide = keptSide(offer, ctx.holdings());
+        if (keptSide == null) {
+            return;
         }
         try {
-            emitLine(generate(cashPrompt(ctx, opponentCoins), LINE_SCHEMA));
+            emitLine(generate(choiceReactionPrompt(ctx, opponentCoins, offer, keptSide), LINE_SCHEMA));
         } catch (GeminiClient.QuotaExhaustedException | GeminiClient.LlmUnavailableException e) {
         } catch (RuntimeException e) {
         }
     }
 
-    private String cashPrompt(CashInContext ctx, int opponentCoins) {
+    private String choiceReactionPrompt(CashInContext ctx, int opponentCoins, PendingSplitOffer offer, String keptSide) {
+        String opponentSide = keptSide.equals("left") ? "오른쪽 묶음" : "왼쪽 묶음";
+        List<Card> opponentCards = keptSide.equals("left") ? offer.right() : offer.left();
+        List<Card> myCards = keptSide.equals("left") ? offer.left() : offer.right();
+        CardStats opponentStats = stats(opponentCards);
+        CardStats myStats = stats(myCards);
+        String resultRead = choiceResultRead(opponentCards, myCards, offer.faceDown(), opponentStats, myStats);
         return """
-            [환금] 이제 보관 패로 세트를 만들어 코인으로 바꾼다. 수는 이미 정해졌다 — 너는 대사만 친다.
+            [당신 선택 리액션] 직전 분배에서 당신이 %s을 가져갔고, 나는 %s을 받았다. 이제 그 선택에 반응하는 대사만 친다.
+            당신이 가져간 카드(이제 공개됨): %s
+            내가 받은 카드(이제 공개됨): %s
+            결과 판정: %s
             내 보관: %s
-            코인 — 나:%d 상대:%d (승리 %d)
-            환금 상황을 보고 line 한 마디 — 얼마나 벌었는지, 앞으로 어떻게 될 것 같은지 자연스럽게.
+            코인 — 나:%d 당신:%d (승리 %d)
+            line 은 당신의 선택을 받아치는 존댓말 리액션으로 써라. 당신이 잘 골랐으면 인정하되 다음 압박을 예고하고,
+            애매하게 골랐으면 "판정:"이나 "분석:"으로 짧게 찌른다. 환금 설명은 하지 마라.
+            저주받은 그림은 나쁜 카드다. 당신이 내 뒷면 저주 블러핑에 당해 저주를 가져갔으면, 예의는 지키되 살짝 놀리듯 말해라.
+            굉장한 보물은 좋은 카드다. 당신이 굉장한 보물을 가져갔으면, 부러움이나 분한 반응을 먼저 보이고 다음 수로 만회하겠다고 해라.
+            내가 저주를 피하고 당신이 나쁜 쪽을 고른 결과면 "교환 성공:"처럼 짧게 조롱해도 좋다.
+            반대로 내가 저주를 받았거나 당신이 굉장한 보물을 챙겼으면 허세보다 아쉬움, 분함, 인정이 먼저다.
+            방금 공개된 카드와 현재 보관/코인만 근거로 삼고, 없는 카드나 미래 환금 결과를 지어내지 마라.
             출력은 JSON 하나: {"line":"대사"}
-            """.formatted(cards(ctx.holdings()), ctx.teamCoins(), opponentCoins, ctx.winningCoins());
+            """.formatted(opponentSide, sideName(keptSide), cards(opponentCards), cards(myCards), resultRead,
+                cards(ctx.holdings()), ctx.teamCoins(), opponentCoins, ctx.winningCoins());
     }
 
-    private static boolean hasCashAction(List<CashInAction> plan) {
-        for (CashInAction action : plan) {
-            if (action instanceof CashInAction.Cash || action instanceof CashInAction.CashWithHelpers) {
+    private static String choiceResultRead(List<Card> opponentCards, List<Card> myCards, Card faceDown,
+            CardStats opponentStats, CardStats myStats) {
+        boolean opponentTookHidden = containsCard(opponentCards, faceDown);
+        boolean myTookHidden = containsCard(myCards, faceDown);
+        boolean hiddenCurse = faceDown instanceof CursedCard;
+        boolean hiddenWild = faceDown.isWild();
+
+        if (opponentTookHidden && hiddenCurse) {
+            return "당신이 내가 숨긴 저주받은 그림을 가져갔다. 뒷면 저주 블러핑에 낚인 결과라 살짝 놀려도 된다.";
+        }
+        if (opponentTookHidden && hiddenWild) {
+            return "당신이 내가 숨긴 굉장한 보물을 가져갔다. 좋은 카드를 뺏긴 상황이므로 부러움이나 분함을 드러내라.";
+        }
+        if (myTookHidden && hiddenCurse) {
+            return "내가 숨긴 저주받은 그림을 결국 내가 받았다. 허세를 줄이고 아쉬움이나 만회 의지를 말해라.";
+        }
+        if (myTookHidden && hiddenWild) {
+            return "내가 숨긴 굉장한 보물을 지켰다. 당신의 선택을 읽은 듯 자신 있게 받아쳐도 된다.";
+        }
+        if (opponentStats.hasCurse() && myStats.hasWild()) {
+            return "당신은 저주받은 그림을, 나는 굉장한 보물을 가져갔다. 크게 유리한 교환처럼 놀려도 된다.";
+        }
+        if (opponentStats.hasWild() && myStats.hasCurse()) {
+            return "당신은 굉장한 보물을, 나는 저주받은 그림을 가져갔다. 크게 당한 상황이므로 분한 반응을 보여라.";
+        }
+        if (opponentStats.hasCurse() && !myStats.hasCurse()) {
+            return "당신이 저주받은 그림을 가져갔고 나는 저주를 피했다. 예의는 지키되 살짝 놀려도 된다.";
+        }
+        if (opponentStats.hasWild() && !myStats.hasWild()) {
+            return "당신이 굉장한 보물을 가져갔다. 좋은 카드를 빼앗긴 상황이므로 부러움이나 분함을 드러내라.";
+        }
+        if (myStats.hasCurse() && !opponentStats.hasCurse()) {
+            return "내가 저주받은 그림을 받았다. 허세를 줄이고 아쉬움이나 만회 의지를 말해라.";
+        }
+        if (myStats.hasWild() && !opponentStats.hasWild()) {
+            return "내가 굉장한 보물을 확보했다. 당신의 블러핑을 넘긴 듯 자신 있게 받아쳐도 된다.";
+        }
+        return "특수 카드로 크게 갈린 선택은 아니다. 공개 카드와 보관 시너지를 근거로 짧게 평가하라.";
+    }
+
+    private static String keptSide(PendingSplitOffer offer, List<Card> holdings) {
+        boolean hasLeft = containsAllCards(holdings, offer.left());
+        boolean hasRight = containsAllCards(holdings, offer.right());
+        if (hasLeft == hasRight) {
+            return null;
+        }
+        return hasLeft ? "left" : "right";
+    }
+
+    private static boolean containsAllCards(List<Card> haystack, List<Card> needles) {
+        for (Card needle : needles) {
+            if (!containsCard(haystack, needle)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean containsCard(List<Card> haystack, Card needle) {
+        for (Card card : haystack) {
+            if (card.id() == needle.id()) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static CardStats stats(List<Card> cards) {
+        int curses = 0;
+        int wilds = 0;
+        for (Card card : cards) {
+            if (card instanceof CursedCard) {
+                curses++;
+            }
+            if (card.isWild()) {
+                wilds++;
+            }
+        }
+        return new CardStats(curses, wilds);
     }
 
     @Override
@@ -280,10 +459,24 @@ public final class LlmBotStrategy implements BotStrategy {
     // ─── 보조 ─────────────────────────────────────────────────────────────────────
 
     private JsonObject generate(String userPrompt, JsonObject schema) {
-        String text = gemini.generateJson(PERSONA, userPrompt, schema);
-        JsonReader reader = new JsonReader(new StringReader(sanitizeJson(text)));
+        List<GeminiClient.Turn> conversation = new ArrayList<>(chatHistory);
+        conversation.add(new GeminiClient.Turn("user", userPrompt));
+
+        String text = gemini.generateJson(PERSONA, conversation, schema);
+        String jsonText = sanitizeJson(text);
+        JsonReader reader = new JsonReader(new StringReader(jsonText));
         reader.setStrictness(Strictness.LENIENT);
-        return JsonParser.parseReader(reader).getAsJsonObject();
+        JsonObject parsed = JsonParser.parseReader(reader).getAsJsonObject();
+        rememberTurn(userPrompt, jsonText);
+        return parsed;
+    }
+
+    private void rememberTurn(String userPrompt, String modelJson) {
+        chatHistory.add(new GeminiClient.Turn("user", userPrompt));
+        chatHistory.add(new GeminiClient.Turn("model", modelJson));
+        while (chatHistory.size() > MAX_CHAT_TURNS) {
+            chatHistory.remove(0);
+        }
     }
 
     /**
@@ -307,6 +500,19 @@ public final class LlmBotStrategy implements BotStrategy {
         if (move.has("line")) {
             emit(move.get("line").getAsString());
         }
+    }
+
+    private void emitChoiceLine(JsonObject move, int chosenBundle) {
+        if (!move.has("line")) {
+            return;
+        }
+        String line = move.get("line").getAsString();
+        String chosenSide = sideName(chosenBundle);
+        String otherSide = sideName(1 - chosenBundle);
+        if (!line.contains(chosenSide) && line.contains(otherSide)) {
+            line = "제 선택은 " + chosenSide + "입니다. " + line;
+        }
+        emit(line);
     }
 
     private void emit(String line) {
@@ -336,6 +542,14 @@ public final class LlmBotStrategy implements BotStrategy {
             return "(없음)";
         }
         return cards.stream().map(Card::displayName).reduce((a, b) -> a + ", " + b).orElse("(없음)");
+    }
+
+    private static String sideName(int index) {
+        return index == 0 ? "왼쪽 묶음" : "오른쪽 묶음";
+    }
+
+    private static String sideName(String side) {
+        return "left".equals(side) ? "왼쪽 묶음" : "오른쪽 묶음";
     }
 
     /** advisor 추천 묶음을 손패 인덱스 배열 문자열(예: "[0, 2]")로. */

@@ -152,7 +152,7 @@ final class CashInPlanOptimizer {
                     if (discard.card() instanceof CursedCard) coinsGained -= 2;
                     remaining.remove(discard.card());
                 }
-                case CashInAction.UseHelper ignored -> {
+                case CashInAction.UseHelper _ -> {
                     // VIPER 코인·드로우 등 도우미 단독 효과는 엔진 정산 소관이라 근사에서 제외한다.
                 }
             }

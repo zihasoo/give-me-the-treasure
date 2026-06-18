@@ -7,6 +7,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -38,6 +39,10 @@ public final class GeminiClient {
     /** 현재 사용 중인 {@link #MODELS} 인덱스(세션 단위로만 내려가고 올라가지 않는다). */
     private volatile int tier;
 
+    /** Gemini contents 에 들어갈 대화 턴. {@code role} 은 {@code user} 또는 {@code model}. */
+    public record Turn(String role, String text) {
+    }
+
     public GeminiClient(String apiKey) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.http = HttpClient.newBuilder()
@@ -57,12 +62,19 @@ public final class GeminiClient {
      * @throws LlmUnavailableException 키없음·네트워크·키오류·파싱 실패 등
      */
     public String generateJson(String systemPrompt, String userPrompt, JsonObject responseSchema) {
+        return generateJson(systemPrompt, List.of(new Turn("user", userPrompt)), responseSchema);
+    }
+
+    /**
+     * 시스템 프롬프트와 최근 대화 턴으로 텍스트 1회 생성. 마지막 턴은 보통 이번 user 프롬프트다.
+     */
+    public String generateJson(String systemPrompt, List<Turn> conversation, JsonObject responseSchema) {
         if (apiKey.isEmpty()) {
             throw new LlmUnavailableException("API 키가 비어 있음");
         }
         for (int i = tier; i < MODELS.length; i++) {
             try {
-                String text = call(MODELS[i], systemPrompt, userPrompt, responseSchema);
+                String text = call(MODELS[i], systemPrompt, conversation, responseSchema);
                 tier = i; // 성공한 티어로 고정(이미 소진된 상위 티어로 되돌아가지 않는다).
                 return text;
             } catch (QuotaExhaustedException e) {
@@ -72,8 +84,8 @@ public final class GeminiClient {
         throw new QuotaExhaustedException("모든 모델 사용 불가(일일 한도/미존재)");
     }
 
-    private String call(String model, String systemPrompt, String userPrompt, JsonObject responseSchema) {
-        JsonObject body = buildBody(systemPrompt, userPrompt, responseSchema);
+    private String call(String model, String systemPrompt, List<Turn> conversation, JsonObject responseSchema) {
+        JsonObject body = buildBody(systemPrompt, conversation, responseSchema);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(ENDPOINT.formatted(model)))
@@ -107,14 +119,14 @@ public final class GeminiClient {
         return extractText(response.body());
     }
 
-    private static JsonObject buildBody(String systemPrompt, String userPrompt, JsonObject responseSchema) {
+    private static JsonObject buildBody(String systemPrompt, List<Turn> conversation, JsonObject responseSchema) {
         JsonObject body = new JsonObject();
 
         JsonObject systemInstruction = new JsonObject();
         systemInstruction.add("parts", partsOf(systemPrompt));
         body.add("system_instruction", systemInstruction);
 
-        body.add("contents", userContents(userPrompt));
+        body.add("contents", contentsOf(conversation));
 
         JsonObject generationConfig = new JsonObject();
         generationConfig.addProperty("responseMimeType", "application/json");
@@ -125,12 +137,17 @@ public final class GeminiClient {
         return body;
     }
 
-    private static JsonArray userContents(String text) {
-        JsonObject userContent = new JsonObject();
-        userContent.addProperty("role", "user");
-        userContent.add("parts", partsOf(text));
+    private static JsonArray contentsOf(List<Turn> conversation) {
         JsonArray contents = new JsonArray();
-        contents.add(userContent);
+        for (Turn turn : conversation) {
+            if (turn == null || turn.text() == null || turn.text().isBlank()) {
+                continue;
+            }
+            JsonObject content = new JsonObject();
+            content.addProperty("role", "model".equals(turn.role()) ? "model" : "user");
+            content.add("parts", partsOf(turn.text()));
+            contents.add(content);
+        }
         return contents;
     }
 

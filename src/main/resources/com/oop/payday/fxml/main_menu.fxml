@@ -43,7 +43,7 @@
                         <Button maxWidth="Infinity" styleClass="menu-mode-button"
                                 text="접속하기" onAction="#onJoinGame" />
                         <Button maxWidth="Infinity" styleClass="menu-mode-button"
-                                text="토이 봇과 1v1" onAction="#onLlmGame" />
+                                text="LLM 봇과 1v1" onAction="#onLlmGame" />
                     </children>
                 </VBox>
 

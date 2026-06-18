@@ -419,7 +419,7 @@ public final class GameBoardController implements GameListener, Initializable {
     }
 
     /**
-     * 봇 슬롯의 전략을 만든다. LLM(토이) 봇은 {@link BotKind#create()} 로 못 만든다 — 대사 싱크와 API 키
+     * 봇 슬롯의 전략을 만든다. LLM 봇은 {@link BotKind#create()} 로 못 만든다 — 대사 싱크와 API 키
      * 주입이 필요하므로 여기서 직접 조립한다. 대사는 상대(봇) 영역 말풍선으로 띄우고(1v1 전용),
      * 합법성·조언·폴백은 {@link S8BotStrategy} 가 맡는다. say 람다는 호출 시점의 {@code animator}(게임 시작
      * 후 초기화됨)를 읽으므로 생성 순서와 무관하게 안전하다.
@@ -828,7 +828,7 @@ public final class GameBoardController implements GameListener, Initializable {
         Platform.runLater(() -> {
             distributionFieldUpdatePending = true;
             int phaseToken = phaseRevision;
-            setMessage(chooseTeam.name() + "이(가) 묶음 " + (chosenIndex == 0 ? "①" : "②") + " 선택 · "
+            setMessage(chooseTeam.name() + "이(가) " + (chosenIndex == 0 ? "왼쪽" : "오른쪽") + " 묶음 선택 · "
                     + chooseTeam.name() + " " + chooseCards + " / "
                     + splitTeam.name() + " " + splitCards);
             Team myTeam = localPlayer != null ? teamFor(localPlayer) : null;
@@ -1032,10 +1032,10 @@ public final class GameBoardController implements GameListener, Initializable {
             BundleView bundle = view.bundle(i);
             int index = i;
 
-            Button pick = new Button("묶음 " + (i == 0 ? "①" : "②") + " 선택 (" + bundle.size() + "장)");
+            Button pick = new Button((i == 0 ? "왼쪽" : "오른쪽") + " 묶음 선택 (" + bundle.size() + "장)");
             pick.getStyleClass().add("menu-button");
 
-            VBox box = bundleBox("묶음 " + (i == 0 ? "①" : "②"), bundle.visibleCards(), bundle.hasFaceDown(), pick);
+            VBox box = bundleBox((i == 0 ? "왼쪽" : "오른쪽") + " 묶음", bundle.visibleCards(), bundle.hasFaceDown(), pick);
             rememberActiveBundle(index, box);
             pick.setUserData(box);
             pick.setOnAction(e -> {
@@ -1065,8 +1065,8 @@ public final class GameBoardController implements GameListener, Initializable {
         VBox root = panelRoot(title);
         HBox bundlesRow = new HBox(40);
         bundlesRow.setAlignment(Pos.CENTER);
-        activeBundle0 = bundleBox("묶음 ①", visible0, faceDown0);
-        activeBundle1 = bundleBox("묶음 ②", visible1, faceDown1);
+        activeBundle0 = bundleBox("왼쪽 묶음", visible0, faceDown0);
+        activeBundle1 = bundleBox("오른쪽 묶음", visible1, faceDown1);
         bundlesRow.getChildren().addAll(activeBundle0, activeBundle1);
         root.getChildren().add(bundlesRow);
         return root;
@@ -1076,7 +1076,7 @@ public final class GameBoardController implements GameListener, Initializable {
         if (activeBundle0 != null && activeBundle1 != null) {
             return;
         }
-        VBox chosenBox = bundleBox("선택한 묶음 " + (chosenIndex == 0 ? "①" : "②"), chooseCards, false);
+        VBox chosenBox = bundleBox("선택한 " + (chosenIndex == 0 ? "왼쪽" : "오른쪽") + " 묶음", chooseCards, false);
         VBox otherBox = bundleBox("남은 묶음", splitCards, false);
         if (chosenIndex == 0) {
             activeBundle0 = chosenBox;

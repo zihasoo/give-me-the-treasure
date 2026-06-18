@@ -28,6 +28,10 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.Polygon;
+import javafx.scene.shape.LineTo;
+import javafx.scene.shape.MoveTo;
+import javafx.scene.shape.Path;
 import javafx.util.Duration;
 
 /**
@@ -38,6 +42,8 @@ import javafx.util.Duration;
  * 노드와 콜백({@code isLocalActor}, 카드 정렬)뿐이라 결합이 작다.
  */
 final class BoardAnimator {
+
+    private static final String SPEECH_STYLE_CLASS = "bot-speech";
 
     private final StackPane contentArea;
     private final Pane globalOverlay;
@@ -53,6 +59,7 @@ final class BoardAnimator {
     private boolean opponentWaitingVisible;
     /** 현재 떠 있는 말풍선(있으면 새 대사가 교체). 비차단 연출이라 오버레이 큐와 무관하다. */
     private Node activeSpeech;
+    private SequentialTransition activeSpeechTransition;
 
     BoardAnimator(StackPane contentArea, Pane globalOverlay, StackPane centerArea,
             Predicate<Player> isLocalActor, Comparator<Card> cardOrder) {
@@ -180,6 +187,9 @@ final class BoardAnimator {
 
     // ===== 봇 대사(말풍선) =====
 
+    private static final double SPEECH_TOP_MARGIN = 64;
+    private static final double SPEECH_SIDE_GAP = 8;
+
     /**
      * 상대(봇) 영역 위에 말풍선으로 한 마디 띄운다(LLM 봇 도발/혼잣말용). 게임 흐름을 막지 않는
      * <b>비차단 연출</b> — 오버레이 큐({@link #playNextOverlay()})와 무관하고 입력도 가로채지 않는다.
@@ -189,36 +199,48 @@ final class BoardAnimator {
         if (globalOverlay == null || line == null || line.isBlank()) {
             return;
         }
-        if (activeSpeech != null) {
-            globalOverlay.getChildren().remove(activeSpeech);
-            activeSpeech = null;
-        }
+        clearActiveSpeech();
 
-        String text = line.trim();
-        Label bubble = new Label(text);
-        bubble.setWrapText(true);
-        bubble.setMaxWidth(540);
+        Label speaker = new Label("LLM 봇");
+        speaker.setStyle(
+            "-fx-text-fill: #91dfc0; -fx-font-size: 11px; -fx-font-weight: bold;"
+            + " -fx-font-family: 'Malgun Gothic','Segoe UI Emoji','Book Antiqua',serif;");
+
+        Label textLabel = new Label(line.trim());
+        textLabel.setWrapText(true);
+        textLabel.setMaxWidth(560);
+        textLabel.setLineSpacing(3.5);
+        textLabel.setStyle(
+            "-fx-text-fill: #f2fbf6; -fx-font-size: 15px;"
+            + " -fx-font-family: 'Malgun Gothic','Segoe UI Emoji','Book Antiqua',serif;");
+
+        VBox bubble = new VBox(4, speaker, textLabel);
+        bubble.setMaxWidth(600);
+        bubble.setMaxHeight(Region.USE_PREF_SIZE);
         bubble.setStyle(
             "-fx-background-color: rgba(13,21,24,0.92);"
-            + " -fx-text-fill: #eaf6ef; -fx-font-size: 14px;"
-            + " -fx-font-family: 'Malgun Gothic','Book Antiqua',serif;"
-            + " -fx-padding: 10 16 10 16; -fx-background-radius: 14;"
-            + " -fx-border-color: rgba(145,223,192,0.85); -fx-border-radius: 14; -fx-border-width: 1.5;"
+            + " -fx-padding: 10 16 12 16; -fx-background-radius: 12;"
+            + " -fx-border-color: rgba(145,223,192,0.85); -fx-border-radius: 12; -fx-border-width: 1.5;"
             + " -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 12, 0.2, 0, 3);");
 
-        StackPane host = new StackPane(bubble);
+        StackPane tail = buildSpeechTail();
+        HBox speech = new HBox(-1, tail, bubble);
+        speech.setAlignment(Pos.TOP_LEFT);
+
+        StackPane host = new StackPane(speech);
+        host.getStyleClass().add(SPEECH_STYLE_CLASS);
         host.setMouseTransparent(true); // 클릭을 가로채지 않는다(비차단).
         host.setPickOnBounds(false);
-        StackPane.setAlignment(bubble, Pos.TOP_CENTER);
-        StackPane.setMargin(bubble, new Insets(64, 0, 0, 0)); // 상단(상대) 영역 위쪽
+        StackPane.setAlignment(speech, Pos.TOP_LEFT);
+        StackPane.setMargin(speech, speechMarginFromSidebar()); // 상단 높이는 유지하고 사이드바에서 말하게 한다.
         host.prefWidthProperty().bind(globalOverlay.widthProperty());
         host.prefHeightProperty().bind(globalOverlay.heightProperty());
-        alignOverPlayField(host); // 좌측 사이드바 제외 필드 기준 좌/우 가운데 정렬(host 패딩)
         host.setOpacity(0);
         globalOverlay.getChildren().add(host);
+        host.toFront();
         activeSpeech = host;
 
-        long pauseMs = Math.max(4000, Math.min(12000, text.length() * 110L));
+        long pauseMs = Math.max(4000, Math.min(12000, line.trim().length() * 110L));
         SequentialTransition seq = new SequentialTransition(
             fade(host, 0, 1, 200),
             new PauseTransition(Duration.millis(pauseMs)),
@@ -227,9 +249,20 @@ final class BoardAnimator {
             globalOverlay.getChildren().remove(host);
             if (activeSpeech == host) {
                 activeSpeech = null;
+                activeSpeechTransition = null;
             }
         });
+        activeSpeechTransition = seq;
         seq.play();
+    }
+
+    private void clearActiveSpeech() {
+        if (activeSpeechTransition != null) {
+            activeSpeechTransition.stop();
+            activeSpeechTransition = null;
+        }
+        globalOverlay.getChildren().removeIf(node -> node.getStyleClass().contains(SPEECH_STYLE_CLASS));
+        activeSpeech = null;
     }
 
     private SequentialTransition buildCardFlip(StackPane container, Node front) {
@@ -638,6 +671,43 @@ final class BoardAnimator {
             }
         }
         return message;
+    }
+
+    private Insets speechMarginFromSidebar() {
+        return new Insets(SPEECH_TOP_MARGIN, 0, 0, playFieldLeftInOverlay() + SPEECH_SIDE_GAP);
+    }
+
+    private StackPane buildSpeechTail() {
+        Polygon body = new Polygon(1, 18, 22, 7, 22, 30);
+        body.setStyle("-fx-fill: rgba(13,21,24,0.92);");
+
+        Path outline = new Path(
+            new MoveTo(22, 7),
+            new LineTo(1, 18),
+            new LineTo(22, 30));
+        outline.setStyle(
+            "-fx-fill: transparent;"
+            + " -fx-stroke: rgba(145,223,192,0.85); -fx-stroke-width: 1.2;"
+            + " -fx-stroke-line-cap: round; -fx-stroke-line-join: round;");
+
+        StackPane tail = new StackPane(body, outline);
+        tail.setMinSize(22, 38);
+        tail.setPrefSize(22, 38);
+        tail.setMaxSize(22, 38);
+        tail.setTranslateY(2);
+        return tail;
+    }
+
+    private double playFieldLeftInOverlay() {
+        if (globalOverlay == null || centerArea == null) {
+            return 0;
+        }
+        Bounds field = centerArea.localToScene(centerArea.getBoundsInLocal());
+        Bounds overlay = globalOverlay.localToScene(globalOverlay.getBoundsInLocal());
+        if (field.getWidth() <= 0 || overlay.getWidth() <= 0) {
+            return 0;
+        }
+        return Math.max(0, field.getMinX() - overlay.getMinX());
     }
 
     /**

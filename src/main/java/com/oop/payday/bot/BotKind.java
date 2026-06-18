@@ -15,7 +15,7 @@ public enum BotKind {
      * ({@link #lobbyChoices()} 에서 제외), 메인 메뉴의 전용 진입점에서만 대사 싱크·API 키와 함께
      * {@code GameBoardController} 가 직접 생성한다.
      */
-    LLM("토이 봇");
+    LLM("LLM 봇");
 
     private final String displayName;
 
