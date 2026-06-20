@@ -30,6 +30,11 @@ public final class GameConfig implements java.io.Serializable {
         return new GameConfig(PRACTICE_WIN, false, vsBot);
     }
 
+    /** 네트워크 클라이언트가 호스트 핸드셰이크로 받은 규칙값을 화면 표시용으로 복원한다. */
+    public static GameConfig remote(int winningCoins, boolean leaderEffectsEnabled) {
+        return new GameConfig(winningCoins, leaderEffectsEnabled, false);
+    }
+
     public int winningCoins() {
         return winningCoins;
     }

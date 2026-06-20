@@ -72,6 +72,8 @@ public final class LobbyController implements Initializable {
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         // 모드별 초기화는 initHost()/initClient() 에서 수행한다(FXML 로드 직후 호출됨).
+        practiceCheck.setAlignment(Pos.CENTER);
+        practiceCheck.setWrapText(true);
     }
 
     // ====================================================================

@@ -23,7 +23,7 @@
 
                 <Region styleClass="menu-divider" maxWidth="Infinity" />
 
-                <CheckBox fx:id="practiceCheck" text="연습 모드 (20코인 · 리더 효과 비활성)" />
+                <CheckBox fx:id="practiceCheck" maxWidth="Infinity" text="연습 모드 (20코인 · 리더 효과 비활성)" />
 
                 <HBox spacing="28.0" alignment="TOP_CENTER">
                     <children>

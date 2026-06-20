@@ -478,10 +478,28 @@
 
 .sidebar-member-chip-name {
     -fx-text-fill: #e8f1ed;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-alignment: center-left;
+}
+
+.sidebar-member-chip-opponent .sidebar-member-chip-name {
+    -fx-text-fill: #f0b7a4;
 }
 
 .sidebar-member-chip-ally .sidebar-member-chip-name {
     -fx-text-fill: #f2d36b;
+}
+
+.sidebar-member-chip-officer-name {
+    -fx-text-fill: #d7dedb;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-alignment: center-left;
+}
+
+.sidebar-member-chip-officer-name-inactive {
+    -fx-text-fill: rgba(215, 222, 219, 0.62);
 }
 
 .sidebar-member-chip-effect {
@@ -493,6 +511,33 @@
 .sidebar-member-chip-ally {
     -fx-background-color: rgba(242, 211, 107, 0.10);
     -fx-border-color: rgba(242, 211, 107, 0.35);
+}
+
+.sidebar-member-chip-officer-inactive {
+    -fx-background-color: rgba(255, 255, 255, 0.035);
+    -fx-border-color: rgba(255, 255, 255, 0.10);
+}
+
+.sidebar-member-chip-officer-status {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 1 6;
+    -fx-alignment: center;
+    -fx-background-radius: 999;
+}
+
+.sidebar-member-chip-officer-status-active {
+    -fx-text-fill: #162017;
+    -fx-background-color: #91dfc0;
+}
+
+.sidebar-member-chip-officer-status-inactive {
+    -fx-text-fill: #d7dedb;
+    -fx-background-color: rgba(215, 222, 219, 0.14);
+}
+
+.sidebar-member-chip-effect-inactive {
+    -fx-text-fill: rgba(215, 222, 219, 0.56);
 }
 
 /* 2인 팀 멤버 사이 구분선 */

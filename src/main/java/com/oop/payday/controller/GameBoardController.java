@@ -128,6 +128,7 @@ public final class GameBoardController implements GameListener, Initializable {
     private boolean distributionFieldUpdatePending;
     private boolean introPhase = true;
     private boolean gameOver = false;
+    private boolean officerSetupRevealed;
     private Node cachedScoreTablePanel;
     private LlmBotStrategy llmBot;
 
@@ -564,6 +565,7 @@ public final class GameBoardController implements GameListener, Initializable {
         this.server = null;
         this.client = client;
         this.broadcaster = null;
+        this.config = GameConfig.remote(hs.winningCoins(), hs.leaderEffectsEnabled());
         ClientMirror mirror = new ClientMirror();
         mirror.init(hs.clientTeamId(), hs.clientPlayerId(), hs.initialState());
         resetBoard();
@@ -580,6 +582,7 @@ public final class GameBoardController implements GameListener, Initializable {
      * 새 미러를 만들어 보드를 리셋하고, 반환된 미러가 이후 Envelope 적용 대상이 된다.
      */
     private ClientMirror onClientRestart(NetMessage.Restart restart) {
+        this.config = GameConfig.remote(restart.winningCoins(), restart.leaderEffectsEnabled());
         ClientMirror mirror = new ClientMirror();
         mirror.init(restart.clientTeamId(), restart.clientPlayerId(), restart.initialState());
         resetBoard();
@@ -602,6 +605,7 @@ public final class GameBoardController implements GameListener, Initializable {
         llmBot = null;
         disconnected = false;
         introPhase = true;
+        officerSetupRevealed = false;
         pauseMenuOpen = false;
         phaseRevision = 0;
         distributionFieldUpdatePending = false;
@@ -771,7 +775,13 @@ public final class GameBoardController implements GameListener, Initializable {
                     oppMembers.add(p);
                 }
             }
-            enqueueOverlay(() -> animator.playOfficerSetup(oppMembers, myMembers));
+            enqueueOverlay(() -> {
+                animator.playOfficerSetup(oppMembers, myMembers);
+                runAfterOverlay(() -> {
+                    officerSetupRevealed = true;
+                    updateBoardStatus();
+                });
+            });
         });
     }
 
@@ -2013,22 +2023,54 @@ public final class GameBoardController implements GameListener, Initializable {
     }
 
     private Node buildSidebarMemberChip(Player member) {
-        String officerPart = member.officer() != null ? " | " + member.officer().korean() : "";
-
-        Label nameLine = new Label(member.name() + officerPart);
+        Label nameLine = new Label(member.name());
         nameLine.setWrapText(true);
         nameLine.getStyleClass().add("sidebar-member-chip-name");
 
         VBox chip = new VBox(2);
         chip.setMaxWidth(Double.MAX_VALUE);
         chip.getStyleClass().add("sidebar-member-chip");
-        if (isAlly(member)) chip.getStyleClass().add("sidebar-member-chip-ally");
-        chip.getChildren().add(nameLine);
+        if (isAlly(member)) {
+            chip.getStyleClass().add("sidebar-member-chip-ally");
+        } else {
+            chip.getStyleClass().add("sidebar-member-chip-opponent");
+        }
+        HBox nameRow = new HBox(7);
+        nameRow.setAlignment(Pos.BASELINE_LEFT);
+        nameRow.getChildren().add(nameLine);
+        chip.getChildren().add(nameRow);
 
-        if (member.officer() != null) {
+        if (officerSetupRevealed && member.officer() != null) {
+            boolean leaderEffectsEnabled = config != null && config.leaderEffectsEnabled();
+            boolean activeOfficerEffect = leaderEffectsEnabled && member.isLeader();
+            if (!activeOfficerEffect) {
+                chip.getStyleClass().add("sidebar-member-chip-officer-inactive");
+            }
+
+            Label officerName = new Label(member.officer().korean());
+            officerName.setWrapText(false);
+            officerName.setMinWidth(Region.USE_PREF_SIZE);
+            officerName.getStyleClass().add("sidebar-member-chip-officer-name");
+            if (!activeOfficerEffect) {
+                officerName.getStyleClass().add("sidebar-member-chip-officer-name-inactive");
+            }
+            nameRow.getChildren().add(officerName);
+
+            Label statusBadge = new Label(activeOfficerEffect ? "리더" : "효과 비활성");
+            statusBadge.setWrapText(false);
+            statusBadge.setMinWidth(Region.USE_PREF_SIZE);
+            statusBadge.getStyleClass().add("sidebar-member-chip-officer-status");
+            statusBadge.getStyleClass().add(activeOfficerEffect
+                    ? "sidebar-member-chip-officer-status-active"
+                    : "sidebar-member-chip-officer-status-inactive");
+            nameRow.getChildren().add(statusBadge);
+
             Label effectLine = new Label(member.officer().effectText());
             effectLine.setWrapText(true);
             effectLine.getStyleClass().add("sidebar-member-chip-effect");
+            if (!activeOfficerEffect) {
+                effectLine.getStyleClass().add("sidebar-member-chip-effect-inactive");
+            }
             chip.getChildren().add(effectLine);
         }
         return chip;
