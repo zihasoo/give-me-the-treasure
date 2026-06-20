@@ -2,6 +2,379 @@
 
 이 문서는 `give-me-the-treasure`가 어떻게 화면, 게임 규칙, 플레이어 입력, 봇, 네트워크를 분리해서 동작하는지 설명하는 문서입니다. 코드를 처음 읽는 사람도 전체 흐름을 잡을 수 있도록 파일 경로 중심으로 정리합니다.
 
+## 다이어그램
+
+주요 구조 위주로 그린 다이어그램입니다.
+
+### 전체 계층 구조
+
+```mermaid
+classDiagram
+direction TB
+class GameApp {
+  +showScene(fxml) void
+  +showLobby(setup) void
+  +showGameBoard(setup) void
+  +showHostGame(setup) void
+  +showClientGame(client) void
+}
+class GameBoardController {
+  +startGameThread() void
+  +onPhaseChanged() void
+  +onDistributed() void
+  +onCashIn() void
+  +onGameOver() void
+}
+class Game {
+  +play() void
+  +abort() void
+}
+class GameListener {
+  <<interface>>
+  +onPhaseChanged() void
+  +onDistributed() void
+  +awaitAnimations() void
+}
+class Player {
+  <<abstract>>
+  +decideSplit(ctx) SplitDecision
+  +decideChoice(ctx) int
+  +beginCashIn(ctx, coins, sink) void
+}
+class InputGateway {
+  <<interface>>
+  +provideSplit(decision) void
+  +provideChoice(index) void
+  +submitCash(action) void
+}
+class ModelAndDecision {
+  Card
+  Deck
+  Team
+  TreasureSet
+  SplitContext
+  ChoiceContext
+  CashInAction
+}
+
+GameApp --> GameBoardController : 화면 전환
+GameBoardController ..|> GameListener : 이벤트 수신
+GameBoardController --> Game : game-loop 실행
+GameBoardController --> InputGateway : 사용자 입력 전달
+Game --> GameListener : 상태 이벤트
+Game --> Player : 의사결정 요청
+Game --> ModelAndDecision : 규칙 상태 사용
+Player --> ModelAndDecision : 결정 입력/출력 사용
+```
+
+### 게임 규칙 핵심 구조
+
+```mermaid
+classDiagram
+direction TB
+class Game {
+  -GameConfig config
+  -Deck deck
+  -Team splitTeam
+  -Team chooseTeam
+  +play() void
+  -schemePhase() void
+  -distributePhase() void
+  -cashInPhase() void
+  -endPhase() Team
+}
+class GameConfig {
+  +standard(leaders) GameConfig
+  +practice(leaders) GameConfig
+  +winningCoins() int
+}
+class Team {
+  +name() String
+  +leader() Player
+  +members() List~Player~
+  +coins() int
+}
+class Phase {
+  <<enumeration>>
+  SCHEME
+  DISTRIBUTE
+  CASH_IN
+  END
+}
+class Deck {
+  +draw(count) List~Card~
+  +discard(cards) void
+  +discardView() List~Card~
+}
+class Card {
+  <<abstract>>
+  +id() int
+}
+class TreasureCard
+class WildCard
+class StealCard
+class CursedCard
+class TreasureSet
+class CashInEvaluator {
+  +evaluate(cards) Result
+}
+class HelperRules {
+  +availability(context) Availability
+}
+class OfficerTile {
+  <<enumeration>>
+  FLANKY
+  CHUCK
+  WISE
+  JOE
+}
+
+Game --> GameConfig
+Game --> Deck
+Game --> Team
+Game --> Phase
+Game --> CashInEvaluator
+Game --> HelperRules
+Team --> Player
+Deck --> Card
+Card <|-- TreasureCard
+Card <|-- WildCard
+Card <|-- StealCard
+Card <|-- CursedCard
+CashInEvaluator --> TreasureSet
+Game --> OfficerTile
+```
+
+### 플레이어와 입력 구조
+
+```mermaid
+classDiagram
+direction TB
+class Player {
+  <<abstract>>
+  +decideSplit(SplitContext) SplitDecision
+  +decideChoice(ChoiceContext) int
+  +decideTeamDistribution(cards, members) TeamDistribution
+  +decideHelpers(options, count, ctx) List~HelperCard~
+  +beginCashIn(CashInContext, opponentCoins, CashSink) void
+}
+class HumanPlayer {
+  +provideSplit(decision) void
+  +provideChoice(index) void
+  +submitCash(action) void
+}
+class BotPlayer {
+  -BotStrategy strategy
+  +strategyName() String
+}
+class NetworkPlayer {
+  +decideSplit(ctx) SplitDecision
+  +provideSplit(decision) void
+  +consumeRequest(id, kind) boolean
+  +abort() void
+}
+class MirrorPlayer
+class InputGateway {
+  <<interface>>
+  +provideSplit(decision) void
+  +provideChoice(index) void
+  +submitCash(action) void
+}
+class LocalInputGateway
+class NetworkInputGateway
+class CashSink {
+  <<interface>>
+  +submit(action) void
+  +pass() void
+}
+class SplitContext
+class ChoiceContext
+class CashInContext
+class CashInAction
+
+Player <|-- HumanPlayer
+Player <|-- BotPlayer
+Player <|-- NetworkPlayer
+Player <|-- MirrorPlayer
+InputGateway <|.. LocalInputGateway
+InputGateway <|.. NetworkInputGateway
+LocalInputGateway --> HumanPlayer
+NetworkInputGateway --> NetMessage
+Player --> SplitContext
+Player --> ChoiceContext
+Player --> CashInContext
+Player --> CashSink
+CashSink --> CashInAction
+```
+
+### JavaFX 화면과 렌더링 구조
+
+```mermaid
+classDiagram
+direction TB
+class GameApp {
+  +start(stage) void
+  +showLobby(setup) void
+  +showGameBoard(setup) void
+}
+class MainMenuController {
+  +onStartGame() void
+  +onJoinGame() void
+}
+class LobbyController {
+  +initialize() void
+  +initHost(nickname) void
+  +initClient(client) void
+  -onStart() void
+}
+class GameBoardController {
+  +initialize() void
+  +startGameThread() void
+  +onRequestSplit() void
+  +onRequestChoice() void
+  +onGameOver() void
+}
+class BoardAnimator {
+  +playOfficerSetup() void
+  +playSteal() void
+  +playHelperEffect() void
+  +runAfterOverlay() void
+}
+class CashInPanel {
+  +render(player, ctx, field) void
+  -submit(action) void
+}
+class RulebookBuilder {
+  +build() Node
+}
+class ScoreTableBuilder {
+  +build() Node
+}
+class GameListener {
+  <<interface>>
+}
+
+GameApp --> MainMenuController
+GameApp --> LobbyController
+GameApp --> GameBoardController
+GameBoardController ..|> GameListener
+GameBoardController --> BoardAnimator
+GameBoardController --> CashInPanel
+GameBoardController --> RulebookBuilder
+GameBoardController --> ScoreTableBuilder
+LobbyController --> MatchSetup
+```
+
+### 봇 전략 구조
+
+```mermaid
+classDiagram
+direction TB
+class BotStrategy {
+  <<interface>>
+  +decideSplit(ctx) SplitDecision
+  +decideChoice(ctx) int
+  +decideHelpers(options, count, ctx) List~HelperCard~
+  +planCashIn(ctx, opponentCoins) List~CashInAction~
+  +decideTeamDistribution(cards, members) TeamDistribution
+}
+class S8BotStrategy
+class DifficultyAdjustedBotStrategy {
+  -Level level
+}
+class LlmBotStrategy
+class BotKind {
+  <<enumeration>>
+  EASY
+  NORMAL
+  HARD
+  LLM
+  +create() BotStrategy
+}
+class BotPlayer
+class PublicCardTracker
+class OpponentModel
+class CashInPlanOptimizer
+class CashInProjection
+class TeamDistributionOptimizer
+class ScoreBreakdown
+class GeminiClient
+
+BotStrategy <|.. S8BotStrategy
+BotStrategy <|.. DifficultyAdjustedBotStrategy
+BotStrategy <|.. LlmBotStrategy
+BotKind --> BotStrategy : 생성
+BotPlayer --> BotStrategy : 위임
+DifficultyAdjustedBotStrategy --> S8BotStrategy : 정보 제한 래핑
+S8BotStrategy --> PublicCardTracker
+S8BotStrategy --> OpponentModel
+S8BotStrategy --> CashInPlanOptimizer
+S8BotStrategy --> TeamDistributionOptimizer
+S8BotStrategy --> ScoreBreakdown
+CashInPlanOptimizer --> CashInProjection
+LlmBotStrategy --> GeminiClient
+LlmBotStrategy --> S8BotStrategy : 실패 시 폴백
+```
+
+### 네트워크 플레이 구조
+
+```mermaid
+classDiagram
+direction TB
+class GameServer {
+  +startAccepting() void
+  +broadcast(message) void
+  +close() void
+}
+class GameClient {
+  +connect(host, port) void
+  +send(message) void
+  +close() void
+}
+class NetworkPlayer {
+  +decideChoice(ctx) int
+  +provideChoice(index) void
+  +consumeRequest(id, kind) boolean
+  +abort() void
+}
+class NetworkBroadcaster {
+  +onPhaseChanged() void
+  +onDistributed() void
+  +onCashIn() void
+}
+class FanOutGameListener
+class ClientMirror {
+  +applyState(state) void
+  +allPlayers() List~Player~
+}
+class NetworkInputGateway
+class NetMessage {
+  <<sealed>>
+}
+class GameEvent {
+  <<sealed>>
+}
+class PublicBoardState
+class CardDto
+class PlayerStateDto
+class TeamStateDto
+
+GameServer --> NetworkPlayer : 원격 결정 라우팅
+GameServer --> NetMessage
+GameClient --> NetMessage
+NetworkBroadcaster --> GameEvent
+NetworkBroadcaster --> PublicBoardState
+FanOutGameListener --> NetworkBroadcaster
+FanOutGameListener --> GameBoardController
+GameClient --> ClientMirror
+ClientMirror --> PublicBoardState
+NetworkInputGateway --> GameClient
+NetMessage --> GameEvent
+PublicBoardState --> TeamStateDto
+TeamStateDto --> PlayerStateDto
+PlayerStateDto --> CardDto
+```
+
 ## 큰 그림
 
 프로젝트는 JavaFX 애플리케이션이지만, 게임 규칙 자체는 JavaFX에 묶여 있지 않습니다. 핵심은 다음 세 층입니다.
