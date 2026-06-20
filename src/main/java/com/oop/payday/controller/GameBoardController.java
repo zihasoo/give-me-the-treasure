@@ -24,6 +24,7 @@ import com.oop.payday.game.GameListener;
 import com.oop.payday.game.MatchSetup;
 import com.oop.payday.game.Phase;
 import com.oop.payday.game.Team;
+import com.oop.payday.log.PlayLogWriter;
 import com.oop.payday.model.card.Card;
 import com.oop.payday.model.card.CursedCard;
 import com.oop.payday.model.card.StealCard;
@@ -383,7 +384,8 @@ public final class GameBoardController implements GameListener, Initializable {
         animator = new BoardAnimator(contentArea, globalOverlay, centerArea, this::isLocalActor, CARD_ORDER_BY_COLOR);
         updateBoardStatus();
 
-        Game game = new Game(config, teamA, teamB, wrapWithLlmBotListeners(this));
+        GameListener listener = wrapWithLlmBotListeners(wrapWithPlayLogListener(this));
+        Game game = new Game(config, teamA, teamB, listener);
         this.currentGame = game;
         startGameThread(game);
         installEscHandler();
@@ -443,6 +445,11 @@ public final class GameBoardController implements GameListener, Initializable {
         return listener;
     }
 
+    private GameListener wrapWithPlayLogListener(GameListener base) {
+        PlayLogWriter playLog = PlayLogWriter.createForGame(config, teamA, teamB, teamA, teamB);
+        return playLog == null ? base : new FanOutGameListener(base, playLog);
+    }
+
     private static String teamName(List<Player> players, String fallback) {
         if (players.isEmpty()) return fallback;
         return players.stream().map(Player::name).collect(java.util.stream.Collectors.joining(" & "));
@@ -495,7 +502,8 @@ public final class GameBoardController implements GameListener, Initializable {
         int epoch = EPOCH_SEQ.incrementAndGet();
         broadcaster = new NetworkBroadcaster(server, teamA, teamB, null, allPlayers, epoch);
         FanOutGameListener fanOut = new FanOutGameListener(this, broadcaster);
-        Game game = new Game(config, teamA, teamB, wrapWithLlmBotListeners(fanOut));
+        GameListener listener = wrapWithLlmBotListeners(wrapWithPlayLogListener(fanOut));
+        Game game = new Game(config, teamA, teamB, listener);
         broadcaster.setGame(game);
         this.currentGame = game;
 

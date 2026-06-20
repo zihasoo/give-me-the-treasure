@@ -29,6 +29,13 @@ application {
     ]
 }
 
+tasks.named('run', JavaExec) {
+    // 플레이 진행 로그(logs/play-*.log) 기록: -Dpayday.playlog=true (기본 false).
+    systemProperty 'payday.playlog', System.getProperty('payday.playlog', 'false')
+    // 봇 후보 점수 내역(logs/bot-scores.log) 기록: -Dbot.debugScores=true (기본 false).
+    systemProperty 'bot.debugScores', System.getProperty('bot.debugScores', 'false')
+}
+
 repositories {
     mavenCentral()
 }
@@ -57,6 +64,8 @@ tasks.register('integrationTest', Test) {
     }
     // 봇 A/B 표본 수를 CLI 로 조절: -DbotSeedCount=300 (기본 20). 큰 표본으로 승률 신호를 확인할 때 쓴다.
     systemProperty 'botSeedCount', System.getProperty('botSeedCount', '20')
+    // 플레이 진행 로그(logs/play-*.log) 기록: -Dpayday.playlog=true (기본 false).
+    systemProperty 'payday.playlog', System.getProperty('payday.playlog', 'false')
     // 봇 후보 점수 내역(logs/bot-scores.log) 기록: -Dbot.debugScores=true (기본 false). 패배 로그 진단용.
     systemProperty 'bot.debugScores', System.getProperty('bot.debugScores', 'false')
     shouldRunAfter test

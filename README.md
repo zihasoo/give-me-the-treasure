@@ -6,16 +6,36 @@
 
 ## 실행 화면
 
-아래 이미지는 실행 결과 스크린샷을 넣기 위한 자리입니다. 실제 이미지를 같은 파일명으로 저장하면 README에서 바로 표시됩니다.
+메인 메뉴에서 닉네임을 입력합니다. 게임 시작을 누르면 로컬/원격 슬롯을 함께 구성할 수 있는 통합 대기실을 만들고, 접속하기를 누르면 IP 입력창을 통해 다른 사용자의 대기실에 진입할 수 있습니다.
 
-| 화면 | 이미지 자리 |
-|---|---|
-| 메인 메뉴 | ![메인 메뉴 실행 화면](docs/images/screenshot-main-menu.png) |
-| 대기실과 봇 선택 | ![대기실과 봇 선택 화면](docs/images/screenshot-lobby.png) |
-| 게임 보드 | ![게임 보드 실행 화면](docs/images/screenshot-game-board.png) |
-| 규칙서/조합표 | ![규칙서와 조합표 화면](docs/images/screenshot-rulebook-score-table.png) |
+![메인 메뉴 실행 화면](docs/images/mainmenu.png)
 
-<!-- screenshots: replace the placeholder paths above with real captures before final submission. -->
+대기실에서 팀 구성, 봇 난이도, 원격 플레이어 슬롯, 연습 모드를 설정할 수 있습니다.
+
+![대기실 실행 화면](docs/images/waitingroom.png)
+
+원격 참가자는 호스트에 접속한 뒤 방장이 게임을 시작할 때까지 대기실 상태를 확인합니다.
+
+![원격 대기실 실행 화면](docs/images/waitingroom_remote.png)
+
+게임 화면에서는 팀별 보관 카드와 코인, 간부 카드, 도우미, 현재 라운드의 묶음 선택을 한 화면에서 진행합니다.
+
+![게임 진행 화면](docs/images/ingame.png)
+
+일시정지 메뉴에서는 규칙서를 볼 수 있고, 게임을 재시작(방장만 가능)하거나 메인 메뉴로 나갈 수 있습니다.
+
+![일시정지 화면](docs/images/pausemenu.png)
+
+인게임에서도 규칙서와 조합표를 바로 확인해 현재 상황에 맞는 규칙과 환금 조합을 빠르게 찾아볼 수 있습니다.
+
+<p>
+  <img src="docs/images/rulebook.png" alt="규칙서 화면" width="49%">
+  <img src="docs/images/scoretable.png" alt="조합표 화면" width="49%">
+</p>
+
+LLM 봇을 사용하면 어려움 봇의 조언 + LLM의 생각대로 게임을 진행하고, 상황에 맞춘 대사가 말풍선으로 표시됩니다. (LLM봇은 1대1만 지원합니다.)
+
+![LLM 봇 실행 화면](docs/images/llmbot.png)
 
 ## 실행 방법
 
@@ -40,13 +60,19 @@
 봇 대전 표본 수를 늘려 회귀 신호를 보고 싶을 때는 `botSeedCount`를 지정합니다.
 
 ```powershell
-.\gradlew.bat integrationTest -DbotSeedCount=300
+.\gradlew.bat -DbotSeedCount=300 integrationTest
 ```
 
-통합 테스트에서 봇 후보 점수 로그가 필요하면 `bot.debugScores`를 켭니다. 로그는 `logs/bot-scores.log`에 기록됩니다.
+플레이 진행 로그가 필요하면 `payday.playlog`를 켭니다. 로그는 `logs/play-*.log`에 기록됩니다.
 
 ```powershell
-.\gradlew.bat integrationTest -Dbot.debugScores=true
+.\gradlew.bat -Dpayday.playlog=true run
+```
+
+봇 후보 점수 로그가 필요하면 `bot.debugScores`를 켭니다. 로그는 `logs/bot-scores.log`에 기록됩니다.
+
+```powershell
+.\gradlew.bat -Dbot.debugScores=true integrationTest
 ```
 
 LLM 봇을 사용할 때 입력한 Gemini API 키는 실행 폴더의 `gemini-api-key.txt`에 저장됩니다. 이 파일은 `.gitignore`에 포함되어 커밋되지 않습니다.
@@ -59,7 +85,7 @@ LLM 봇을 사용할 때 입력한 Gemini API 키는 실행 폴더의 `gemini-ap
 - **난이도별 봇**을 제공합니다. 쉬움, 중간, 어려움 봇은 같은 S8 기반 전략을 공유하되 정보량과 판단 정밀도를 다르게 사용합니다.
 - **LLM 봇**을 제공합니다. Gemini API 키가 있으면 LLM이 분할/선택 대사를 만들고, 합법성은 내장 S8 전략으로 보호합니다.
 - **인게임 규칙서와 조합표**를 제공합니다. 처음 플레이하는 사람도 게임 중 ESC 메뉴나 화면 버튼으로 규칙을 확인할 수 있습니다.
-- **연습 모드**를 제공합니다. 연습 모드는 20코인 승리, 리더 효과 비활성 규칙입니다.
+- **연습 모드**를 제공합니다. 연습 모드는 20코인 승리, 간부 효과 비활성 규칙입니다.
 - **플레이 로그와 봇 검증 테스트**를 제공합니다. 사람 vs 봇 로그 분석과 헤드리스 봇 대전 테스트로 전략 회귀를 확인합니다.
 
 ## 게임 흐름

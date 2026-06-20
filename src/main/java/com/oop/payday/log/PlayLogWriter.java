@@ -56,12 +56,12 @@ public final class PlayLogWriter implements GameListener {
     }
 
     /**
-     * 오프라인 게임용 로거를 만든다. {@code -Dpayday.playlog=false} 면 {@code null}(로깅 끔).
+     * 게임용 로거를 만든다. {@code -Dpayday.playlog=true} 면 켜지고, 기본값은 꺼짐.
      * 파일은 작업 디렉터리의 {@code logs/play-<timestamp>.log} 에 생성한다.
      */
-    public static PlayLogWriter createForOfflineGame(GameConfig config, Team teamA, Team teamB,
+    public static PlayLogWriter createForGame(GameConfig config, Team teamA, Team teamB,
             Team firstSplit, Team firstChoose) {
-        if (!Boolean.parseBoolean(System.getProperty("payday.playlog", "true"))) {
+        if (!Boolean.parseBoolean(System.getProperty("payday.playlog", "false"))) {
             return null;
         }
         try {
@@ -74,6 +74,13 @@ public final class PlayLogWriter implements GameListener {
         } catch (IOException e) {
             return null;
         }
+    }
+
+    /** @deprecated use {@link #createForGame(GameConfig, Team, Team, Team, Team)} */
+    @Deprecated
+    public static PlayLogWriter createForOfflineGame(GameConfig config, Team teamA, Team teamB,
+            Team firstSplit, Team firstChoose) {
+        return createForGame(config, teamA, teamB, firstSplit, firstChoose);
     }
 
     /** 임의 {@link Writer} 로 기록하는 로거(테스트·대체 출력용). 파일을 만들지 않는다. */

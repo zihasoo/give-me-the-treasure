@@ -76,6 +76,10 @@ JavaFX Application Thread
 
 애니메이션과 게임 진행은 `awaitAnimations()`로 동기화합니다. 게임 스레드는 특정 이벤트 뒤에 `listener.awaitAnimations()`를 호출하고, 컨트롤러는 현재 오버레이나 카드 이동 연출이 끝난 뒤 게임 스레드를 깨웁니다. 그래서 렌더링은 비동기지만, 규칙 진행은 연출을 기다리며 lockstep으로 맞출 수 있습니다.
 
+이 동기화의 핵심은 [BoardAnimator.java](../src/main/java/com/oop/payday/controller/BoardAnimator.java)가 소유한 전역 오버레이 큐입니다. `GameBoardController`는 간부 배정, 슬쩍하기, 분배 이동, 도우미 발동처럼 화면 전체를 잠깐 덮는 연출을 큐에 넣습니다. `BoardAnimator`는 재생 중인지 여부와 대기 중인 연출 목록을 함께 관리해서 한 번에 하나의 오버레이만 실행하고, 각 연출이 끝나는 시점에 다음 연출로 바톤을 넘깁니다.
+
+`awaitAnimations()`는 이 큐 위에 아주 얇게 얹혀 있습니다. 게임 스레드는 JavaFX 스레드에 "오버레이가 끝난 뒤 이 래치를 깨워 달라"는 콜백을 예약하고 기다립니다. 재생 중이거나 대기 중인 오버레이가 있으면 콜백은 별도 대기열에 보관되고, 큐가 완전히 비었을 때만 실행됩니다. 덕분에 `Game`은 "연출이 끝날 때까지 기다린다"는 계약만 알면 되고, 어떤 애니메이션이 몇 단계로 이어지는지는 UI 보조 컴포넌트 안에 갇힙니다. 동시에 대기 안내나 최신 패널 갱신처럼 오버레이 뒤에 나와야 하는 UI 작업도 같은 통로를 타므로, 긴 연출 중에 다음 화면이 먼저 튀어나오는 일을 막을 수 있습니다.
+
 ## 사용자 입력 루프
 
 사람 플레이어는 [HumanPlayer.java](../src/main/java/com/oop/payday/player/HumanPlayer.java)입니다. `Game`이 사람에게 결정을 요구하면 `HumanPlayer.decideSplit`, `decideChoice`, `decideHelpers`, `decideTeamDistribution`은 `SynchronousQueue`에서 값을 기다립니다.
